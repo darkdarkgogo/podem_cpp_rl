@@ -73,7 +73,7 @@ void ATPG::test()
 					/*run a fault simulation, drop ALL detected faults */
 					if (total_attempt_num == 1)
 					{
-						tdfault_sim_a_vector(vec, current_detect_num);
+						fault_sim_a_vector(vec, current_detect_num);
 						total_detect_num += current_detect_num;
 					}
 					/* If we want mutiple petterns per fault,

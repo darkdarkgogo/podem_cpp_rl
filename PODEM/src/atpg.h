@@ -106,6 +106,7 @@ public:
 	bool get_tdfsim_only() { return tdfsim_only; }
 	void reverse_order_fault_sim();
 	void random_order_fault_sim();
+	bool get_SAF_atpg() { return SAF_atpg; }
 	/* defined in atpg.cpp */
 	void test();
 	vector<int> cc0, cc1, co;
@@ -265,7 +266,7 @@ private:
 	int fail_continuous_limit = 1000000;
 
 	/* TDF atpg */
-	bool SAF_atpg = false;
+	bool SAF_atpg = true;
 	int no_of_backtracks_v1{};
 	int no_of_backtracks_v2{};
 	int new_bit;
