@@ -1,0 +1,80 @@
+gate: G982 ;input wire name: G899
+fault_type = s-a-1
+detection flag = aborted
+fault no. = 1018
+
+gate: G983 ;input wire name: G912
+fault_type = s-a-1
+detection flag = aborted
+fault no. = 1026
+
+gate: G984 ;input wire name: G886
+fault_type = s-a-1
+detection flag = aborted
+fault no. = 1036
+
+gate: G985 ;input wire name: G925
+fault_type = s-a-1
+detection flag = aborted
+fault no. = 1044
+
+gate: G978 ;input wire name: G873
+fault_type = s-a-1
+detection flag = aborted
+fault no. = 1054
+
+gate: G979 ;input wire name: G860
+fault_type = s-a-1
+detection flag = aborted
+fault no. = 1063
+
+gate: G980 ;input wire name: G847
+fault_type = s-a-1
+detection flag = aborted
+fault no. = 1072
+
+gate: G981 ;input wire name: G834
+fault_type = s-a-1
+detection flag = aborted
+fault no. = 1081
+
+gate: G982 ;input wire name: G899
+fault_type = s-a-1
+detection flag = aborted
+fault no. = 1018
+
+gate: G983 ;input wire name: G912
+fault_type = s-a-1
+detection flag = aborted
+fault no. = 1026
+
+gate: G984 ;input wire name: G886
+fault_type = s-a-1
+detection flag = aborted
+fault no. = 1036
+
+gate: G985 ;input wire name: G925
+fault_type = s-a-1
+detection flag = aborted
+fault no. = 1044
+
+gate: G978 ;input wire name: G873
+fault_type = s-a-1
+detection flag = aborted
+fault no. = 1054
+
+gate: G979 ;input wire name: G860
+fault_type = s-a-1
+detection flag = aborted
+fault no. = 1063
+
+gate: G980 ;input wire name: G847
+fault_type = s-a-1
+detection flag = aborted
+fault no. = 1072
+
+gate: G981 ;input wire name: G834
+fault_type = s-a-1
+detection flag = aborted
+fault no. = 1081
+

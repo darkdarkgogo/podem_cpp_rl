@@ -7,6 +7,32 @@
 
 #include "atpg.h"
 
+namespace {
+string trim_copy(const string &text) {
+  const size_t begin = text.find_first_not_of(" \t\r\n");
+  if (begin == string::npos) return "";
+  const size_t end = text.find_last_not_of(" \t\r\n");
+  return text.substr(begin, end - begin + 1);
+}
+
+bool starts_with(const string &text, const string &prefix) {
+  return text.size() >= prefix.size() && text.compare(0, prefix.size(), prefix) == 0;
+}
+
+vector<string> split_csv(const string &text) {
+  vector<string> parts;
+  size_t start = 0;
+  while (start <= text.size()) {
+    const size_t comma = text.find(',', start);
+    const string token = trim_copy(text.substr(start, comma == string::npos ? string::npos : comma - start));
+    if (!token.empty()) parts.push_back(token);
+    if (comma == string::npos) break;
+    start = comma + 1;
+  }
+  return parts;
+}
+} // namespace
+
 /* convert the name into integer to index the hashtable */
 int ATPG::hashcode(const string &name) {
   int i = 0, j = 0;
@@ -146,22 +172,62 @@ void ATPG::parse_line(const string &line) {
   for (auto &i : targv) {
     i.clear();
   }
-  if (!line.empty()) {
-    targc = 1;
-    for (char pos : line) {
-      if (pos <= ' ') {
-        targc++;
-        continue;
-      }
-      targv[targc - 1].push_back(pos);
+  targc = 0;
+
+  string content = line;
+  const size_t comment_pos = content.find('#');
+  if (comment_pos != string::npos) {
+    content = content.substr(0, comment_pos);
+  }
+  content = trim_copy(content);
+  if (content.empty()) return;
+
+  if (starts_with(content, "INPUT(") && content.back() == ')') {
+    const string wire_name = trim_copy(content.substr(6, content.size() - 7));
+    if (!wire_name.empty()) {
+      targv[0] = "i";
+      targv[1] = wire_name;
+      targc = 2;
     }
-  } else {
-    targc = 0;
+    return;
+  }
+
+  if (starts_with(content, "OUTPUT(") && content.back() == ')') {
+    const string wire_name = trim_copy(content.substr(7, content.size() - 8));
+    if (!wire_name.empty()) {
+      targv[0] = "o";
+      targv[1] = wire_name;
+      targc = 2;
+    }
+    return;
+  }
+
+  const size_t equal_pos = content.find('=');
+  const size_t lparen_pos = content.find('(');
+  const size_t rparen_pos = content.rfind(')');
+  if (equal_pos != string::npos && lparen_pos != string::npos && rparen_pos == content.size() - 1 && equal_pos < lparen_pos) {
+    const string output_name = trim_copy(content.substr(0, equal_pos));
+    const string gate_type = trim_copy(content.substr(equal_pos + 1, lparen_pos - equal_pos - 1));
+    const string inputs_text = content.substr(lparen_pos + 1, rparen_pos - lparen_pos - 1);
+    const vector<string> input_names = split_csv(inputs_text);
+
+    if (!output_name.empty() && !gate_type.empty() && !input_names.empty()) {
+      targv[0] = output_name;
+      targv[1] = gate_type;
+      int idx = 2;
+      for (const string &input_name : input_names) {
+        targv[idx++] = input_name;
+      }
+      targv[idx++] = ";";
+      targv[idx++] = output_name;
+      targc = idx;
+    }
   }
 }/* end of parse_line */
 
 void ATPG::input(const string &infile) {
   string line;
+  bool saw_bench_record = false;
   filename = infile;
   ifstream file(filename, std::ifstream::in); // open the input vectors' file
   if (!file) { // if the ifstream obj does not exist, fail to open the file
@@ -176,44 +242,29 @@ void ATPG::input(const string &infile) {
     for (int i = 0; !targv[i].empty(); i++) {
       //cout << "targv[" << i <<"]: " << targv[i] << endl;
     }
-    if (targv[0].empty()) continue;
-    if (targv[0] == "name") {
-      if (targc != 2) {
-        //cout << targc << endl;
-        error("Wrong Input Format!");
+    if (targv[0].empty()) {
+      const size_t comment_pos = line.find('#');
+      const string content = trim_copy(line.substr(0, comment_pos));
+      if (!saw_bench_record && !content.empty()) {
+        continue; // treat the first title line as a comment
+      }
+      if (saw_bench_record && !content.empty()) {
+        error("Wrong bench format");
       }
       continue;
     }
+    saw_bench_record = true;
     switch (targv[0][0]) {
-      case '#':
-        break;
-
-      case 'D':
-        debug = 1 - debug;
-        break;
-
-      case 'g':
-        newgate();
-        break;
-
       case 'i':
         set_input(false);
-        break;
-
-      case 'p':
-        set_input(true);
         break;
 
       case 'o':
         set_output();
         break;
 
-      case 'n':
-        set_output();
-        break;
-
       default:
-        fprintf(stderr, "Unrecognized command around line %d in file %s\n", lineno, filename.c_str());
+        newgate();
         break;
     }
   }

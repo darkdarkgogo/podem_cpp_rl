@@ -7,8 +7,19 @@ In all three directories `FAN_PODEM_PARALLEL`, `FANV2_PODEMV1`, `PODEM`
 
 Command :
 ```sh
-./atpg -tdfatpg -ndet n -compression *.ckt > *.pat
+./atpg -tdfatpg -ndet n -compression *.bench > *.pat
 ```
+
+Input format for `PODEM` is now bench-only:
+```text
+<optional circuit title on the first line>
+INPUT(a)
+INPUT(b)
+OUTPUT(z)
+n1 = NAND(a,b)
+z = BUF(n1)
+```
+The first non-empty line may be used as a circuit title and will be ignored by the parser.
 ## PODEM
 
 Implement and modify the PODEM algorithm to generate patterns for transition delay fault.
@@ -74,7 +85,7 @@ This part is deprecated
 
 To run the fault simulation for transition delay fault in FAN package, you can type the command :
 ```sh
-./atpg -ndet n -tdfsim *.pat *.ckt
+./atpg -ndet n -tdfsim *.pat *.bench
 ```
 
 To generate the pattern with specific pattern format for FAN, you can additionally type **-rpf** flag. This will additionally generate the pattern file **./tdf_test.pat**.
