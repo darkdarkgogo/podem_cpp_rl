@@ -28,6 +28,12 @@ int ATPG::podem(const fptr fault, int &current_backtracks)
 	no_of_backtracks = 0;
 	find_test = false;
 	no_test = false;
+	current_rl_fault_id = fault_identifier(fault);
+	rl_decision_sequence = 0;
+	last_backtrace_decision_sequence = 0;
+	rl_podem_episode_active = decision_policy != nullptr;
+	if (decision_policy)
+		decision_policy->on_episode_start(current_rl_fault_id);
 
 	mark_propagate_tree(fault->node);
 
@@ -87,6 +93,8 @@ int ATPG::podem(const fptr fault, int &current_backtracks)
 					decision_tree.front()->set_changed();														 // this PI has been changed
 					decision_tree.front()->set_all_assigned();
 					no_of_backtracks++;
+					if (decision_policy && last_backtrace_decision_sequence != 0)
+						decision_policy->on_backtrack(last_backtrace_decision_sequence);
 					wpi = decision_tree.front();
 				}
 			} // while decision tree && ! wpi
@@ -138,6 +146,8 @@ int ATPG::podem(const fptr fault, int &current_backtracks)
 							decision_tree.front()->set_changed();
 							decision_tree.front()->set_all_assigned();
 							no_of_backtracks++;
+							if (decision_policy && last_backtrace_decision_sequence != 0)
+								decision_policy->on_backtrack(last_backtrace_decision_sequence);
 							wpi = decision_tree.front();
 						}
 					}
@@ -187,16 +197,19 @@ int ATPG::podem(const fptr fault, int &current_backtracks)
 		}
 		else
 			fprintf(stdout, "\n"); // do not random fill when multiple patterns per fault
+		notify_episode_end(TRUE);
 		return (TRUE);
 	}
 	else if (no_test)
 	{
 		/*fprintf(stdout,"redundant fault...\n");*/
+		notify_episode_end(FALSE);
 		return (FALSE);
 	}
 	else
 	{
 		/*fprintf(stdout,"test aborted due to backtrack limit...\n");*/
+		notify_episode_end(MAYBE);
 		return (MAYBE);
 	}
 } /* end of podem */
@@ -402,7 +415,7 @@ ATPG::wptr ATPG::test_possible(const fptr fault)
  * returns NULL if no such PI found. */
 ATPG::wptr ATPG::find_pi_assignment(const wptr object_wire, const int &object_level)
 {
-	wptr new_object_wire;
+	wptr new_object_wire = nullptr;
 	int new_object_level;
 
 	/* if PI, assign the same value as objective Fig 9.1, 9.2 */
@@ -415,31 +428,58 @@ ATPG::wptr ATPG::find_pi_assignment(const wptr object_wire, const int &object_le
 	/* if not PI, backtrace to PI  Fig 9.3, 9.4, 9.5*/
 	else
 	{
-		switch (object_wire->inode.front()->type)
+		nptr objective_gate = object_wire->inode.front();
+		if (decision_policy && rl_podem_episode_active && (objective_gate->type == OR ||
+				objective_gate->type == NAND || objective_gate->type == NOR ||
+				objective_gate->type == AND))
 		{
-			case OR:
-			case NAND:
-				if (object_level)
-					new_object_wire = find_easiest_control(object_wire->inode.front()); // decision gate
-				else
-					new_object_wire = find_hardest_control(object_wire->inode.front()); // imply gate
-				break;
-			case NOR:
-			case AND:
-				// TODO  similar to OR and NAND but different polarity
-				if (object_level)
-					new_object_wire = find_hardest_control(object_wire->inode.front());
-				else
-					new_object_wire = find_easiest_control(object_wire->inode.front());
-				break;
-				//  TODO END
-			case NOT:
-			case BUF:
-				new_object_wire = object_wire->inode.front()->iwire.front();
-				break;
+			vector<wptr> candidates;
+			vector<string> candidate_names;
+			for (wptr input_wire : objective_gate->iwire)
+			{
+				if (input_wire->value == U)
+				{
+					candidates.push_back(input_wire);
+					candidate_names.push_back(input_wire->name);
+				}
+			}
+			if (candidates.size() == 1)
+				new_object_wire = candidates.front();
+			else if (candidates.size() > 1)
+			{
+				const int selected = choose_policy_candidate(
+						smartatpg::DecisionMode::BACKTRACE, object_wire->name,
+						object_level, candidate_names);
+				new_object_wire = candidates[selected];
+			}
 		}
 
-		switch (object_wire->inode.front()->type)
+		if (!new_object_wire)
+		{
+			switch (objective_gate->type)
+			{
+				case OR:
+				case NAND:
+					if (object_level)
+						new_object_wire = find_easiest_control(objective_gate); // decision gate
+					else
+						new_object_wire = find_hardest_control(objective_gate); // imply gate
+					break;
+				case NOR:
+				case AND:
+					if (object_level)
+						new_object_wire = find_hardest_control(objective_gate);
+					else
+						new_object_wire = find_easiest_control(objective_gate);
+					break;
+				case NOT:
+				case BUF:
+					new_object_wire = objective_gate->iwire.front();
+					break;
+			}
+		}
+
+		switch (objective_gate->type)
 		{
 			case BUF:
 			case AND:
@@ -496,6 +536,7 @@ ATPG::nptr ATPG::find_propagate_gate(const int &level)
 {
 	int i, j, nin;
 	wptr w;
+	vector<nptr> candidates;
 
 	/* check every wire in decreasing level order
 	 * so that wires nearer to PO is checked earlier. */
@@ -503,7 +544,7 @@ ATPG::nptr ATPG::find_propagate_gate(const int &level)
 	{
 		/* if reach the same level as the fault, then no propagation path exists */
 		if (sort_wlist[i]->level == level)
-			return (nullptr);
+			break;
 		/* gate outptu is U */
 		/* a marked gate means it is on the path to PO */
 		if ((sort_wlist[i]->value == U) &&
@@ -516,13 +557,27 @@ ATPG::nptr ATPG::find_propagate_gate(const int &level)
 				/* if there is ont gate intput is D or D_bar */
 				if ((w->value == D) || (w->value == D_bar))
 				{
-					if (trace_unknown_path(sort_wlist[i]))	 // check X path  Fig 8.6
-						return (sort_wlist[i]->inode.front()); // succeed.  returns this gate
+					if (trace_unknown_path(sort_wlist[i]))
+					{
+						if (!decision_policy || !rl_podem_episode_active)
+							return (sort_wlist[i]->inode.front());
+						candidates.push_back(sort_wlist[i]->inode.front());
+					}
 					break;
 				}
 			}
 		}
 	}
+	if (candidates.empty())
+		return (nullptr);
+	if (candidates.size() == 1)
+		return candidates.front();
+	vector<string> candidate_names;
+	for (nptr candidate : candidates)
+		candidate_names.push_back(candidate->owire.front()->name);
+	const int selected = choose_policy_candidate(
+			smartatpg::DecisionMode::PROPAGATION, "", U, candidate_names);
+	return candidates[selected];
 } /* end of find_propagate_gate */
 
 /* DFS search for X-path , Fig 8.6

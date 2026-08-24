@@ -20,6 +20,8 @@
 #include <cstdlib>
 #include <ctime>
 
+#include "rl_policy.h"
+
 #define HASHSIZE 3911
 
 /* gate type of node,  used in class NODE */
@@ -107,6 +109,9 @@ public:
 	void reverse_order_fault_sim();
 	void random_order_fault_sim();
 	bool get_SAF_atpg() { return SAF_atpg; }
+	void set_decision_policy(const shared_ptr<smartatpg::DecisionPolicy> &);
+	void enable_rl_inference(const string &, const string &);
+	void disable_rl_policy();
 	/* defined in atpg.cpp */
 	void test();
 	vector<int> cc0, cc1, co;
@@ -250,6 +255,16 @@ private:
 	void unmark_propagate_tree(nptr);
 	int set_uniquely_implied_value(fptr);
 	int backward_imply(wptr, const int &);
+	int choose_policy_candidate(smartatpg::DecisionMode, const string &, const int &,
+									 const vector<string> &);
+	string fault_identifier(fptr) const;
+	void notify_episode_end(const int &);
+
+	shared_ptr<smartatpg::DecisionPolicy> decision_policy;
+	string current_rl_fault_id;
+	unsigned long rl_decision_sequence{};
+	unsigned long last_backtrace_decision_sequence{};
+	bool rl_podem_episode_active{};
 
 	/* New flags */
 	bool dynamic_test_compression = false;

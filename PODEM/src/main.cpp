@@ -11,7 +11,7 @@ void usage();
 
 int main(int argc, char *argv[])
 {
-	string inpFile, vetFile;
+	string inpFile, vetFile, rlEmbeddingFile, rlActorFile;
 	int i, j;
 	ATPG atpg; // create an ATPG obj, named atpg
 
@@ -113,6 +113,16 @@ int main(int argc, char *argv[])
 			atpg.detected_num = atoi(argv[i + 1]);
 			i += 2;
 		}
+		else if (strcmp(argv[i], "-rl-emb") == 0)
+		{
+			rlEmbeddingFile = string(argv[i + 1]);
+			i += 2;
+		}
+		else if (strcmp(argv[i], "-rl-actor") == 0)
+		{
+			rlActorFile = string(argv[i + 1]);
+			i += 2;
+		}
 		else if (argv[i][0] == '-')
 		{
 			j = 1;
@@ -145,6 +155,23 @@ int main(int argc, char *argv[])
 
 	/* read in and parse the input file */
 	atpg.input(inpFile); // input.cpp
+	if (rlEmbeddingFile.empty() != rlActorFile.empty())
+	{
+		fprintf(stderr, "-rl-emb and -rl-actor must be provided together\n");
+		return EXIT_FAILURE;
+	}
+	if (!rlEmbeddingFile.empty())
+	{
+		try
+		{
+			atpg.enable_rl_inference(rlEmbeddingFile, rlActorFile);
+		}
+		catch (const exception &error)
+		{
+			fprintf(stderr, "Cannot enable RL inference: %s\n", error.what());
+			return EXIT_FAILURE;
+		}
+	}
 
 	/* if vector file is provided, read it */
 	if (!vetFile.empty())
@@ -168,7 +195,15 @@ int main(int argc, char *argv[])
 		atpg.generate_tdfault_list();
 	atpg.timer(stdout, "for generating fault list");
 
-	atpg.test(); // atpg.cpp
+	try
+	{
+		atpg.test(); // atpg.cpp
+	}
+	catch (const exception &error)
+	{
+		fprintf(stderr, "ATPG failed: %s\n", error.what());
+		return EXIT_FAILURE;
+	}
 	if (!atpg.get_tdfsim_only())
 		atpg.compute_fault_coverage(); // init_flist.cpp
 	atpg.timer(stdout, "for test pattern generation");
@@ -183,6 +218,8 @@ void usage()
 	fprintf(stderr, "    -fsim <filename>: fault simulation only; filename provides vectors\n");
 	fprintf(stderr, "    -anum <num>: <num> specifies number of vectors per fault\n");
 	fprintf(stderr, "    -bt <num>: <num> specifies number of backtracks\n");
+	fprintf(stderr, "    -rl-emb <filename>: precomputed DeepGate embeddings\n");
+	fprintf(stderr, "    -rl-actor <filename>: exported PPO actor weights\n");
 	exit(EXIT_FAILURE);
 
 } /* end of usage() */

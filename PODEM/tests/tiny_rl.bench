@@ -1,0 +1,7 @@
+INPUT(a)
+INPUT(b)
+INPUT(c)
+OUTPUT(z)
+n1 = AND(a, b)
+n2 = NOT(c)
+z = OR(n1, n2)

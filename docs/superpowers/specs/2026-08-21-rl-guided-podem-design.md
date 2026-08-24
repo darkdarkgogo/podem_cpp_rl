@@ -23,9 +23,9 @@ The file contains:
 - format version;
 - circuit identifier and deterministic netlist fingerprint;
 - embedding dimension and gate count;
-- output wire name, gate type, and embedding values.
+- output wire name and embedding values.
 
-The exporter rejects duplicate names. The C++ loader rejects missing names, dimension mismatches, non-finite values, type mismatches, and fingerprint mismatches. This validation prevents silent Python/C++ node misalignment.
+The exporter rejects duplicate names. The C++ loader rejects missing names, dimension mismatches, non-finite values, and fingerprint mismatches. The fingerprint covers the exact netlist file, so name-to-structure mismatches cannot silently pass validation.
 
 ### Shared decision contract
 
