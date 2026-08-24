@@ -20,21 +20,35 @@ atpg -rl-emb circuit.emb -rl-actor actor.txt circuit.bench
 
 The embedding file is circuit-specific. The executable verifies its FNV-1a hash against the exact `.bench` file. `-rl-emb` and `-rl-actor` must be supplied together.
 
-## Build the Python training bridge
+## Set up the Python training environment
 
-Install `python-requirements.txt`, then build from the `PODEM` directory:
+Activate the `d2l` Conda environment and run all commands from this `PODEM`
+directory:
 
-```text
-python setup.py build_ext --inplace
+```bat
+call C:\ProgramData\Anaconda3\Scripts\activate.bat d2l
+set DISTUTILS_USE_SDK=1
+set MSSdk=1
+python -m pip install -r python-requirements.txt
+python -m pip install -e .
 ```
 
-On Windows this requires Microsoft Visual C++ 14 or newer. A POSIX-thread MinGW toolchain can also be selected with `--compiler=mingw32`; the `win32`-thread MinGW variant cannot compile pybind11 because its standard library lacks `std::mutex`.
+The editable install builds the `cpp_podem` pybind11 extension and installs the
+`rl_podem` training package. It also keeps the vendored DeepGate extractor
+discoverable under `vendor/deepgate_recgnn_extractor`, so no manual
+`PYTHONPATH` configuration or sibling Python project is required.
 
-Add the `PODEM` directory containing the built `cpp_podem` module to `PYTHONPATH` before starting training.
+On Windows, run the install command from an x64 Visual Studio Developer Command
+Prompt. Microsoft Visual C++ 14 or newer is required. A POSIX-thread
+MinGW toolchain can alternatively be selected with `--compiler=mingw32`; the
+`win32`-thread MinGW variant cannot compile pybind11 because its standard
+library lacks `std::mutex`. The two environment variables above make
+setuptools use the compiler environment already initialized by the Developer
+Command Prompt, including newer Visual Studio releases.
 
 ## Export and train
 
-Run these commands from `smartestATPG-main` after installing that package and its PyTorch/DeepGate dependencies:
+The Python RL tools are included in this project. Run them from `PODEM`:
 
 ```text
 python scripts/export_cpp_embeddings.py CIRCUIT.bench DEEPGATE_CHECKPOINT CIRCUIT.emb

@@ -2,7 +2,7 @@
 
 CFLAGS = -std=c++11 -Ofast  
 
-FILES = atpg.o main.o input.o level.o sim.o podem.o rl_policy.o rl_atpg.o init_flist.o faultsim.o tdfsim.o tdfatpg.o display.o
+FILES = atpg.o main.o runtime_config.o input.o level.o sim.o podem.o rl_policy.o rl_atpg.o init_flist.o faultsim.o tdfsim.o tdfatpg.o display.o
 
 all : $(FILES)
 	g++ $(CFLAGS) $(FILES) -lm -o atpg
@@ -10,6 +10,8 @@ atpg.o : atpg.h atpg.cpp
 	g++ $(CFLAGS) -c atpg.cpp
 main.o : atpg.h main.cpp
 	g++ $(CFLAGS) -c main.cpp
+runtime_config.o : atpg.h runtime_config.cpp
+	g++ $(CFLAGS) -c runtime_config.cpp
 input.o : atpg.h input.cpp
 	g++ $(CFLAGS) -c input.cpp
 level.o : atpg.h level.cpp

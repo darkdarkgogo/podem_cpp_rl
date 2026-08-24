@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "deepgate-recgnn-extractor"
+version = "0.1.0"
+description = "Standalone .bench encoder extracted from DeepGate RecGNN"
+readme = "README.md"
+requires-python = ">=3.9,<3.13"
+dependencies = [
+    "torch",
+    "torch-geometric",
+]
+

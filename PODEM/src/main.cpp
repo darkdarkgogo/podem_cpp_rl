@@ -234,22 +234,6 @@ void ATPG::set_tdfsim_only(const bool &b)
 	this->tdfsim_only = b;
 }
 
-void ATPG::set_SAF_atpg(const bool &b)
-{
-	this->SAF_atpg = b;
-}
-
-void ATPG::set_total_attempt_num(const int &i)
-{
-	this->total_attempt_num = i;
-}
-
-void ATPG::set_backtrack_limit(const int &i)
-{
-	this->backtrack_limit = i;
-}
-
-
 void ATPG::set_SCOAP(const bool &b)
 {
 	this->fault_order_by_scoap = b;
@@ -268,10 +252,6 @@ void ATPG::set_STC(const bool &b)
 void ATPG::set_flow(const int &i)
 {
 	this->flow = i;
-}
-void ATPG::set_seed(const int &i)
-{
-	this->seed = i;
 }
 void ATPG::set_stc_time(const int &i)
 {

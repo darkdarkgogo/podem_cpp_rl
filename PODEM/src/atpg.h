@@ -238,6 +238,7 @@ private:
 
 	/* declared in podem.cpp */
 	int no_of_backtracks{}; // current number of backtracks
+	unsigned long total_backtrace_steps{}; // gate-to-input traversals during backtrace
 	bool find_test{};				// true when a test pattern is found
 	bool no_test{};					// true when it is proven that no test exists for this fault
 

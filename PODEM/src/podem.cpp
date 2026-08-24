@@ -494,7 +494,10 @@ ATPG::wptr ATPG::find_pi_assignment(const wptr object_wire, const int &object_le
 				break;
 		}
 		if (new_object_wire)
+		{
+			total_backtrace_steps++;
 			return (find_pi_assignment(new_object_wire, new_object_level));
+		}
 		else
 			return (nullptr);
 	}

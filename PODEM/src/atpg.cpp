@@ -10,6 +10,7 @@
 void ATPG::test()
 {
 	string vec;
+	total_backtrace_steps = 0;
 	int current_detect_num = 0;
 	int total_detect_num = 0;
 	int total_no_of_backtracks = 0; // accumulative number of backtracks
@@ -115,6 +116,8 @@ void ATPG::test()
 		fprintf(stdout, "#number of redundant faults = %d\n", no_of_redundant_faults);
 		fprintf(stdout, "\n");
 		fprintf(stdout, "#number of calling podem1 = %d\n", no_of_calls);
+		fprintf(stdout, "\n");
+		fprintf(stdout, "#total number of backtrace steps = %lu\n", total_backtrace_steps);
 		fprintf(stdout, "\n");
 		fprintf(stdout, "#total number of backtracks = %d\n", total_no_of_backtracks);
 		return;
@@ -307,6 +310,8 @@ void ATPG::test()
 	fprintf(stdout, "#number of redundant faults = %d\n", no_of_redundant_faults);
 	fprintf(stdout, "\n");
 	fprintf(stdout, "#number of calling podem1 = %d\n", no_of_calls);
+	fprintf(stdout, "\n");
+	fprintf(stdout, "#total number of backtrace steps = %lu\n", total_backtrace_steps);
 	fprintf(stdout, "\n");
 	fprintf(stdout, "#total number of backtracks = %d\n", total_no_of_backtracks);
 } /* end of test */

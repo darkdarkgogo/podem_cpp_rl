@@ -1,9 +1,10 @@
 import pybind11
-from setuptools import Extension, setup
+from setuptools import Extension, find_packages, setup
 from setuptools.command.build_ext import build_ext
 
 CORE_SOURCES = [
     "atpg.cpp",
+    "runtime_config.cpp",
     "input.cpp",
     "level.cpp",
     "sim.cpp",
@@ -17,6 +18,9 @@ CORE_SOURCES = [
     "display.cpp",
     "python_bindings.cpp",
 ]
+
+DEEPGATE_PACKAGE_ROOT = "vendor/deepgate_recgnn_extractor/deepgate_recgnn_extractor"
+
 
 class BuildExt(build_ext):
     def build_extensions(self):
@@ -40,6 +44,15 @@ setup(
     name="cpp-podem",
     version="0.1.0",
     description="pybind11 training bridge for the C++ PODEM engine",
+    packages=(
+        find_packages("python")
+        + find_packages("vendor/deepgate_recgnn_extractor")
+    ),
+    package_dir={
+        "": "python",
+        "deepgate_recgnn_extractor": DEEPGATE_PACKAGE_ROOT,
+    },
+    python_requires=">=3.9",
     ext_modules=[extension],
     cmdclass={"build_ext": BuildExt},
 )

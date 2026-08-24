@@ -102,6 +102,7 @@ py::dict run_stuck_at(const std::string &circuit_path,
   std::shared_ptr<PythonDecisionPolicy> policy =
       std::make_shared<PythonDecisionPolicy>(decision_callback, event_callback);
   ATPG atpg;
+  atpg.detected_num = 1;
   atpg.set_backtrack_limit(backtrack_limit);
   atpg.set_seed(seed);
   atpg.set_total_attempt_num(1);

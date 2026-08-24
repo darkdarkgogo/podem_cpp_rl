@@ -726,7 +726,8 @@ void ATPG::random_order_fault_sim()
 		flist_undetect.push_front(f.get());
 	}
 	int current_detect_num = 0;
-	std::shuffle(vectors.begin(), vectors.end(), std::mt19937{stcseed});
+	std::shuffle(vectors.begin(), vectors.end(),
+		std::mt19937{static_cast<std::mt19937::result_type>(stcseed)});
 	stcseed = (stcmul * stcseed) % 20001019;
 	for (int i = 0; i < vectors.size(); i++)
 	{
