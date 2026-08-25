@@ -1,5 +1,6 @@
 #include "rl_policy.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <fstream>
@@ -91,6 +92,12 @@ const std::vector<float> &EmbeddingTable::at(const std::string &name) const {
   return found->second;
 }
 
+void EmbeddingTable::clear() {
+  embeddings_.clear();
+  embeddings_.rehash(0);
+  dimension_ = 0;
+}
+
 void ActorModel::load(const std::string &path) {
   std::ifstream input(path.c_str());
   require(input.good(), "Cannot open actor file: " + path);
@@ -165,6 +172,18 @@ void ActorModel::load(const std::string &path) {
   };
   validate_actor("backtrace_actor");
   validate_actor("propagation_actor");
+
+  gate_weight_ = &tensor("gate_encoder.0.weight");
+  gate_bias_ = &tensor("gate_encoder.0.bias");
+  mode_embedding_ = &tensor("mode_embedding.weight");
+  backtrace_head_.hidden_weight = &tensor("backtrace_actor.0.weight");
+  backtrace_head_.hidden_bias = &tensor("backtrace_actor.0.bias");
+  backtrace_head_.output_weight = &tensor("backtrace_actor.2.weight");
+  backtrace_head_.output_bias = &tensor("backtrace_actor.2.bias");
+  propagation_head_.hidden_weight = &tensor("propagation_actor.0.weight");
+  propagation_head_.hidden_bias = &tensor("propagation_actor.0.bias");
+  propagation_head_.output_weight = &tensor("propagation_actor.2.weight");
+  propagation_head_.output_bias = &tensor("propagation_actor.2.bias");
 }
 
 const ActorModel::Tensor &ActorModel::tensor(const std::string &name) const {
@@ -194,17 +213,69 @@ std::vector<float> ActorModel::dense(const Tensor &weight, const Tensor &bias,
 
 std::vector<float> ActorModel::encode_gate(
     const std::vector<float> &embedding, std::size_t mode) const {
+  std::vector<float> encoded(hidden_dim_);
+  encode_gate_into(embedding, mode, encoded.data());
+  return encoded;
+}
+
+void ActorModel::encode_gate_into(const std::vector<float> &embedding,
+                                  std::size_t mode, float *output) const {
   require(embedding.size() == embedding_dim_,
           "Gate embedding dimension does not match actor");
   require(mode < 2, "Actor mode index is out of range");
-  std::vector<float> encoded =
-      dense(tensor("gate_encoder.0.weight"), tensor("gate_encoder.0.bias"),
-            embedding, true);
-  const Tensor &mode_embedding = tensor("mode_embedding.weight");
-  for (std::size_t i = 0; i < hidden_dim_; ++i) {
-    encoded[i] += mode_embedding.values[mode * hidden_dim_ + i];
+  require(output != nullptr, "Gate encoding output must not be null");
+  require(gate_weight_ != nullptr && gate_bias_ != nullptr &&
+              mode_embedding_ != nullptr,
+          "Actor tensors are not initialized");
+
+  for (std::size_t row = 0; row < hidden_dim_; ++row) {
+    float value = gate_bias_->values[row];
+    const std::size_t offset = row * embedding_dim_;
+    for (std::size_t col = 0; col < embedding_dim_; ++col) {
+      value += gate_weight_->values[offset + col] * embedding[col];
+    }
+    output[row] = std::tanh(value) +
+                  mode_embedding_->values[mode * hidden_dim_ + row];
   }
-  return encoded;
+}
+
+const ActorModel::ActorHead &ActorModel::head(DecisionMode mode) const {
+  return mode == DecisionMode::BACKTRACE ? backtrace_head_
+                                         : propagation_head_;
+}
+
+float ActorModel::score_encoded(DecisionMode mode, const float *state,
+                                const float *candidate,
+                                std::vector<float> &hidden_buffer) const {
+  require(state != nullptr && candidate != nullptr,
+          "Encoded actor inputs must not be null");
+  require(hidden_buffer.size() == hidden_dim_,
+          "Actor hidden buffer dimension mismatch");
+  const ActorHead &actor_head = head(mode);
+  require(actor_head.hidden_weight != nullptr &&
+              actor_head.hidden_bias != nullptr &&
+              actor_head.output_weight != nullptr &&
+              actor_head.output_bias != nullptr,
+          "Actor head tensors are not initialized");
+
+  for (std::size_t row = 0; row < hidden_dim_; ++row) {
+    float value = actor_head.hidden_bias->values[row];
+    const std::size_t offset = row * hidden_dim_ * 2;
+    for (std::size_t col = 0; col < hidden_dim_; ++col) {
+      value += actor_head.hidden_weight->values[offset + col] * state[col];
+    }
+    for (std::size_t col = 0; col < hidden_dim_; ++col) {
+      value += actor_head.hidden_weight->values[offset + hidden_dim_ + col] *
+               candidate[col];
+    }
+    hidden_buffer[row] = std::tanh(value);
+  }
+
+  float score = actor_head.output_bias->values[0];
+  for (std::size_t col = 0; col < hidden_dim_; ++col) {
+    score += actor_head.output_weight->values[col] * hidden_buffer[col];
+  }
+  return score;
 }
 
 std::vector<float> ActorModel::backtrace_logits(
@@ -256,38 +327,111 @@ std::vector<float> ActorModel::propagation_logits(
   return logits;
 }
 
-NativeActorPolicy::NativeActorPolicy(const std::string &embedding_path,
-                                     const std::string &actor_path,
-                                     const std::string &expected_circuit_hash) {
-  embeddings_.load(embedding_path, expected_circuit_hash);
+std::vector<float> ActorModel::optimized_logits(
+    DecisionMode mode, const std::vector<float> &objective,
+    const std::vector<std::vector<float> > &candidates) const {
+  require(!candidates.empty(), "Optimized actor requires at least one candidate");
+  std::vector<std::vector<float> > encoded;
+  encoded.reserve(candidates.size());
+  const std::size_t mode_index = mode == DecisionMode::BACKTRACE ? 0 : 1;
+  for (const std::vector<float> &candidate : candidates) {
+    encoded.push_back(encode_gate(candidate, mode_index));
+  }
+
+  std::vector<float> state(hidden_dim_, 0.0f);
+  if (mode == DecisionMode::BACKTRACE) {
+    state = encode_gate(objective, 0);
+  } else {
+    for (const std::vector<float> &candidate : encoded) {
+      for (std::size_t col = 0; col < hidden_dim_; ++col) {
+        state[col] += candidate[col];
+      }
+    }
+    const float divisor = static_cast<float>(encoded.size());
+    for (float &value : state) {
+      value /= divisor;
+    }
+  }
+
+  std::vector<float> hidden(hidden_dim_);
+  std::vector<float> logits;
+  logits.reserve(encoded.size());
+  for (const std::vector<float> &candidate : encoded) {
+    logits.push_back(
+        score_encoded(mode, state.data(), candidate.data(), hidden));
+  }
+  return logits;
+}
+
+NativeActorPolicy::NativeActorPolicy(
+    const std::string &embedding_path, const std::string &actor_path,
+    const std::string &expected_circuit_hash,
+    const std::vector<std::string> &gate_names_by_id) {
+  EmbeddingTable embeddings;
+  embeddings.load(embedding_path, expected_circuit_hash);
   actor_.load(actor_path);
-  require(embeddings_.dimension() == actor_.embedding_dimension(),
+  require(embeddings.dimension() == actor_.embedding_dimension(),
           "Embedding and actor dimensions do not match");
+  require(!gate_names_by_id.empty(), "Circuit gate table must not be empty");
+
+  gate_count_ = gate_names_by_id.size();
+  const std::size_t hidden_dim = actor_.hidden_dimension();
+  backtrace_cache_.resize(gate_count_ * hidden_dim);
+  propagation_cache_.resize(gate_count_ * hidden_dim);
+  for (std::size_t gate_id = 0; gate_id < gate_count_; ++gate_id) {
+    const std::vector<float> &embedding = embeddings.at(gate_names_by_id[gate_id]);
+    actor_.encode_gate_into(embedding, 0,
+                            &backtrace_cache_[gate_id * hidden_dim]);
+    actor_.encode_gate_into(embedding, 1,
+                            &propagation_cache_[gate_id * hidden_dim]);
+  }
+  embeddings.clear();
+  state_buffer_.resize(hidden_dim);
+  hidden_buffer_.resize(hidden_dim);
+}
+
+const float *NativeActorPolicy::cached_gate(DecisionMode mode,
+                                            std::size_t gate_id) const {
+  require(gate_id < gate_count_, "RL gate ID is out of range");
+  const std::vector<float> &cache =
+      mode == DecisionMode::BACKTRACE ? backtrace_cache_ : propagation_cache_;
+  return &cache[gate_id * actor_.hidden_dimension()];
 }
 
 int NativeActorPolicy::select(const DecisionRequest &request) {
-  require(request.candidate_names.size() > 1,
+  require(request.candidate_ids != nullptr && request.candidate_count > 1,
           "Policy should only be called for multi-candidate decisions");
-  std::vector<std::vector<float> > candidates;
-  candidates.reserve(request.candidate_names.size());
-  for (const std::string &name : request.candidate_names) {
-    candidates.push_back(embeddings_.at(name));
-  }
-
-  std::vector<float> logits;
+  const std::size_t hidden_dim = actor_.hidden_dimension();
+  const float *state = nullptr;
   if (request.mode == DecisionMode::BACKTRACE) {
-    logits = actor_.backtrace_logits(embeddings_.at(request.objective_name),
-                                     candidates);
+    state = cached_gate(DecisionMode::BACKTRACE, request.objective_id);
   } else {
-    logits = actor_.propagation_logits(candidates);
+    std::fill(state_buffer_.begin(), state_buffer_.end(), 0.0f);
+    for (std::size_t index = 0; index < request.candidate_count; ++index) {
+      const std::size_t gate_id = request.candidate_ids[index];
+      const float *candidate = cached_gate(DecisionMode::PROPAGATION, gate_id);
+      for (std::size_t col = 0; col < hidden_dim; ++col) {
+        state_buffer_[col] += candidate[col];
+      }
+    }
+    const float divisor = static_cast<float>(request.candidate_count);
+    for (float &value : state_buffer_) {
+      value /= divisor;
+    }
+    state = state_buffer_.data();
   }
-  require(logits.size() == request.candidate_names.size(),
-          "Actor returned an unexpected number of logits");
 
   std::size_t best = 0;
-  for (std::size_t i = 1; i < logits.size(); ++i) {
-    if (logits[i] > logits[best]) {
+  float best_score = actor_.score_encoded(
+      request.mode, state, cached_gate(request.mode, request.candidate_ids[0]),
+      hidden_buffer_);
+  for (std::size_t i = 1; i < request.candidate_count; ++i) {
+    const float score = actor_.score_encoded(
+        request.mode, state,
+        cached_gate(request.mode, request.candidate_ids[i]), hidden_buffer_);
+    if (score > best_score) {
       best = i;
+      best_score = score;
     }
   }
   return static_cast<int>(best);
@@ -313,6 +457,41 @@ std::string fnv1a_file_hash(const std::string &path) {
 
 std::string decision_mode_name(DecisionMode mode) {
   return mode == DecisionMode::BACKTRACE ? "backtrace" : "propagation";
+}
+
+RlMode parse_rl_mode(const std::string &value) {
+  if (value == "backtrace_rl") {
+    return RlMode::BACKTRACE_RL;
+  }
+  if (value == "propagate_rl") {
+    return RlMode::PROPAGATE_RL;
+  }
+  if (value == "both_rl") {
+    return RlMode::BOTH_RL;
+  }
+  throw std::runtime_error(
+      "Unknown RL mode '" + value +
+      "'; expected backtrace_rl, propagate_rl, or both_rl");
+}
+
+std::string rl_mode_name(RlMode mode) {
+  if (mode == RlMode::BACKTRACE_RL) {
+    return "backtrace_rl";
+  }
+  if (mode == RlMode::PROPAGATE_RL) {
+    return "propagate_rl";
+  }
+  return "both_rl";
+}
+
+bool rl_mode_enables(RlMode mode, DecisionMode decision) {
+  if (mode == RlMode::BOTH_RL) {
+    return true;
+  }
+  if (decision == DecisionMode::BACKTRACE) {
+    return mode == RlMode::BACKTRACE_RL;
+  }
+  return mode == RlMode::PROPAGATE_RL;
 }
 
 } // namespace smartatpg

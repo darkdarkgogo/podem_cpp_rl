@@ -11,6 +11,7 @@ void ATPG::test()
 {
 	string vec;
 	total_backtrace_steps = 0;
+	fault_profiles.clear();
 	int current_detect_num = 0;
 	int total_detect_num = 0;
 	int total_no_of_backtracks = 0; // accumulative number of backtracks
@@ -61,7 +62,8 @@ void ATPG::test()
 	{
 		while (fault_under_test != nullptr)
 		{
-			switch (podem(fault_under_test, current_backtracks))
+			const int outcome = podem(fault_under_test, current_backtracks);
+			switch (outcome)
 			{
 				case TRUE:
 					/* form a vector */
@@ -72,17 +74,14 @@ void ATPG::test()
 					}
 					/*by defect, we want only one pattern per fault */
 					/*run a fault simulation, drop ALL detected faults */
-					if (total_attempt_num == 1)
+					if (total_attempt_num == 1 && drop_detected_faults)
 					{
 						fault_sim_a_vector(vec, current_detect_num);
 						total_detect_num += current_detect_num;
 					}
-					/* If we want mutiple petterns per fault,
-					 * NO fault simulation.  drop ONLY the fault under test */
 					else
 					{
 						fault_under_test->detect = TRUE;
-						/* drop fault_under_test */
 						flist_undetect.remove(fault_under_test);
 					}
 					in_vector_no++;
@@ -96,6 +95,9 @@ void ATPG::test()
 					no_of_aborted_faults++;
 					break;
 			}
+			if (collect_fault_profiles)
+				fault_profiles.push_back(
+						{fault_identifier(fault_under_test), outcome, current_backtracks});
 			fault_under_test->test_tried = true;
 			fault_under_test = nullptr;
 			for (fptr fptr_ele : flist_undetect)
@@ -109,17 +111,20 @@ void ATPG::test()
 			total_no_of_backtracks += current_backtracks; // accumulate number of backtracks
 			no_of_calls++;
 		}
-		display_undetect();
-		fprintf(stdout, "\n");
-		fprintf(stdout, "#number of aborted faults = %d\n", no_of_aborted_faults);
-		fprintf(stdout, "\n");
-		fprintf(stdout, "#number of redundant faults = %d\n", no_of_redundant_faults);
-		fprintf(stdout, "\n");
-		fprintf(stdout, "#number of calling podem1 = %d\n", no_of_calls);
-		fprintf(stdout, "\n");
-		fprintf(stdout, "#total number of backtrace steps = %lu\n", total_backtrace_steps);
-		fprintf(stdout, "\n");
-		fprintf(stdout, "#total number of backtracks = %d\n", total_no_of_backtracks);
+		if (!quiet)
+		{
+			display_undetect();
+			fprintf(stdout, "\n");
+			fprintf(stdout, "#number of aborted faults = %d\n", no_of_aborted_faults);
+			fprintf(stdout, "\n");
+			fprintf(stdout, "#number of redundant faults = %d\n", no_of_redundant_faults);
+			fprintf(stdout, "\n");
+			fprintf(stdout, "#number of calling podem1 = %d\n", no_of_calls);
+			fprintf(stdout, "\n");
+			fprintf(stdout, "#total number of backtrace steps = %lu\n", total_backtrace_steps);
+			fprintf(stdout, "\n");
+			fprintf(stdout, "#total number of backtracks = %d\n", total_no_of_backtracks);
+		}
 		return;
 	}
 
@@ -346,6 +351,7 @@ ATPG::WIRE::WIRE()
 	this->wire_value1 = 0;
 	this->wire_value2 = 0;
 	this->wlist_index = 0;
+	this->rl_gate_id = static_cast<size_t>(-1);
 }
 
 /* constructor of NODE */

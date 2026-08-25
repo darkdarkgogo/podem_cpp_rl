@@ -19,6 +19,8 @@ class DecisionStep:
     action: int
     logprob: torch.Tensor
     state_value: torch.Tensor
+    rnd_observation: torch.Tensor
+    intrinsic_reward: float = 0.0
     reward: float = 0.0
     is_terminal: bool = False
 
@@ -29,6 +31,59 @@ class RolloutBuffer:
 
     def clear(self):
         self.steps.clear()
+
+
+class RunningMeanVariance:
+    def __init__(self):
+        self.mean = 0.0
+        self.variance = 1.0
+        self.count = 1.0
+
+    def update(self, value):
+        value = float(value)
+        delta = value - self.mean
+        total = self.count + 1.0
+        new_mean = self.mean + delta / total
+        self.variance = (
+            self.variance * self.count + delta * (value - new_mean)
+        ) / total
+        self.mean = new_mean
+        self.count = total
+
+    def state_dict(self):
+        return {
+            "mean": self.mean,
+            "variance": self.variance,
+            "count": self.count,
+        }
+
+    def load_state_dict(self, state):
+        self.mean = float(state["mean"])
+        self.variance = float(state["variance"])
+        self.count = float(state["count"])
+
+
+class RandomNetworkDistillation(nn.Module):
+    def __init__(self, observation_dim, hidden_dim=64, output_dim=32):
+        super().__init__()
+        self.target = nn.Sequential(
+            nn.Linear(observation_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, output_dim),
+        )
+        self.predictor = nn.Sequential(
+            nn.Linear(observation_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, output_dim),
+        )
+        for parameter in self.target.parameters():
+            parameter.requires_grad_(False)
+
+    def prediction_error(self, observations):
+        with torch.no_grad():
+            target = self.target(observations)
+        prediction = self.predictor(observations)
+        return (prediction - target).pow(2).mean(dim=-1)
 
 
 class RLActorCritic(nn.Module):
@@ -124,10 +179,16 @@ class RLGuidedPPOAgent:
         gamma=0.99,
         k_epochs=8,
         eps_clip=0.2,
+        rnd_beta=0.05,
+        rnd_lr=1e-4,
+        rnd_bonus_clip=5.0,
     ):
         self.gamma = gamma
         self.k_epochs = k_epochs
         self.eps_clip = eps_clip
+        self.gate_embedding_dim = gate_embedding_dim
+        self.rnd_beta = rnd_beta
+        self.rnd_bonus_clip = rnd_bonus_clip
         self.buffer = RolloutBuffer()
         self.last_selected_step_idx = None
         self.last_selected_mode = None
@@ -148,6 +209,13 @@ class RLGuidedPPOAgent:
                 {"params": self.policy.critic.parameters(), "lr": lr_critic},
             ]
         )
+        self.rnd = RandomNetworkDistillation(
+            observation_dim=gate_embedding_dim * 2 + 2,
+        ).to(device)
+        self.rnd_optimizer = torch.optim.Adam(
+            self.rnd.predictor.parameters(), lr=rnd_lr
+        )
+        self.rnd_error_stats = RunningMeanVariance()
         self.mse_loss = nn.MSELoss()
         self.update_count = 0
 
@@ -155,6 +223,28 @@ class RLGuidedPPOAgent:
         if gate.deepgate_embedding is None:
             raise ValueError(f"Gate '{gate.outputpin}' is missing a fixed DeepGate embedding.")
         return gate.deepgate_embedding
+
+    def _rnd_observation(self, mode, objective_embedding, candidate_embeddings):
+        candidate_mean = torch.stack(candidate_embeddings).mean(dim=0)
+        if objective_embedding is None:
+            objective_embedding = torch.zeros_like(candidate_mean)
+        mode_vector = torch.tensor(
+            [1.0, 0.0] if mode == "backtrace" else [0.0, 1.0],
+            dtype=torch.float32,
+        )
+        return torch.cat(
+            [objective_embedding.float(), candidate_mean.float(), mode_vector], dim=0
+        ).detach().cpu()
+
+    def _intrinsic_reward(self, observation):
+        with torch.no_grad():
+            error = float(
+                self.rnd.prediction_error(observation.to(device).unsqueeze(0)).item()
+            )
+        scale = max(self.rnd_error_stats.variance, 1e-8) ** 0.5
+        normalized = min(error / scale, self.rnd_bonus_clip)
+        self.rnd_error_stats.update(error)
+        return normalized
 
     def select_backtrace_action(self, objective_gate, candidate_gates):
         objective_embedding = self._gate_embedding(objective_gate)
@@ -166,6 +256,10 @@ class RLGuidedPPOAgent:
         dist = Categorical(logits=logits)
         action = dist.sample()
         logprob = dist.log_prob(action)
+        rnd_observation = self._rnd_observation(
+            "backtrace", objective_embedding, candidate_embeddings
+        )
+        intrinsic_reward = self._intrinsic_reward(rnd_observation)
         self.buffer.steps.append(
             DecisionStep(
                 mode="backtrace",
@@ -174,6 +268,9 @@ class RLGuidedPPOAgent:
                 action=int(action.item()),
                 logprob=logprob.detach(),
                 state_value=state_value.detach(),
+                rnd_observation=rnd_observation,
+                intrinsic_reward=intrinsic_reward,
+                reward=self.rnd_beta * intrinsic_reward,
             )
         )
         self.last_selected_step_idx = len(self.buffer.steps) - 1
@@ -186,6 +283,10 @@ class RLGuidedPPOAgent:
         dist = Categorical(logits=logits)
         action = dist.sample()
         logprob = dist.log_prob(action)
+        rnd_observation = self._rnd_observation(
+            "propagation", None, candidate_embeddings
+        )
+        intrinsic_reward = self._intrinsic_reward(rnd_observation)
         self.buffer.steps.append(
             DecisionStep(
                 mode="propagation",
@@ -194,6 +295,9 @@ class RLGuidedPPOAgent:
                 action=int(action.item()),
                 logprob=logprob.detach(),
                 state_value=state_value.detach(),
+                rnd_observation=rnd_observation,
+                intrinsic_reward=intrinsic_reward,
+                reward=self.rnd_beta * intrinsic_reward,
             )
         )
         self.last_selected_step_idx = len(self.buffer.steps) - 1
@@ -239,6 +343,10 @@ class RLGuidedPPOAgent:
         )
         advantages = returns.detach() - old_state_values.detach()
 
+        rnd_observations = torch.stack(
+            [step.rnd_observation for step in self.buffer.steps]
+        ).to(device)
+
         final_metrics = None
         for _ in range(self.k_epochs):
             losses = []
@@ -272,12 +380,21 @@ class RLGuidedPPOAgent:
                 "ratio_mean": float(torch.stack(ratios).mean().detach().item()),
             }
 
+        rnd_loss = self.rnd.prediction_error(rnd_observations).mean()
+        self.rnd_optimizer.zero_grad()
+        rnd_loss.backward()
+        self.rnd_optimizer.step()
+
         self.policy_old.load_state_dict(self.policy.state_dict())
         self.update_count += 1
         metrics = {
             "update": self.update_count,
             "steps": len(self.buffer.steps),
             "reward_sum": float(sum(step_rewards)),
+            "intrinsic_reward_sum": float(
+                sum(step.intrinsic_reward for step in self.buffer.steps)
+            ),
+            "rnd_loss": float(rnd_loss.detach().item()),
             "reward_last": float(step_rewards[-1]),
             "return_mean": float(returns.mean().detach().item()),
             "return_std": float(returns.std().detach().item()) if returns.numel() > 1 else 0.0,
@@ -293,8 +410,32 @@ class RLGuidedPPOAgent:
     def save(self, checkpoint_path):
         torch.save(self.policy_old.state_dict(), checkpoint_path)
 
+    def training_state_dict(self):
+        return {
+            "format": "RL_PODEM_PPO_RND_V1",
+            "policy": self.policy.state_dict(),
+            "policy_old": self.policy_old.state_dict(),
+            "optimizer": self.optimizer.state_dict(),
+            "rnd": self.rnd.state_dict(),
+            "rnd_optimizer": self.rnd_optimizer.state_dict(),
+            "rnd_error_stats": self.rnd_error_stats.state_dict(),
+            "update_count": self.update_count,
+            "rnd_beta": self.rnd_beta,
+        }
+
+    def load_training_state_dict(self, state):
+        if state.get("format") != "RL_PODEM_PPO_RND_V1":
+            raise ValueError("Unsupported PPO/RND training checkpoint format.")
+        self.policy.load_state_dict(state["policy"])
+        self.policy_old.load_state_dict(state["policy_old"])
+        self.optimizer.load_state_dict(state["optimizer"])
+        self.rnd.load_state_dict(state["rnd"])
+        self.rnd_optimizer.load_state_dict(state["rnd_optimizer"])
+        self.rnd_error_stats.load_state_dict(state["rnd_error_stats"])
+        self.update_count = int(state["update_count"])
+        self.rnd_beta = float(state["rnd_beta"])
+
     def load(self, checkpoint_path):
         state_dict = torch.load(checkpoint_path, map_location=device)
         self.policy_old.load_state_dict(state_dict)
         self.policy.load_state_dict(state_dict)
-

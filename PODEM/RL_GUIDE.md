@@ -15,10 +15,13 @@ atpg circuit.bench
 Run native RL inference after exporting artifacts:
 
 ```text
-atpg -rl-emb circuit.emb -rl-actor actor.txt circuit.bench
+atpg -rl-emb circuit.emb -rl-actor actor.txt -rl-mode backtrace_rl circuit.bench
 ```
 
 The embedding file is circuit-specific. The executable verifies its FNV-1a hash against the exact `.bench` file. `-rl-emb` and `-rl-actor` must be supplied together.
+The optional `-rl-mode` accepts `backtrace_rl`, `propagate_rl`, or `both_rl`.
+It defaults to `backtrace_rl`, which leaves D-frontier propagation on the
+original PODEM heuristic.
 
 ## Set up the Python training environment
 
@@ -52,10 +55,13 @@ The Python RL tools are included in this project. Run them from `PODEM`:
 
 ```text
 python scripts/export_cpp_embeddings.py CIRCUIT.bench DEEPGATE_CHECKPOINT CIRCUIT.emb
-python scripts/train_cpp_podem.py CIRCUIT.bench CIRCUIT.emb PPO_CHECKPOINT ACTOR.txt --passes 1
+python scripts/train_cpp_podem.py CIRCUIT.bench CIRCUIT.emb PPO_CHECKPOINT ACTOR.txt --passes 1 --rl-mode backtrace_rl
 ```
 
-Training calls the C++ PODEM engine through pybind11. At each multi-candidate backtrace or propagation decision, Python samples an action from PPO. C++ remains responsible for objective generation, implication, fault propagation, backtracking, and test detection.
+Training calls the C++ PODEM engine through pybind11. At each enabled
+multi-candidate decision, Python samples an action from PPO. C++ remains
+responsible for objective generation, implication, fault propagation,
+backtracking, and test detection.
 
 To export an existing compatible PPO checkpoint without training:
 

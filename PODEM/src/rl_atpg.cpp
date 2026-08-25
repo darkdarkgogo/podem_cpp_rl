@@ -1,6 +1,8 @@
 #include "atpg.h"
 
 #include <stdexcept>
+#include <unordered_map>
+#include <unordered_set>
 
 void ATPG::set_decision_policy(
     const shared_ptr<smartatpg::DecisionPolicy> &policy) {
@@ -10,7 +12,12 @@ void ATPG::set_decision_policy(
 void ATPG::enable_rl_inference(const string &embedding_path,
                                const string &actor_path) {
   decision_policy = make_shared<smartatpg::NativeActorPolicy>(
-      embedding_path, actor_path, smartatpg::fnv1a_file_hash(filename));
+      embedding_path, actor_path, smartatpg::fnv1a_file_hash(filename),
+      rl_gate_names_by_id);
+}
+
+void ATPG::set_rl_mode(const string &value) {
+  rl_mode = smartatpg::parse_rl_mode(value);
 }
 
 void ATPG::disable_rl_policy() {
@@ -18,35 +25,90 @@ void ATPG::disable_rl_policy() {
   rl_podem_episode_active = false;
 }
 
+void ATPG::retain_faults(const vector<string> &fault_ids) {
+  if (fault_ids.empty()) {
+    throw runtime_error("Requested fault list must not be empty");
+  }
+  unordered_map<string, fptr> faults_by_id;
+  for (fptr fault : flist_undetect) {
+    const string id = fault_identifier(fault);
+    if (!faults_by_id.emplace(id, fault).second) {
+      throw runtime_error("Duplicate generated fault identifier: " + id);
+    }
+  }
+
+  unordered_set<string> requested;
+  vector<fptr> selected;
+  selected.reserve(fault_ids.size());
+  for (const string &id : fault_ids) {
+    if (!requested.insert(id).second) {
+      throw runtime_error("Duplicate requested fault identifier: " + id);
+    }
+    const auto found = faults_by_id.find(id);
+    if (found == faults_by_id.end()) {
+      throw runtime_error("Unknown requested fault identifier: " + id);
+    }
+    selected.push_back(found->second);
+  }
+
+  flist_undetect.clear();
+  for (auto pos = selected.rbegin(); pos != selected.rend(); ++pos) {
+    (*pos)->test_tried = false;
+    (*pos)->detect = false;
+    flist_undetect.push_front(*pos);
+  }
+}
+
 int ATPG::choose_policy_candidate(smartatpg::DecisionMode mode,
-                                  const string &objective_name,
+                                  const wptr objective_wire,
                                   const int &objective_value,
-                                  const vector<string> &candidate_names) {
-  if (!decision_policy || candidate_names.size() <= 1) {
+                                  const vector<wptr> &candidate_wires) {
+  if (!decision_policy || candidate_wires.size() <= 1 ||
+      !rl_enabled_for(mode)) {
     return -1;
   }
 
   smartatpg::DecisionRequest request;
   request.mode = mode;
-  request.objective_name = objective_name;
+  if (objective_wire) {
+    request.objective_id = objective_wire->rl_gate_id;
+  }
   request.objective_value = objective_value;
-  request.candidate_names = candidate_names;
+  rl_candidate_ids_scratch.clear();
+  rl_candidate_ids_scratch.reserve(candidate_wires.size());
+  for (wptr candidate : candidate_wires) {
+    rl_candidate_ids_scratch.push_back(candidate->rl_gate_id);
+  }
+  request.candidate_ids = rl_candidate_ids_scratch.data();
+  request.candidate_count = rl_candidate_ids_scratch.size();
+  if (decision_policy->needs_gate_names()) {
+    if (objective_wire) {
+      request.objective_name = objective_wire->name;
+    }
+    request.candidate_names.reserve(candidate_wires.size());
+    for (wptr candidate : candidate_wires) {
+      request.candidate_names.push_back(candidate->name);
+    }
+    request.fault_id = current_rl_fault_id;
+  }
   request.sequence = ++rl_decision_sequence;
-  request.fault_id = current_rl_fault_id;
   request.backtracks = no_of_backtracks;
 
   const int selected = decision_policy->select(request);
-  if (selected < 0 || static_cast<size_t>(selected) >= candidate_names.size()) {
+  if (selected < 0 ||
+      static_cast<size_t>(selected) >= candidate_wires.size()) {
     throw runtime_error("Policy returned invalid " +
                         smartatpg::decision_mode_name(mode) +
                         " candidate index " + to_string(selected) +
-                        " for " + to_string(candidate_names.size()) +
+                        " for " + to_string(candidate_wires.size()) +
                         " candidates");
   }
-  if (mode == smartatpg::DecisionMode::BACKTRACE) {
-    last_backtrace_decision_sequence = request.sequence;
-  }
+  last_policy_decision_sequence = request.sequence;
   return selected;
+}
+
+bool ATPG::rl_enabled_for(smartatpg::DecisionMode mode) const {
+  return decision_policy && smartatpg::rl_mode_enables(rl_mode, mode);
 }
 
 string ATPG::fault_identifier(const fptr fault) const {

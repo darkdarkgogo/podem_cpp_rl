@@ -14,11 +14,20 @@ enum class DecisionMode {
   PROPAGATION,
 };
 
+enum class RlMode {
+  BACKTRACE_RL,
+  PROPAGATE_RL,
+  BOTH_RL,
+};
+
 struct DecisionRequest {
   DecisionMode mode;
   std::string objective_name;
+  std::size_t objective_id = static_cast<std::size_t>(-1);
   int objective_value;
   std::vector<std::string> candidate_names;
+  const std::size_t *candidate_ids = nullptr;
+  std::size_t candidate_count = 0;
   unsigned long sequence;
   std::string fault_id;
   int backtracks;
@@ -35,6 +44,7 @@ class DecisionPolicy {
 public:
   virtual ~DecisionPolicy() {}
   virtual int select(const DecisionRequest &request) = 0;
+  virtual bool needs_gate_names() const { return true; }
   virtual void on_episode_start(const std::string &fault_id) {}
   virtual void on_backtrack(unsigned long decision_sequence) {}
   virtual void on_episode_end(const EpisodeResult &result) {}
@@ -46,6 +56,7 @@ public:
   const std::vector<float> &at(const std::string &name) const;
   std::size_t dimension() const { return dimension_; }
   std::size_t size() const { return embeddings_.size(); }
+  void clear();
 
 private:
   std::size_t dimension_ = 0;
@@ -60,7 +71,11 @@ public:
       const std::vector<std::vector<float> > &candidates) const;
   std::vector<float> propagation_logits(
       const std::vector<std::vector<float> > &candidates) const;
+  std::vector<float> optimized_logits(
+      DecisionMode mode, const std::vector<float> &objective,
+      const std::vector<std::vector<float> > &candidates) const;
   std::size_t embedding_dimension() const { return embedding_dim_; }
+  std::size_t hidden_dimension() const { return hidden_dim_; }
 
 private:
   struct Tensor {
@@ -69,8 +84,21 @@ private:
     std::vector<float> values;
   };
 
+  struct ActorHead {
+    const Tensor *hidden_weight = nullptr;
+    const Tensor *hidden_bias = nullptr;
+    const Tensor *output_weight = nullptr;
+    const Tensor *output_bias = nullptr;
+  };
+
   std::vector<float> encode_gate(const std::vector<float> &embedding,
                                  std::size_t mode) const;
+  void encode_gate_into(const std::vector<float> &embedding, std::size_t mode,
+                        float *output) const;
+  float score_encoded(DecisionMode mode, const float *state,
+                      const float *candidate,
+                      std::vector<float> &hidden_buffer) const;
+  const ActorHead &head(DecisionMode mode) const;
   std::vector<float> dense(const Tensor &weight, const Tensor &bias,
                            const std::vector<float> &input,
                            bool apply_tanh) const;
@@ -79,22 +107,40 @@ private:
   std::size_t embedding_dim_ = 0;
   std::size_t hidden_dim_ = 0;
   std::unordered_map<std::string, Tensor> tensors_;
+  const Tensor *gate_weight_ = nullptr;
+  const Tensor *gate_bias_ = nullptr;
+  const Tensor *mode_embedding_ = nullptr;
+  ActorHead backtrace_head_;
+  ActorHead propagation_head_;
+
+  friend class NativeActorPolicy;
 };
 
 class NativeActorPolicy : public DecisionPolicy {
 public:
   NativeActorPolicy(const std::string &embedding_path,
                     const std::string &actor_path,
-                    const std::string &expected_circuit_hash);
+                    const std::string &expected_circuit_hash,
+                    const std::vector<std::string> &gate_names_by_id);
   int select(const DecisionRequest &request) override;
+  bool needs_gate_names() const override { return false; }
 
 private:
-  EmbeddingTable embeddings_;
+  const float *cached_gate(DecisionMode mode, std::size_t gate_id) const;
+
   ActorModel actor_;
+  std::size_t gate_count_ = 0;
+  std::vector<float> backtrace_cache_;
+  std::vector<float> propagation_cache_;
+  std::vector<float> state_buffer_;
+  std::vector<float> hidden_buffer_;
 };
 
 std::string fnv1a_file_hash(const std::string &path);
 std::string decision_mode_name(DecisionMode mode);
+RlMode parse_rl_mode(const std::string &value);
+std::string rl_mode_name(RlMode mode);
+bool rl_mode_enables(RlMode mode, DecisionMode decision);
 
 } // namespace smartatpg
 

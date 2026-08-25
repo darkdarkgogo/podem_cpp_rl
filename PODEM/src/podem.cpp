@@ -28,12 +28,21 @@ int ATPG::podem(const fptr fault, int &current_backtracks)
 	no_of_backtracks = 0;
 	find_test = false;
 	no_test = false;
-	current_rl_fault_id = fault_identifier(fault);
 	rl_decision_sequence = 0;
-	last_backtrace_decision_sequence = 0;
+	last_policy_decision_sequence = 0;
+	rl_propagation_lock = nullptr;
 	rl_podem_episode_active = decision_policy != nullptr;
 	if (decision_policy)
+	{
+		current_rl_fault_id = fault_identifier(fault);
+		if (rl_backtrace_locks.size() != rl_gate_names_by_id.size())
+			rl_backtrace_locks.resize(rl_gate_names_by_id.size());
+		rl_candidate_ids_scratch.reserve(ncktwire);
+		rl_candidate_wires_scratch.reserve(ncktwire);
+		rl_propagation_gates_scratch.reserve(ncktwire);
+		++rl_path_lock_generation;
 		decision_policy->on_episode_start(current_rl_fault_id);
+	}
 
 	mark_propagate_tree(fault->node);
 
@@ -93,8 +102,10 @@ int ATPG::podem(const fptr fault, int &current_backtracks)
 					decision_tree.front()->set_changed();														 // this PI has been changed
 					decision_tree.front()->set_all_assigned();
 					no_of_backtracks++;
-					if (decision_policy && last_backtrace_decision_sequence != 0)
-						decision_policy->on_backtrack(last_backtrace_decision_sequence);
+				++rl_path_lock_generation;
+				rl_propagation_lock = nullptr;
+					if (decision_policy && last_policy_decision_sequence != 0)
+						decision_policy->on_backtrack(last_policy_decision_sequence);
 					wpi = decision_tree.front();
 				}
 			} // while decision tree && ! wpi
@@ -146,8 +157,10 @@ int ATPG::podem(const fptr fault, int &current_backtracks)
 							decision_tree.front()->set_changed();
 							decision_tree.front()->set_all_assigned();
 							no_of_backtracks++;
-							if (decision_policy && last_backtrace_decision_sequence != 0)
-								decision_policy->on_backtrack(last_backtrace_decision_sequence);
+							++rl_path_lock_generation;
+							rl_propagation_lock = nullptr;
+							if (decision_policy && last_policy_decision_sequence != 0)
+								decision_policy->on_backtrack(last_policy_decision_sequence);
 							wpi = decision_tree.front();
 						}
 					}
@@ -165,6 +178,8 @@ int ATPG::podem(const fptr fault, int &current_backtracks)
 		wptr_ele->remove_all_assigned();
 	}
 	decision_tree.clear();
+	++rl_path_lock_generation;
+	rl_propagation_lock = nullptr;
 
 	current_backtracks = no_of_backtracks;
 	unmark_propagate_tree(fault->node);
@@ -193,7 +208,8 @@ int ATPG::podem(const fptr fault, int &current_backtracks)
 						break; // random fill U
 				}
 			}
-			display_io();
+			if (!quiet)
+				display_io();
 		}
 		else
 			fprintf(stdout, "\n"); // do not random fill when multiple patterns per fault
@@ -429,28 +445,51 @@ ATPG::wptr ATPG::find_pi_assignment(const wptr object_wire, const int &object_le
 	else
 	{
 		nptr objective_gate = object_wire->inode.front();
-		if (decision_policy && rl_podem_episode_active && (objective_gate->type == OR ||
+		if (rl_podem_episode_active &&
+				rl_enabled_for(smartatpg::DecisionMode::BACKTRACE) &&
+				(objective_gate->type == OR ||
 				objective_gate->type == NAND || objective_gate->type == NOR ||
 				objective_gate->type == AND))
 		{
-			vector<wptr> candidates;
-			vector<string> candidate_names;
+			vector<wptr> &candidates = rl_candidate_wires_scratch;
+			candidates.clear();
 			for (wptr input_wire : objective_gate->iwire)
 			{
 				if (input_wire->value == U)
 				{
 					candidates.push_back(input_wire);
-					candidate_names.push_back(input_wire->name);
 				}
 			}
-			if (candidates.size() == 1)
+
+			BacktraceLock &locked = rl_backtrace_locks[object_wire->rl_gate_id];
+			if (locked.generation == rl_path_lock_generation)
+			{
+				const bool same_objective =
+						locked.objective_level == object_level;
+				const bool still_candidate =
+						find(candidates.begin(), candidates.end(),
+								 locked.selected_wire) != candidates.end();
+				if (same_objective && still_candidate)
+					new_object_wire = locked.selected_wire;
+				else
+					locked.generation = 0;
+			}
+
+			if (!new_object_wire && candidates.size() == 1)
 				new_object_wire = candidates.front();
-			else if (candidates.size() > 1)
+			else if (!new_object_wire && candidates.size() > 1)
 			{
 				const int selected = choose_policy_candidate(
-						smartatpg::DecisionMode::BACKTRACE, object_wire->name,
-						object_level, candidate_names);
+						smartatpg::DecisionMode::BACKTRACE, object_wire,
+						object_level, candidates);
 				new_object_wire = candidates[selected];
+			}
+
+			if (new_object_wire)
+			{
+				locked.objective_level = object_level;
+				locked.selected_wire = new_object_wire;
+				locked.generation = rl_path_lock_generation;
 			}
 		}
 
@@ -539,7 +578,8 @@ ATPG::nptr ATPG::find_propagate_gate(const int &level)
 {
 	int i, j, nin;
 	wptr w;
-	vector<nptr> candidates;
+	vector<nptr> &candidates = rl_propagation_gates_scratch;
+	candidates.clear();
 
 	/* check every wire in decreasing level order
 	 * so that wires nearer to PO is checked earlier. */
@@ -562,7 +602,8 @@ ATPG::nptr ATPG::find_propagate_gate(const int &level)
 				{
 					if (trace_unknown_path(sort_wlist[i]))
 					{
-						if (!decision_policy || !rl_podem_episode_active)
+						if (!rl_podem_episode_active ||
+								!rl_enabled_for(smartatpg::DecisionMode::PROPAGATION))
 							return (sort_wlist[i]->inode.front());
 						candidates.push_back(sort_wlist[i]->inode.front());
 					}
@@ -572,15 +613,31 @@ ATPG::nptr ATPG::find_propagate_gate(const int &level)
 		}
 	}
 	if (candidates.empty())
+	{
+		rl_propagation_lock = nullptr;
 		return (nullptr);
+	}
+	if (rl_propagation_lock)
+	{
+		auto locked = find(candidates.begin(), candidates.end(),
+				rl_propagation_lock);
+		if (locked != candidates.end())
+			return rl_propagation_lock;
+		rl_propagation_lock = nullptr;
+	}
 	if (candidates.size() == 1)
-		return candidates.front();
-	vector<string> candidate_names;
+	{
+		rl_propagation_lock = candidates.front();
+		return rl_propagation_lock;
+	}
+	vector<wptr> &candidate_wires = rl_candidate_wires_scratch;
+	candidate_wires.clear();
 	for (nptr candidate : candidates)
-		candidate_names.push_back(candidate->owire.front()->name);
+		candidate_wires.push_back(candidate->owire.front());
 	const int selected = choose_policy_candidate(
-			smartatpg::DecisionMode::PROPAGATION, "", U, candidate_names);
-	return candidates[selected];
+			smartatpg::DecisionMode::PROPAGATION, nullptr, U, candidate_wires);
+	rl_propagation_lock = candidates[selected];
+	return rl_propagation_lock;
 } /* end of find_propagate_gate */
 
 /* DFS search for X-path , Fig 8.6

@@ -1,0 +1,58 @@
+[
+  {
+    "Circuit": "c432",
+    "BaseMs": 22.72,
+    "RLMs": 279.73,
+    "Slowdown": 12.31,
+    "DeltaPct": 1131.4
+  },
+  {
+    "Circuit": "c499",
+    "BaseMs": 30.55,
+    "RLMs": 573.82,
+    "Slowdown": 18.78,
+    "DeltaPct": 1778.4
+  },
+  {
+    "Circuit": "c1355",
+    "BaseMs": 33.91,
+    "RLMs": 628.27,
+    "Slowdown": 18.53,
+    "DeltaPct": 1752.7
+  },
+  {
+    "Circuit": "c1908",
+    "BaseMs": 70.27,
+    "RLMs": 610.94,
+    "Slowdown": 8.69,
+    "DeltaPct": 769.4
+  },
+  {
+    "Circuit": "c2670",
+    "BaseMs": 129.92,
+    "RLMs": 940.76,
+    "Slowdown": 7.24,
+    "DeltaPct": 624.1
+  },
+  {
+    "Circuit": "c3540",
+    "BaseMs": 289.56,
+    "RLMs": 1512.39,
+    "Slowdown": 5.22,
+    "DeltaPct": 422.3
+  },
+  {
+    "Circuit": "c5315",
+    "BaseMs": 180.44,
+    "RLMs": 708.15,
+    "Slowdown": 3.92,
+    "DeltaPct": 292.4
+  },
+  {
+    "Circuit": "c7552",
+    "BaseMs": 708.66,
+    "RLMs": 2178.83,
+    "Slowdown": 3.07,
+    "DeltaPct": 207.5
+  }
+]

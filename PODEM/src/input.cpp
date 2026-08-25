@@ -83,6 +83,8 @@ ATPG::wptr ATPG::getwire(const string &wirename) {
 
   /* initialize wire entries */
   wtemp->name = wirename;
+  wtemp->rl_gate_id = rl_gate_names_by_id.size();
+  rl_gate_names_by_id.push_back(wirename);
   int hash_no = hashcode(wirename);
   hash_wlist[hash_no].push_front(move(wtemp)); // push into the hash table
   return hash_wlist[hash_no].front().get();
@@ -356,7 +358,7 @@ void ATPG::timer(FILE *file, const string &mesg1) {
     LastTime = StartTime;
     return;
   }
-  fprintf(file, "#atpg: cputime %s %s: %.1fs %.1fs\n", mesg1.c_str(), filename.c_str(),
+  fprintf(file, "#atpg: cputime %s %s: %.6fs %.6fs\n", mesg1.c_str(), filename.c_str(),
           (t_meas - LastTime) / CLOCKS_PER_SEC, (t_meas - StartTime) / CLOCKS_PER_SEC);
   LastTime = t_meas;
 }/* end of timer */

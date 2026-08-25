@@ -13,6 +13,7 @@
 #include <forward_list>
 #include <array>
 #include <memory>
+#include <unordered_map>
 #include <iostream>
 #include <fstream>
 #include <cstring>
@@ -64,6 +65,13 @@ using namespace std;
 class ATPG
 {
 public:
+	struct FaultProfile
+	{
+		string fault_id;
+		int outcome;
+		int backtracks;
+	};
+
 	ATPG();
 
 	/* defined in main.cpp */
@@ -111,7 +119,13 @@ public:
 	bool get_SAF_atpg() { return SAF_atpg; }
 	void set_decision_policy(const shared_ptr<smartatpg::DecisionPolicy> &);
 	void enable_rl_inference(const string &, const string &);
+	void set_rl_mode(const string &);
 	void disable_rl_policy();
+	void retain_faults(const vector<string> &);
+	void set_drop_detected_faults(const bool &enabled) { drop_detected_faults = enabled; }
+	void set_collect_fault_profiles(const bool &enabled) { collect_fault_profiles = enabled; }
+	void set_quiet(const bool &enabled) { quiet = enabled; }
+	const vector<FaultProfile> &get_fault_profiles() const { return fault_profiles; }
 	/* defined in atpg.cpp */
 	void test();
 	vector<int> cc0, cc1, co;
@@ -127,10 +141,20 @@ private:
 	typedef unique_ptr<WIRE> wptr_s;	/* using smart pointer to hold/maintain the instances of WIRE */
 	typedef unique_ptr<NODE> nptr_s;	/* using smart pointer to hold/maintain the instances of NODE */
 	typedef unique_ptr<FAULT> fptr_s; /* using smart pointer to hold/maintain the instances of FAULT */
+	struct BacktraceLock
+	{
+		int objective_level{};
+		wptr selected_wire{};
+		unsigned long generation{};
+	};
 
 	/* fault list */
 	forward_list<fptr_s> flist;				 /* fault list */
 	forward_list<fptr> flist_undetect; /* undetected fault list */
+	vector<FaultProfile> fault_profiles;
+	bool drop_detected_faults = true;
+	bool collect_fault_profiles = false;
+	bool quiet = false;
 
 	/* circuit */
 	vector<wptr> sort_wlist; /* sorted wire list with regard to level */
@@ -256,16 +280,25 @@ private:
 	void unmark_propagate_tree(nptr);
 	int set_uniquely_implied_value(fptr);
 	int backward_imply(wptr, const int &);
-	int choose_policy_candidate(smartatpg::DecisionMode, const string &, const int &,
-									 const vector<string> &);
+	int choose_policy_candidate(smartatpg::DecisionMode, wptr, const int &,
+									 const vector<wptr> &);
+	bool rl_enabled_for(smartatpg::DecisionMode) const;
 	string fault_identifier(fptr) const;
 	void notify_episode_end(const int &);
 
 	shared_ptr<smartatpg::DecisionPolicy> decision_policy;
+	smartatpg::RlMode rl_mode = smartatpg::RlMode::BACKTRACE_RL;
+	vector<string> rl_gate_names_by_id;
+	vector<size_t> rl_candidate_ids_scratch;
+	vector<wptr> rl_candidate_wires_scratch;
+	vector<nptr> rl_propagation_gates_scratch;
 	string current_rl_fault_id;
 	unsigned long rl_decision_sequence{};
-	unsigned long last_backtrace_decision_sequence{};
+	unsigned long last_policy_decision_sequence{};
+	unsigned long rl_path_lock_generation{};
 	bool rl_podem_episode_active{};
+	vector<BacktraceLock> rl_backtrace_locks;
+	nptr rl_propagation_lock{};
 
 	/* New flags */
 	bool dynamic_test_compression = false;
@@ -323,8 +356,9 @@ private:
 		int wire_value1;						/* (32 bits) represents fault-free value for this wire.
 																	 the same [00|11|01] replicated by 16 times (for pfedfs) */
 		int wire_value2;						/* (32 bits) represents values of this wire
-																	 in the presence of 16 faults. (for pfedfs) */
+																				 in the presence of 16 faults. (for pfedfs) */
 		int wlist_index;						/* index into the sorted_wlist array */
+		size_t rl_gate_id;					/* stable index into native RL caches */
 		forward_list<fptr> udflist; // for podemx_bt()
 		//  the following functions control/observe the state of wire
 		//  HCY 2020/2/6

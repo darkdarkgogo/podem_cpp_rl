@@ -12,6 +12,8 @@ void usage();
 int main(int argc, char *argv[])
 {
 	string inpFile, vetFile, rlEmbeddingFile, rlActorFile;
+	string rlMode = "backtrace_rl";
+	bool rlModeSpecified = false;
 	int i, j;
 	ATPG atpg; // create an ATPG obj, named atpg
 
@@ -115,12 +117,33 @@ int main(int argc, char *argv[])
 		}
 		else if (strcmp(argv[i], "-rl-emb") == 0)
 		{
+			if (i + 1 >= argc)
+			{
+				fprintf(stderr, "-rl-emb requires a filename\n");
+				return EXIT_FAILURE;
+			}
 			rlEmbeddingFile = string(argv[i + 1]);
 			i += 2;
 		}
 		else if (strcmp(argv[i], "-rl-actor") == 0)
 		{
+			if (i + 1 >= argc)
+			{
+				fprintf(stderr, "-rl-actor requires a filename\n");
+				return EXIT_FAILURE;
+			}
 			rlActorFile = string(argv[i + 1]);
+			i += 2;
+		}
+		else if (strcmp(argv[i], "-rl-mode") == 0)
+		{
+			if (i + 1 >= argc)
+			{
+				fprintf(stderr, "-rl-mode requires a mode\n");
+				return EXIT_FAILURE;
+			}
+			rlMode = string(argv[i + 1]);
+			rlModeSpecified = true;
 			i += 2;
 		}
 		else if (argv[i][0] == '-')
@@ -152,14 +175,28 @@ int main(int argc, char *argv[])
 	{
 		usage();
 	}
-
-	/* read in and parse the input file */
-	atpg.input(inpFile); // input.cpp
 	if (rlEmbeddingFile.empty() != rlActorFile.empty())
 	{
 		fprintf(stderr, "-rl-emb and -rl-actor must be provided together\n");
 		return EXIT_FAILURE;
 	}
+	if (rlModeSpecified && rlEmbeddingFile.empty())
+	{
+		fprintf(stderr, "-rl-mode requires -rl-emb and -rl-actor\n");
+		return EXIT_FAILURE;
+	}
+	try
+	{
+		atpg.set_rl_mode(rlMode);
+	}
+	catch (const exception &error)
+	{
+		fprintf(stderr, "%s\n", error.what());
+		return EXIT_FAILURE;
+	}
+
+	/* read in and parse the input file */
+	atpg.input(inpFile); // input.cpp
 	if (!rlEmbeddingFile.empty())
 	{
 		try
@@ -220,6 +257,7 @@ void usage()
 	fprintf(stderr, "    -bt <num>: <num> specifies number of backtracks\n");
 	fprintf(stderr, "    -rl-emb <filename>: precomputed DeepGate embeddings\n");
 	fprintf(stderr, "    -rl-actor <filename>: exported PPO actor weights\n");
+	fprintf(stderr, "    -rl-mode <backtrace_rl|propagate_rl|both_rl>: RL decision scope (default: backtrace_rl)\n");
 	exit(EXIT_FAILURE);
 
 } /* end of usage() */

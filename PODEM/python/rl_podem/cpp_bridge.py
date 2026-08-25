@@ -19,35 +19,44 @@ class EmbeddingGate:
 def _load_cpp_embedding_artifact(
     path: Union[str, Path],
 ) -> Tuple[str, dict[str, torch.Tensor]]:
-    tokens = Path(path).read_text(encoding="utf-8").split()
-    position = 0
-
-    def take(expected: Optional[str] = None) -> str:
-        nonlocal position
-        if position >= len(tokens):
+    def read_pair(handle, expected_key):
+        line = handle.readline()
+        if not line:
             raise ValueError(f"Truncated embedding file: {path}")
-        value = tokens[position]
-        position += 1
-        if expected is not None and value != expected:
-            raise ValueError(f"Expected '{expected}', found '{value}' in {path}")
-        return value
+        parts = line.split()
+        if len(parts) != 2 or parts[0] != expected_key:
+            raise ValueError(f"Expected '{expected_key} <value>' in {path}")
+        return parts[1]
 
-    take("SMARTATPG_EMBEDDINGS_V1")
-    take("circuit_hash")
-    circuit_hash = take()
-    take("dimension")
-    dimension = int(take())
-    take("count")
-    count = int(take())
     table: dict[str, torch.Tensor] = {}
-    for _ in range(count):
-        name = take()
-        values = [float(take()) for _ in range(dimension)]
-        if name in table:
-            raise ValueError(f"Duplicate embedding name: {name}")
-        table[name] = torch.tensor(values, dtype=torch.float32)
-    if position != len(tokens):
-        raise ValueError(f"Unexpected trailing data in embedding file: {path}")
+    with Path(path).open("r", encoding="utf-8") as handle:
+        if handle.readline().strip() != "SMARTATPG_EMBEDDINGS_V1":
+            raise ValueError(f"Unsupported embedding format: {path}")
+        circuit_hash = read_pair(handle, "circuit_hash")
+        dimension = int(read_pair(handle, "dimension"))
+        count = int(read_pair(handle, "count"))
+        if dimension <= 0 or count < 0:
+            raise ValueError(f"Invalid embedding dimensions in: {path}")
+
+        for row in range(count):
+            line = handle.readline()
+            if not line:
+                raise ValueError(f"Truncated embedding file at row {row}: {path}")
+            parts = line.split()
+            if len(parts) != dimension + 1:
+                raise ValueError(
+                    f"Expected {dimension} values at embedding row {row}, "
+                    f"found {max(len(parts) - 1, 0)} in {path}"
+                )
+            name = parts[0]
+            if name in table:
+                raise ValueError(f"Duplicate embedding name: {name}")
+            table[name] = torch.tensor(
+                [float(value) for value in parts[1:]], dtype=torch.float32
+            )
+
+        if any(line.strip() for line in handle):
+            raise ValueError(f"Unexpected trailing data in embedding file: {path}")
     return circuit_hash, table
 
 
@@ -74,6 +83,25 @@ def _native_circuit_path(path: Union[str, Path]) -> str:
     except ValueError:
         return str(resolved)
     return relative if relative.isascii() else str(resolved)
+
+
+def profile_cpp_podem(
+    circuit_path: Union[str, Path],
+    backtrack_limit: int = 97,
+    seed: int = 14,
+) -> list[dict[str, Any]]:
+    try:
+        import cpp_podem
+    except ImportError as error:
+        raise ImportError(
+            "Cannot import cpp_podem. Install this project in the active environment with "
+            "'python -m pip install -e .'."
+        ) from error
+    return list(
+        cpp_podem.profile_stuck_at(
+            _native_circuit_path(circuit_path), backtrack_limit, seed
+        )
+    )
 
 
 def export_actor_state_dict(
@@ -133,6 +161,7 @@ class CppPodemPPOTrainer:
         self,
         embedding_path: Union[str, Path],
         checkpoint_path: Optional[Union[str, Path]] = None,
+        agent: Optional[RLGuidedPPOAgent] = None,
     ):
         self.embedding_path = Path(embedding_path).resolve()
         self.circuit_hash, embeddings = _load_cpp_embedding_artifact(self.embedding_path)
@@ -142,7 +171,11 @@ class CppPodemPPOTrainer:
             name: EmbeddingGate(name, embedding) for name, embedding in embeddings.items()
         }
         embedding_dim = next(iter(embeddings.values())).numel()
-        self.agent = RLGuidedPPOAgent(gate_embedding_dim=embedding_dim)
+        self.agent = agent or RLGuidedPPOAgent(gate_embedding_dim=embedding_dim)
+        if self.agent.gate_embedding_dim != embedding_dim:
+            raise ValueError(
+                "Shared PPO agent embedding dimension does not match the circuit embeddings."
+            )
         self.checkpoint_path = Path(checkpoint_path).resolve() if checkpoint_path else None
         if self.checkpoint_path and self.checkpoint_path.exists():
             self.agent.load(str(self.checkpoint_path))
@@ -203,6 +236,9 @@ class CppPodemPPOTrainer:
         circuit_path: Union[str, Path],
         backtrack_limit: int = 97,
         seed: int = 14,
+        fault_ids: Optional[list[str]] = None,
+        quiet: bool = True,
+        rl_mode: str = "backtrace_rl",
     ) -> dict[str, Any]:
         resolved_circuit_path = Path(circuit_path).resolve()
         actual_hash = _fnv1a_file_hash(resolved_circuit_path)
@@ -224,6 +260,9 @@ class CppPodemPPOTrainer:
             self.event_callback,
             backtrack_limit,
             seed,
+            fault_ids,
+            quiet,
+            rl_mode,
         )
 
     def save(self, actor_output_path: Optional[Union[str, Path]] = None) -> None:

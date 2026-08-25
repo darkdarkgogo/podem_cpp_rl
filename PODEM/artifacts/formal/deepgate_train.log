@@ -1,0 +1,332 @@
+C:\Users\acer\.conda\envs\d2l\lib\site-packages\torch\cuda\__init__.py:82: UserWarning: CUDA initialization: The NVIDIA driver on your system is too old (found version 10020). Please update your GPU driver by downloading and installing a new version from the URL: http://www.nvidia.com/Download/index.aspx Alternatively, go to: https://pytorch.org to install a PyTorch version that has been compiled with your version of the CUDA driver. (Triggered internally at  C:\actions-runner\_work\pytorch\pytorch\builder\windows\pytorch\c10\cuda\CUDAFunctions.cpp:112.)
+  return torch._C._cuda_getDeviceCount() > 0
+[DeepGate] Training settings: Namespace(bench_dir='sample_circuits', save_path='artifacts\\formal\\deepgate_best.pth', epochs=30, batch_size=2, lr=0.001, train_ratio=0.8, num_patterns=512, exact_pi_limit=10, max_pairs=1024, prob_weight=0.2, func_weight=1.0, seed=7, num_rounds=10, device='cpu')
+[DeepGate] Model config: hidden=64 rounds=10 reverse=True feature_dim=13
+[DeepGate] Using device: cpu
+[DeepGate] Loading training benches from: sample_circuits
+[DeepGate] Found 9 bench circuits
+[DeepGate] (1/9) build graph for c1355.bench
+[DeepGate][Dataset] Parsing circuit: sample_circuits\c1355.bench
+[DeepGate][Dataset] Prepared graph: name=c1355.bench nodes=619 edges=1096 pairs=1024 pi=41
+[DeepGate] (2/9) build graph for c1908.bench
+[DeepGate][Dataset] Parsing circuit: sample_circuits\c1908.bench
+[DeepGate][Dataset] Prepared graph: name=c1908.bench nodes=938 edges=1522 pairs=1024 pi=33
+[DeepGate] (3/9) build graph for c2670.bench
+[DeepGate][Dataset] Parsing circuit: sample_circuits\c2670.bench
+[DeepGate][Dataset] Prepared graph: name=c2670.bench nodes=1414 edges=2140 pairs=1024 pi=157
+[DeepGate] (4/9) build graph for c3540.bench
+[DeepGate][Dataset] Parsing circuit: sample_circuits\c3540.bench
+[DeepGate][Dataset] Prepared graph: name=c3540.bench nodes=1741 edges=2961 pairs=1024 pi=50
+[DeepGate] (5/9) build graph for c432.bench
+[DeepGate][Dataset] Parsing circuit: sample_circuits\c432.bench
+[DeepGate][Dataset] Prepared graph: name=c432.bench nodes=275 edges=451 pairs=1024 pi=36
+[DeepGate] (6/9) build graph for c499.bench
+[DeepGate][Dataset] Parsing circuit: sample_circuits\c499.bench
+[DeepGate][Dataset] Prepared graph: name=c499.bench nodes=691 edges=1064 pairs=1024 pi=41
+[DeepGate] (7/9) build graph for c5315.bench
+[DeepGate][Dataset] Parsing circuit: sample_circuits\c5315.bench
+[DeepGate][Dataset] Prepared graph: name=c5315.bench nodes=2608 edges=4509 pairs=1024 pi=178
+[DeepGate] (8/9) build graph for c6288.bench
+[DeepGate][Dataset] Parsing circuit: sample_circuits\c6288.bench
+[DeepGate][Dataset] Prepared graph: name=c6288.bench nodes=2480 edges=4832 pairs=1024 pi=32
+[DeepGate] (9/9) build graph for c7552.bench
+[DeepGate][Dataset] Parsing circuit: sample_circuits\c7552.bench
+[DeepGate][Dataset] Prepared graph: name=c7552.bench nodes=3827 edges=6252 pairs=1024 pi=207
+[DeepGate] Dataset split: train_graphs=7 val_graphs=2
+[DeepGate] ===== Epoch 1/30 =====
+[DeepGate] Start train epoch pass: batches=4
+[DeepGate][train] batch=1/4 graphs=2 loss=0.1438 prob=0.4860 func=0.0466
+[DeepGate][train] batch=2/4 graphs=2 loss=0.1209 prob=0.4204 func=0.0368
+[DeepGate][train] batch=3/4 graphs=2 loss=0.1013 prob=0.3582 func=0.0296
+[DeepGate][train] batch=4/4 graphs=1 loss=0.1342 prob=0.4429 func=0.0456
+[DeepGate] Start val epoch pass: batches=1
+[DeepGate][val] batch=1/1 graphs=2 loss=0.0865 prob=0.1677 func=0.0529
+[DeepGate] New best checkpoint saved to: artifacts\formal\deepgate_best.pth
+epoch=1 train_loss=0.1237 train_prob=0.4246 train_func=0.0388 val_loss=0.0865 val_prob=0.1677 val_func=0.0529
+[DeepGate] ===== Epoch 2/30 =====
+[DeepGate] Start train epoch pass: batches=4
+[DeepGate][train] batch=1/4 graphs=2 loss=0.1122 prob=0.3659 func=0.0391
+[DeepGate][train] batch=2/4 graphs=2 loss=0.0955 prob=0.3054 func=0.0345
+[DeepGate][train] batch=3/4 graphs=2 loss=0.1124 prob=0.3760 func=0.0372
+[DeepGate][train] batch=4/4 graphs=1 loss=0.0871 prob=0.2992 func=0.0273
+[DeepGate] Start val epoch pass: batches=1
+[DeepGate][val] batch=1/1 graphs=2 loss=0.0860 prob=0.1674 func=0.0525
+[DeepGate] New best checkpoint saved to: artifacts\formal\deepgate_best.pth
+epoch=2 train_loss=0.1039 train_prob=0.3420 train_func=0.0355 val_loss=0.0860 val_prob=0.1674 val_func=0.0525
+[DeepGate] ===== Epoch 3/30 =====
+[DeepGate] Start train epoch pass: batches=4
+[DeepGate][train] batch=1/4 graphs=2 loss=0.1076 prob=0.3345 func=0.0407
+[DeepGate][train] batch=2/4 graphs=2 loss=0.0772 prob=0.2494 func=0.0274
+[DeepGate][train] batch=3/4 graphs=2 loss=0.0863 prob=0.2576 func=0.0348
+[DeepGate][train] batch=4/4 graphs=1 loss=0.0753 prob=0.2509 func=0.0251
+[DeepGate] Start val epoch pass: batches=1
+[DeepGate][val] batch=1/1 graphs=2 loss=0.0828 prob=0.1609 func=0.0506
+[DeepGate] New best checkpoint saved to: artifacts\formal\deepgate_best.pth
+epoch=3 train_loss=0.0882 train_prob=0.2763 train_func=0.0330 val_loss=0.0828 val_prob=0.1609 val_func=0.0506
+[DeepGate] ===== Epoch 4/30 =====
+[DeepGate] Start train epoch pass: batches=4
+[DeepGate][train] batch=1/4 graphs=2 loss=0.0691 prob=0.2276 func=0.0235
+[DeepGate][train] batch=2/4 graphs=2 loss=0.0797 prob=0.2236 func=0.0349
+[DeepGate][train] batch=3/4 graphs=2 loss=0.0828 prob=0.2662 func=0.0296
+[DeepGate][train] batch=4/4 graphs=1 loss=0.0940 prob=0.3010 func=0.0338
+[DeepGate] Start val epoch pass: batches=1
+[DeepGate][val] batch=1/1 graphs=2 loss=0.0793 prob=0.1497 func=0.0494
+[DeepGate] New best checkpoint saved to: artifacts\formal\deepgate_best.pth
+epoch=4 train_loss=0.0796 train_prob=0.2480 train_func=0.0300 val_loss=0.0793 val_prob=0.1497 val_func=0.0494
+[DeepGate] ===== Epoch 5/30 =====
+[DeepGate] Start train epoch pass: batches=4
+[DeepGate][train] batch=1/4 graphs=2 loss=0.0790 prob=0.2539 func=0.0282
+[DeepGate][train] batch=2/4 graphs=2 loss=0.0646 prob=0.1889 func=0.0269
+[DeepGate][train] batch=3/4 graphs=2 loss=0.0691 prob=0.1955 func=0.0300
+[DeepGate][train] batch=4/4 graphs=1 loss=0.0593 prob=0.1955 func=0.0202
+[DeepGate] Start val epoch pass: batches=1
+[DeepGate][val] batch=1/1 graphs=2 loss=0.0747 prob=0.1372 func=0.0472
+[DeepGate] New best checkpoint saved to: artifacts\formal\deepgate_best.pth
+epoch=5 train_loss=0.0693 train_prob=0.2103 train_func=0.0272 val_loss=0.0747 val_prob=0.1372 val_func=0.0472
+[DeepGate] ===== Epoch 6/30 =====
+[DeepGate] Start train epoch pass: batches=4
+[DeepGate][train] batch=1/4 graphs=2 loss=0.0636 prob=0.1910 func=0.0254
+[DeepGate][train] batch=2/4 graphs=2 loss=0.0536 prob=0.1656 func=0.0205
+[DeepGate][train] batch=3/4 graphs=2 loss=0.0625 prob=0.1759 func=0.0273
+[DeepGate][train] batch=4/4 graphs=1 loss=0.0645 prob=0.1862 func=0.0272
+[DeepGate] Start val epoch pass: batches=1
+[DeepGate][val] batch=1/1 graphs=2 loss=0.0699 prob=0.1267 func=0.0446
+[DeepGate] New best checkpoint saved to: artifacts\formal\deepgate_best.pth
+epoch=6 train_loss=0.0606 train_prob=0.1787 train_func=0.0248 val_loss=0.0699 val_prob=0.1267 val_func=0.0446
+[DeepGate] ===== Epoch 7/30 =====
+[DeepGate] Start train epoch pass: batches=4
+[DeepGate][train] batch=1/4 graphs=2 loss=0.0567 prob=0.1523 func=0.0263
+[DeepGate][train] batch=2/4 graphs=2 loss=0.0551 prob=0.1681 func=0.0214
+[DeepGate][train] batch=3/4 graphs=2 loss=0.0601 prob=0.1715 func=0.0258
+[DeepGate][train] batch=4/4 graphs=1 loss=0.0392 prob=0.1210 func=0.0150
+[DeepGate] Start val epoch pass: batches=1
+[DeepGate][val] batch=1/1 graphs=2 loss=0.0658 prob=0.1159 func=0.0426
+[DeepGate] New best checkpoint saved to: artifacts\formal\deepgate_best.pth
+epoch=7 train_loss=0.0547 train_prob=0.1578 train_func=0.0231 val_loss=0.0658 val_prob=0.1159 val_func=0.0426
+[DeepGate] ===== Epoch 8/30 =====
+[DeepGate] Start train epoch pass: batches=4
+[DeepGate][train] batch=1/4 graphs=2 loss=0.0560 prob=0.1680 func=0.0224
+[DeepGate][train] batch=2/4 graphs=2 loss=0.0455 prob=0.1279 func=0.0199
+[DeepGate][train] batch=3/4 graphs=2 loss=0.0565 prob=0.1599 func=0.0245
+[DeepGate][train] batch=4/4 graphs=1 loss=0.0449 prob=0.1413 func=0.0166
+[DeepGate] Start val epoch pass: batches=1
+[DeepGate][val] batch=1/1 graphs=2 loss=0.0624 prob=0.1040 func=0.0416
+[DeepGate] New best checkpoint saved to: artifacts\formal\deepgate_best.pth
+epoch=8 train_loss=0.0516 train_prob=0.1504 train_func=0.0215 val_loss=0.0624 val_prob=0.1040 val_func=0.0416
+[DeepGate] ===== Epoch 9/30 =====
+[DeepGate] Start train epoch pass: batches=4
+[DeepGate][train] batch=1/4 graphs=2 loss=0.0409 prob=0.1153 func=0.0179
+[DeepGate][train] batch=2/4 graphs=2 loss=0.0503 prob=0.1277 func=0.0248
+[DeepGate][train] batch=3/4 graphs=2 loss=0.0506 prob=0.1459 func=0.0214
+[DeepGate][train] batch=4/4 graphs=1 loss=0.0407 prob=0.1268 func=0.0153
+[DeepGate] Start val epoch pass: batches=1
+[DeepGate][val] batch=1/1 graphs=2 loss=0.0591 prob=0.0920 func=0.0407
+[DeepGate] New best checkpoint saved to: artifacts\formal\deepgate_best.pth
+epoch=9 train_loss=0.0463 train_prob=0.1292 train_func=0.0205 val_loss=0.0591 val_prob=0.0920 val_func=0.0407
+[DeepGate] ===== Epoch 10/30 =====
+[DeepGate] Start train epoch pass: batches=4
+[DeepGate][train] batch=1/4 graphs=2 loss=0.0426 prob=0.1214 func=0.0183
+[DeepGate][train] batch=2/4 graphs=2 loss=0.0439 prob=0.1241 func=0.0191
+[DeepGate][train] batch=3/4 graphs=2 loss=0.0447 prob=0.1083 func=0.0230
+[DeepGate][train] batch=4/4 graphs=1 loss=0.0339 prob=0.1027 func=0.0134
+[DeepGate] Start val epoch pass: batches=1
+[DeepGate][val] batch=1/1 graphs=2 loss=0.0566 prob=0.0811 func=0.0404
+[DeepGate] New best checkpoint saved to: artifacts\formal\deepgate_best.pth
+epoch=10 train_loss=0.0423 train_prob=0.1158 train_func=0.0192 val_loss=0.0566 val_prob=0.0811 val_func=0.0404
+[DeepGate] ===== Epoch 11/30 =====
+[DeepGate] Start train epoch pass: batches=4
+[DeepGate][train] batch=1/4 graphs=2 loss=0.0343 prob=0.0958 func=0.0152
+[DeepGate][train] batch=2/4 graphs=2 loss=0.0426 prob=0.1016 func=0.0222
+[DeepGate][train] batch=3/4 graphs=2 loss=0.0406 prob=0.1124 func=0.0181
+[DeepGate][train] batch=4/4 graphs=1 loss=0.0410 prob=0.1122 func=0.0186
+[DeepGate] Start val epoch pass: batches=1
+[DeepGate][val] batch=1/1 graphs=2 loss=0.0538 prob=0.0726 func=0.0393
+[DeepGate] New best checkpoint saved to: artifacts\formal\deepgate_best.pth
+epoch=11 train_loss=0.0394 train_prob=0.1045 train_func=0.0185 val_loss=0.0538 val_prob=0.0726 val_func=0.0393
+[DeepGate] ===== Epoch 12/30 =====
+[DeepGate] Start train epoch pass: batches=4
+[DeepGate][train] batch=1/4 graphs=2 loss=0.0371 prob=0.1041 func=0.0163
+[DeepGate][train] batch=2/4 graphs=2 loss=0.0440 prob=0.1165 func=0.0207
+[DeepGate][train] batch=3/4 graphs=2 loss=0.0376 prob=0.0928 func=0.0190
+[DeepGate][train] batch=4/4 graphs=1 loss=0.0380 prob=0.1068 func=0.0166
+[DeepGate] Start val epoch pass: batches=1
+[DeepGate][val] batch=1/1 graphs=2 loss=0.0527 prob=0.0674 func=0.0392
+[DeepGate] New best checkpoint saved to: artifacts\formal\deepgate_best.pth
+epoch=12 train_loss=0.0393 train_prob=0.1048 train_func=0.0184 val_loss=0.0527 val_prob=0.0674 val_func=0.0392
+[DeepGate] ===== Epoch 13/30 =====
+[DeepGate] Start train epoch pass: batches=4
+[DeepGate][train] batch=1/4 graphs=2 loss=0.0373 prob=0.0979 func=0.0177
+[DeepGate][train] batch=2/4 graphs=2 loss=0.0327 prob=0.0852 func=0.0157
+[DeepGate][train] batch=3/4 graphs=2 loss=0.0383 prob=0.0927 func=0.0197
+[DeepGate][train] batch=4/4 graphs=1 loss=0.0393 prob=0.0873 func=0.0218
+[DeepGate] Start val epoch pass: batches=1
+[DeepGate][val] batch=1/1 graphs=2 loss=0.0501 prob=0.0575 func=0.0387
+[DeepGate] New best checkpoint saved to: artifacts\formal\deepgate_best.pth
+epoch=13 train_loss=0.0366 train_prob=0.0913 train_func=0.0183 val_loss=0.0501 val_prob=0.0575 val_func=0.0387
+[DeepGate] ===== Epoch 14/30 =====
+[DeepGate] Start train epoch pass: batches=4
+[DeepGate][train] batch=1/4 graphs=2 loss=0.0346 prob=0.0832 func=0.0179
+[DeepGate][train] batch=2/4 graphs=2 loss=0.0346 prob=0.0950 func=0.0156
+[DeepGate][train] batch=3/4 graphs=2 loss=0.0321 prob=0.0808 func=0.0160
+[DeepGate][train] batch=4/4 graphs=1 loss=0.0380 prob=0.0905 func=0.0199
+[DeepGate] Start val epoch pass: batches=1
+[DeepGate][val] batch=1/1 graphs=2 loss=0.0491 prob=0.0522 func=0.0386
+[DeepGate] New best checkpoint saved to: artifacts\formal\deepgate_best.pth
+epoch=14 train_loss=0.0344 train_prob=0.0869 train_func=0.0170 val_loss=0.0491 val_prob=0.0522 val_func=0.0386
+[DeepGate] ===== Epoch 15/30 =====
+[DeepGate] Start train epoch pass: batches=4
+[DeepGate][train] batch=1/4 graphs=2 loss=0.0371 prob=0.0844 func=0.0202
+[DeepGate][train] batch=2/4 graphs=2 loss=0.0320 prob=0.0868 func=0.0146
+[DeepGate][train] batch=3/4 graphs=2 loss=0.0284 prob=0.0759 func=0.0132
+[DeepGate][train] batch=4/4 graphs=1 loss=0.0370 prob=0.0883 func=0.0194
+[DeepGate] Start val epoch pass: batches=1
+[DeepGate][val] batch=1/1 graphs=2 loss=0.0481 prob=0.0479 func=0.0385
+[DeepGate] New best checkpoint saved to: artifacts\formal\deepgate_best.pth
+epoch=15 train_loss=0.0331 train_prob=0.0832 train_func=0.0165 val_loss=0.0481 val_prob=0.0479 val_func=0.0385
+[DeepGate] ===== Epoch 16/30 =====
+[DeepGate] Start train epoch pass: batches=4
+[DeepGate][train] batch=1/4 graphs=2 loss=0.0370 prob=0.0868 func=0.0197
+[DeepGate][train] batch=2/4 graphs=2 loss=0.0302 prob=0.0793 func=0.0143
+[DeepGate][train] batch=3/4 graphs=2 loss=0.0291 prob=0.0711 func=0.0149
+[DeepGate][train] batch=4/4 graphs=1 loss=0.0294 prob=0.0757 func=0.0143
+[DeepGate] Start val epoch pass: batches=1
+[DeepGate][val] batch=1/1 graphs=2 loss=0.0458 prob=0.0429 func=0.0372
+[DeepGate] New best checkpoint saved to: artifacts\formal\deepgate_best.pth
+epoch=16 train_loss=0.0317 train_prob=0.0786 train_func=0.0160 val_loss=0.0458 val_prob=0.0429 val_func=0.0372
+[DeepGate] ===== Epoch 17/30 =====
+[DeepGate] Start train epoch pass: batches=4
+[DeepGate][train] batch=1/4 graphs=2 loss=0.0294 prob=0.0770 func=0.0139
+[DeepGate][train] batch=2/4 graphs=2 loss=0.0349 prob=0.0869 func=0.0175
+[DeepGate][train] batch=3/4 graphs=2 loss=0.0298 prob=0.0698 func=0.0158
+[DeepGate][train] batch=4/4 graphs=1 loss=0.0328 prob=0.0916 func=0.0144
+[DeepGate] Start val epoch pass: batches=1
+[DeepGate][val] batch=1/1 graphs=2 loss=0.0450 prob=0.0384 func=0.0373
+[DeepGate] New best checkpoint saved to: artifacts\formal\deepgate_best.pth
+epoch=17 train_loss=0.0315 train_prob=0.0799 train_func=0.0156 val_loss=0.0450 val_prob=0.0384 val_func=0.0373
+[DeepGate] ===== Epoch 18/30 =====
+[DeepGate] Start train epoch pass: batches=4
+[DeepGate][train] batch=1/4 graphs=2 loss=0.0302 prob=0.0734 func=0.0155
+[DeepGate][train] batch=2/4 graphs=2 loss=0.0331 prob=0.0841 func=0.0162
+[DeepGate][train] batch=3/4 graphs=2 loss=0.0301 prob=0.0691 func=0.0163
+[DeepGate][train] batch=4/4 graphs=1 loss=0.0246 prob=0.0657 func=0.0115
+[DeepGate] Start val epoch pass: batches=1
+[DeepGate][val] batch=1/1 graphs=2 loss=0.0438 prob=0.0343 func=0.0370
+[DeepGate] New best checkpoint saved to: artifacts\formal\deepgate_best.pth
+epoch=18 train_loss=0.0302 train_prob=0.0741 train_func=0.0154 val_loss=0.0438 val_prob=0.0343 val_func=0.0370
+[DeepGate] ===== Epoch 19/30 =====
+[DeepGate] Start train epoch pass: batches=4
+[DeepGate][train] batch=1/4 graphs=2 loss=0.0277 prob=0.0712 func=0.0135
+[DeepGate][train] batch=2/4 graphs=2 loss=0.0271 prob=0.0656 func=0.0140
+[DeepGate][train] batch=3/4 graphs=2 loss=0.0314 prob=0.0668 func=0.0180
+[DeepGate][train] batch=4/4 graphs=1 loss=0.0267 prob=0.0677 func=0.0132
+[DeepGate] Start val epoch pass: batches=1
+[DeepGate][val] batch=1/1 graphs=2 loss=0.0433 prob=0.0310 func=0.0371
+[DeepGate] New best checkpoint saved to: artifacts\formal\deepgate_best.pth
+epoch=19 train_loss=0.0285 train_prob=0.0679 train_func=0.0149 val_loss=0.0433 val_prob=0.0310 val_func=0.0371
+[DeepGate] ===== Epoch 20/30 =====
+[DeepGate] Start train epoch pass: batches=4
+[DeepGate][train] batch=1/4 graphs=2 loss=0.0298 prob=0.0692 func=0.0160
+[DeepGate][train] batch=2/4 graphs=2 loss=0.0255 prob=0.0593 func=0.0136
+[DeepGate][train] batch=3/4 graphs=2 loss=0.0303 prob=0.0777 func=0.0148
+[DeepGate][train] batch=4/4 graphs=1 loss=0.0277 prob=0.0723 func=0.0132
+[DeepGate] Start val epoch pass: batches=1
+[DeepGate][val] batch=1/1 graphs=2 loss=0.0422 prob=0.0289 func=0.0364
+[DeepGate] New best checkpoint saved to: artifacts\formal\deepgate_best.pth
+epoch=20 train_loss=0.0284 train_prob=0.0693 train_func=0.0146 val_loss=0.0422 val_prob=0.0289 val_func=0.0364
+[DeepGate] ===== Epoch 21/30 =====
+[DeepGate] Start train epoch pass: batches=4
+[DeepGate][train] batch=1/4 graphs=2 loss=0.0304 prob=0.0710 func=0.0162
+[DeepGate][train] batch=2/4 graphs=2 loss=0.0284 prob=0.0654 func=0.0153
+[DeepGate][train] batch=3/4 graphs=2 loss=0.0263 prob=0.0673 func=0.0129
+[DeepGate][train] batch=4/4 graphs=1 loss=0.0228 prob=0.0602 func=0.0107
+[DeepGate] Start val epoch pass: batches=1
+[DeepGate][val] batch=1/1 graphs=2 loss=0.0416 prob=0.0270 func=0.0362
+[DeepGate] New best checkpoint saved to: artifacts\formal\deepgate_best.pth
+epoch=21 train_loss=0.0276 train_prob=0.0668 train_func=0.0142 val_loss=0.0416 val_prob=0.0270 val_func=0.0362
+[DeepGate] ===== Epoch 22/30 =====
+[DeepGate] Start train epoch pass: batches=4
+[DeepGate][train] batch=1/4 graphs=2 loss=0.0232 prob=0.0578 func=0.0116
+[DeepGate][train] batch=2/4 graphs=2 loss=0.0274 prob=0.0662 func=0.0141
+[DeepGate][train] batch=3/4 graphs=2 loss=0.0299 prob=0.0633 func=0.0173
+[DeepGate][train] batch=4/4 graphs=1 loss=0.0238 prob=0.0591 func=0.0120
+[DeepGate] Start val epoch pass: batches=1
+[DeepGate][val] batch=1/1 graphs=2 loss=0.0417 prob=0.0272 func=0.0362
+epoch=22 train_loss=0.0264 train_prob=0.0620 train_func=0.0140 val_loss=0.0417 val_prob=0.0272 val_func=0.0362
+[DeepGate] ===== Epoch 23/30 =====
+[DeepGate] Start train epoch pass: batches=4
+[DeepGate][train] batch=1/4 graphs=2 loss=0.0261 prob=0.0589 func=0.0143
+[DeepGate][train] batch=2/4 graphs=2 loss=0.0245 prob=0.0592 func=0.0126
+[DeepGate][train] batch=3/4 graphs=2 loss=0.0261 prob=0.0640 func=0.0133
+[DeepGate][train] batch=4/4 graphs=1 loss=0.0306 prob=0.0716 func=0.0163
+[DeepGate] Start val epoch pass: batches=1
+[DeepGate][val] batch=1/1 graphs=2 loss=0.0415 prob=0.0279 func=0.0360
+[DeepGate] New best checkpoint saved to: artifacts\formal\deepgate_best.pth
+epoch=23 train_loss=0.0263 train_prob=0.0622 train_func=0.0138 val_loss=0.0415 val_prob=0.0279 val_func=0.0360
+[DeepGate] ===== Epoch 24/30 =====
+[DeepGate] Start train epoch pass: batches=4
+[DeepGate][train] batch=1/4 graphs=2 loss=0.0257 prob=0.0575 func=0.0142
+[DeepGate][train] batch=2/4 graphs=2 loss=0.0252 prob=0.0572 func=0.0137
+[DeepGate][train] batch=3/4 graphs=2 loss=0.0254 prob=0.0612 func=0.0132
+[DeepGate][train] batch=4/4 graphs=1 loss=0.0245 prob=0.0589 func=0.0127
+[DeepGate] Start val epoch pass: batches=1
+[DeepGate][val] batch=1/1 graphs=2 loss=0.0413 prob=0.0276 func=0.0358
+[DeepGate] New best checkpoint saved to: artifacts\formal\deepgate_best.pth
+epoch=24 train_loss=0.0253 train_prob=0.0587 train_func=0.0136 val_loss=0.0413 val_prob=0.0276 val_func=0.0358
+[DeepGate] ===== Epoch 25/30 =====
+[DeepGate] Start train epoch pass: batches=4
+[DeepGate][train] batch=1/4 graphs=2 loss=0.0252 prob=0.0588 func=0.0135
+[DeepGate][train] batch=2/4 graphs=2 loss=0.0264 prob=0.0526 func=0.0158
+[DeepGate][train] batch=3/4 graphs=2 loss=0.0219 prob=0.0537 func=0.0112
+[DeepGate][train] batch=4/4 graphs=1 loss=0.0236 prob=0.0560 func=0.0124
+[DeepGate] Start val epoch pass: batches=1
+[DeepGate][val] batch=1/1 graphs=2 loss=0.0407 prob=0.0253 func=0.0357
+[DeepGate] New best checkpoint saved to: artifacts\formal\deepgate_best.pth
+epoch=25 train_loss=0.0244 train_prob=0.0552 train_func=0.0133 val_loss=0.0407 val_prob=0.0253 val_func=0.0357
+[DeepGate] ===== Epoch 26/30 =====
+[DeepGate] Start train epoch pass: batches=4
+[DeepGate][train] batch=1/4 graphs=2 loss=0.0244 prob=0.0556 func=0.0133
+[DeepGate][train] batch=2/4 graphs=2 loss=0.0246 prob=0.0555 func=0.0135
+[DeepGate][train] batch=3/4 graphs=2 loss=0.0203 prob=0.0489 func=0.0106
+[DeepGate][train] batch=4/4 graphs=1 loss=0.0287 prob=0.0570 func=0.0173
+[DeepGate] Start val epoch pass: batches=1
+[DeepGate][val] batch=1/1 graphs=2 loss=0.0399 prob=0.0210 func=0.0357
+[DeepGate] New best checkpoint saved to: artifacts\formal\deepgate_best.pth
+epoch=26 train_loss=0.0239 train_prob=0.0538 train_func=0.0131 val_loss=0.0399 val_prob=0.0210 val_func=0.0357
+[DeepGate] ===== Epoch 27/30 =====
+[DeepGate] Start train epoch pass: batches=4
+[DeepGate][train] batch=1/4 graphs=2 loss=0.0218 prob=0.0511 func=0.0116
+[DeepGate][train] batch=2/4 graphs=2 loss=0.0256 prob=0.0507 func=0.0155
+[DeepGate][train] batch=3/4 graphs=2 loss=0.0201 prob=0.0461 func=0.0109
+[DeepGate][train] batch=4/4 graphs=1 loss=0.0272 prob=0.0601 func=0.0152
+[DeepGate] Start val epoch pass: batches=1
+[DeepGate][val] batch=1/1 graphs=2 loss=0.0395 prob=0.0201 func=0.0355
+[DeepGate] New best checkpoint saved to: artifacts\formal\deepgate_best.pth
+epoch=27 train_loss=0.0232 train_prob=0.0508 train_func=0.0130 val_loss=0.0395 val_prob=0.0201 val_func=0.0355
+[DeepGate] ===== Epoch 28/30 =====
+[DeepGate] Start train epoch pass: batches=4
+[DeepGate][train] batch=1/4 graphs=2 loss=0.0207 prob=0.0442 func=0.0118
+[DeepGate][train] batch=2/4 graphs=2 loss=0.0212 prob=0.0492 func=0.0114
+[DeepGate][train] batch=3/4 graphs=2 loss=0.0253 prob=0.0594 func=0.0134
+[DeepGate][train] batch=4/4 graphs=1 loss=0.0268 prob=0.0515 func=0.0165
+[DeepGate] Start val epoch pass: batches=1
+[DeepGate][val] batch=1/1 graphs=2 loss=0.0399 prob=0.0205 func=0.0358
+epoch=28 train_loss=0.0230 train_prob=0.0510 train_func=0.0128 val_loss=0.0399 val_prob=0.0205 val_func=0.0358
+[DeepGate] ===== Epoch 29/30 =====
+[DeepGate] Start train epoch pass: batches=4
+[DeepGate][train] batch=1/4 graphs=2 loss=0.0252 prob=0.0494 func=0.0154
+[DeepGate][train] batch=2/4 graphs=2 loss=0.0225 prob=0.0553 func=0.0115
+[DeepGate][train] batch=3/4 graphs=2 loss=0.0223 prob=0.0475 func=0.0128
+[DeepGate][train] batch=4/4 graphs=1 loss=0.0179 prob=0.0410 func=0.0097
+[DeepGate] Start val epoch pass: batches=1
+[DeepGate][val] batch=1/1 graphs=2 loss=0.0397 prob=0.0198 func=0.0357
+epoch=29 train_loss=0.0226 train_prob=0.0493 train_func=0.0127 val_loss=0.0397 val_prob=0.0198 val_func=0.0357
+[DeepGate] ===== Epoch 30/30 =====
+[DeepGate] Start train epoch pass: batches=4
+[DeepGate][train] batch=1/4 graphs=2 loss=0.0200 prob=0.0410 func=0.0119
+[DeepGate][train] batch=2/4 graphs=2 loss=0.0209 prob=0.0483 func=0.0112
+[DeepGate][train] batch=3/4 graphs=2 loss=0.0236 prob=0.0490 func=0.0138
+[DeepGate][train] batch=4/4 graphs=1 loss=0.0244 prob=0.0547 func=0.0134
+[DeepGate] Start val epoch pass: batches=1
+[DeepGate][val] batch=1/1 graphs=2 loss=0.0397 prob=0.0196 func=0.0358
+epoch=30 train_loss=0.0219 train_prob=0.0473 train_func=0.0125 val_loss=0.0397 val_prob=0.0196 val_func=0.0358
+saved_checkpoint=artifacts\formal\deepgate_best.pth

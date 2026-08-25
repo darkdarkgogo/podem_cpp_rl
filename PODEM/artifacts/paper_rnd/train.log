@@ -1,0 +1,21 @@
+TRAIN_START sweep=1/1 circuit=s38417_scan faults=100
+TRAIN_RESULT {"circuit": "s38417_scan", "summary": {"aborted": 61, "backtracks": 6067, "decisions": 13337, "detected": 39, "episodes": 100, "redundant": 0}, "sweep": 1}
+TRAIN_START sweep=1/1 circuit=c6288 faults=100
+TRAIN_RESULT {"circuit": "c6288", "summary": {"aborted": 8, "backtracks": 1045, "decisions": 15843, "detected": 92, "episodes": 100, "redundant": 0}, "sweep": 1}
+TRAINING_COMPLETE runs=2 updates=200
+
+#Circuit Summary:
+#---------------
+#number of inputs = 1664
+#number of outputs = 1742
+#number of gates = 22179
+#number of wires = 23843
+#number of equivalent faults = 31180
+
+#Circuit Summary:
+#---------------
+#number of inputs = 32
+#number of outputs = 32
+#number of gates = 2416
+#number of wires = 2448
+#number of equivalent faults = 7744

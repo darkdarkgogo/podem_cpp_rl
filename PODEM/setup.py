@@ -25,9 +25,9 @@ DEEPGATE_PACKAGE_ROOT = "vendor/deepgate_recgnn_extractor/deepgate_recgnn_extrac
 class BuildExt(build_ext):
     def build_extensions(self):
         if self.compiler.compiler_type == "msvc":
-            compile_args = ["/std:c++14", "/EHsc"]
+            compile_args = ["/std:c++14", "/EHsc", "/O2"]
         else:
-            compile_args = ["-std=c++11"]
+            compile_args = ["-std=c++11", "-Ofast"]
         for extension in self.extensions:
             extension.extra_compile_args = compile_args
         super().build_extensions()
