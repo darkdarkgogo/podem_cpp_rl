@@ -1,0 +1,56 @@
+CONVERT_START circuit=c6288
+PROFILE_START circuit=c6288
+PROFILE_RESULT circuit=c6288 profiled=7744 eligible=7712 selected=100 top=97 cutoff=97
+CONVERT_START circuit=s38417_scan
+PROFILE_START circuit=s38417_scan
+PROFILE_RESULT circuit=s38417_scan profiled=31180 eligible=31067 selected=100 top=97 cutoff=97
+MANIFEST E:\����\cpp podem\PoDemFan_N-detect_ATPG_Test_Compression\PODEM\artifacts\paper_v2\training_manifest.json
+
+#Circuit Summary:
+#---------------
+#number of inputs = 32
+#number of outputs = 32
+#number of gates = 2416
+#number of wires = 2448
+#number of equivalent faults = 7744
+
+#Circuit Summary:
+#---------------
+#number of inputs = 32
+#number of outputs = 32
+#number of gates = 2416
+#number of wires = 2448
+#number of equivalent faults = 7744
+
+#Circuit Summary:
+#---------------
+#number of inputs = 32
+#number of outputs = 32
+#number of gates = 2416
+#number of wires = 2448
+#number of equivalent faults = 7744
+
+#Circuit Summary:
+#---------------
+#number of inputs = 1664
+#number of outputs = 1742
+#number of gates = 22179
+#number of wires = 23843
+#number of equivalent faults = 31180
+
+#Circuit Summary:
+#---------------
+#number of inputs = 1664
+#number of outputs = 1742
+#number of gates = 23319
+#number of wires = 24983
+#number of equivalent faults = 31180
+
+#Circuit Summary:
+#---------------
+#number of inputs = 1664
+#number of outputs = 1742
+#number of gates = 23319
+#number of wires = 24983
+#number of equivalent faults = 31180
+PREPARE_TIMING seconds=63.878 exit=0

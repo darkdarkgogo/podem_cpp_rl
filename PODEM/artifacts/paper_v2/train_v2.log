@@ -1,0 +1,101 @@
+TRAIN_START sweep=1/5 circuit=s38417_scan faults=100
+
+#Circuit Summary:
+#---------------
+#number of inputs = 1664
+#number of outputs = 1742
+#number of gates = 23319
+#number of wires = 24983
+#number of equivalent faults = 31180
+TRAIN_RESULT {"circuit": "s38417_scan", "summary": {"aborted": 65, "backtracks": 6454, "decisions": 13737, "detected": 35, "episodes": 100, "redundant": 0}, "sweep": 1}
+TRAIN_START sweep=1/5 circuit=c6288 faults=100
+
+#Circuit Summary:
+#---------------
+#number of inputs = 32
+#number of outputs = 32
+#number of gates = 2416
+#number of wires = 2448
+#number of equivalent faults = 7744
+TRAIN_RESULT {"circuit": "c6288", "summary": {"aborted": 6, "backtracks": 825, "decisions": 16642, "detected": 94, "episodes": 100, "redundant": 0}, "sweep": 1}
+TRAIN_START sweep=2/5 circuit=c6288 faults=100
+
+#Circuit Summary:
+#---------------
+#number of inputs = 32
+#number of outputs = 32
+#number of gates = 2416
+#number of wires = 2448
+#number of equivalent faults = 7744
+TRAIN_RESULT {"circuit": "c6288", "summary": {"aborted": 6, "backtracks": 952, "decisions": 19744, "detected": 94, "episodes": 100, "redundant": 0}, "sweep": 2}
+TRAIN_START sweep=2/5 circuit=s38417_scan faults=100
+
+#Circuit Summary:
+#---------------
+#number of inputs = 1664
+#number of outputs = 1742
+#number of gates = 23319
+#number of wires = 24983
+#number of equivalent faults = 31180
+TRAIN_RESULT {"circuit": "s38417_scan", "summary": {"aborted": 65, "backtracks": 6497, "decisions": 13233, "detected": 35, "episodes": 100, "redundant": 0}, "sweep": 2}
+TRAIN_START sweep=3/5 circuit=c6288 faults=100
+
+#Circuit Summary:
+#---------------
+#number of inputs = 32
+#number of outputs = 32
+#number of gates = 2416
+#number of wires = 2448
+#number of equivalent faults = 7744
+TRAIN_RESULT {"circuit": "c6288", "summary": {"aborted": 4, "backtracks": 810, "decisions": 13040, "detected": 96, "episodes": 100, "redundant": 0}, "sweep": 3}
+TRAIN_START sweep=3/5 circuit=s38417_scan faults=100
+
+#Circuit Summary:
+#---------------
+#number of inputs = 1664
+#number of outputs = 1742
+#number of gates = 23319
+#number of wires = 24983
+#number of equivalent faults = 31180
+TRAIN_RESULT {"circuit": "s38417_scan", "summary": {"aborted": 68, "backtracks": 6714, "decisions": 13937, "detected": 32, "episodes": 100, "redundant": 0}, "sweep": 3}
+TRAIN_START sweep=4/5 circuit=c6288 faults=100
+
+#Circuit Summary:
+#---------------
+#number of inputs = 32
+#number of outputs = 32
+#number of gates = 2416
+#number of wires = 2448
+#number of equivalent faults = 7744
+TRAIN_RESULT {"circuit": "c6288", "summary": {"aborted": 5, "backtracks": 1095, "decisions": 14695, "detected": 95, "episodes": 100, "redundant": 0}, "sweep": 4}
+TRAIN_START sweep=4/5 circuit=s38417_scan faults=100
+
+#Circuit Summary:
+#---------------
+#number of inputs = 1664
+#number of outputs = 1742
+#number of gates = 23319
+#number of wires = 24983
+#number of equivalent faults = 31180
+TRAIN_RESULT {"circuit": "s38417_scan", "summary": {"aborted": 62, "backtracks": 6120, "decisions": 13692, "detected": 38, "episodes": 100, "redundant": 0}, "sweep": 4}
+TRAIN_START sweep=5/5 circuit=s38417_scan faults=100
+
+#Circuit Summary:
+#---------------
+#number of inputs = 1664
+#number of outputs = 1742
+#number of gates = 23319
+#number of wires = 24983
+#number of equivalent faults = 31180
+TRAIN_RESULT {"circuit": "s38417_scan", "summary": {"aborted": 58, "backtracks": 5762, "decisions": 13203, "detected": 42, "episodes": 100, "redundant": 0}, "sweep": 5}
+TRAIN_START sweep=5/5 circuit=c6288 faults=100
+
+#Circuit Summary:
+#---------------
+#number of inputs = 32
+#number of outputs = 32
+#number of gates = 2416
+#number of wires = 2448
+#number of equivalent faults = 7744
+TRAIN_RESULT {"circuit": "c6288", "summary": {"aborted": 6, "backtracks": 1391, "decisions": 18003, "detected": 94, "episodes": 100, "redundant": 0}, "sweep": 5}
+TRAINING_COMPLETE runs=10 updates=1000

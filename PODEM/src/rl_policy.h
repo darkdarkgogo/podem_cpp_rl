@@ -37,6 +37,8 @@ struct EpisodeResult {
   std::string fault_id;
   int outcome;
   int backtracks;
+  unsigned long backtrace_steps;
+  unsigned long pi_visits;
   unsigned long decisions;
 };
 
@@ -45,8 +47,13 @@ public:
   virtual ~DecisionPolicy() {}
   virtual int select(const DecisionRequest &request) = 0;
   virtual bool needs_gate_names() const { return true; }
+  virtual bool wants_training_events() const { return false; }
+  virtual bool supports(DecisionMode mode) const { return true; }
   virtual void on_episode_start(const std::string &fault_id) {}
   virtual void on_backtrack(unsigned long decision_sequence) {}
+  virtual void on_backtrace_step(unsigned long decision_sequence) {}
+  virtual void on_pi_not_done(unsigned long decision_sequence, int backtracks,
+                              unsigned long pi_visits) {}
   virtual void on_episode_end(const EpisodeResult &result) {}
 };
 
@@ -74,8 +81,11 @@ public:
   std::vector<float> optimized_logits(
       DecisionMode mode, const std::vector<float> &objective,
       const std::vector<std::vector<float> > &candidates) const;
+  std::vector<float> backtrace_action_logits(
+      const std::vector<float> &objective, int objective_value) const;
   std::size_t embedding_dimension() const { return embedding_dim_; }
   std::size_t hidden_dimension() const { return hidden_dim_; }
+  bool is_v2() const { return version_ == 2; }
 
 private:
   struct Tensor {
@@ -106,10 +116,12 @@ private:
 
   std::size_t embedding_dim_ = 0;
   std::size_t hidden_dim_ = 0;
+  int version_ = 0;
   std::unordered_map<std::string, Tensor> tensors_;
   const Tensor *gate_weight_ = nullptr;
   const Tensor *gate_bias_ = nullptr;
   const Tensor *mode_embedding_ = nullptr;
+  const Tensor *objective_value_embedding_ = nullptr;
   ActorHead backtrace_head_;
   ActorHead propagation_head_;
 
@@ -124,6 +136,9 @@ public:
                     const std::vector<std::string> &gate_names_by_id);
   int select(const DecisionRequest &request) override;
   bool needs_gate_names() const override { return false; }
+  bool supports(DecisionMode mode) const override {
+    return !actor_.is_v2() || mode == DecisionMode::BACKTRACE;
+  }
 
 private:
   const float *cached_gate(DecisionMode mode, std::size_t gate_id) const;
@@ -134,6 +149,7 @@ private:
   std::vector<float> propagation_cache_;
   std::vector<float> state_buffer_;
   std::vector<float> hidden_buffer_;
+  std::vector<float> v2_logits_cache_;
 };
 
 std::string fnv1a_file_hash(const std::string &path);

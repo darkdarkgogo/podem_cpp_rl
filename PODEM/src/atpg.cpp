@@ -97,7 +97,8 @@ void ATPG::test()
 			}
 			if (collect_fault_profiles)
 				fault_profiles.push_back(
-						{fault_identifier(fault_under_test), outcome, current_backtracks});
+						{fault_identifier(fault_under_test), outcome, current_backtracks,
+						 episode_backtrace_steps});
 			fault_under_test->test_tried = true;
 			fault_under_test = nullptr;
 			for (fptr fptr_ele : flist_undetect)

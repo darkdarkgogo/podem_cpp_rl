@@ -70,6 +70,18 @@ public:
 		string fault_id;
 		int outcome;
 		int backtracks;
+		unsigned long backtrace_steps;
+	};
+	struct FaultCatalogEntry
+	{
+		string fault_id;
+		string node_name;
+		string input_wire_name;
+		int io;
+		int input_index;
+		int input_occurrence;
+		int fault_type;
+		int eqv_fault_num;
 	};
 
 	ATPG();
@@ -104,6 +116,9 @@ public:
 	void create_dummy_gate();
 	void generate_fault_list();
 	void compute_fault_coverage();
+	void set_fault_map_path(const string &path) { fault_map_path = path; }
+	vector<FaultCatalogEntry> get_fault_catalog() const;
+	int get_uncollapsed_fault_count() const { return num_of_gate_fault; }
 
 	/*defined in tdfsim.cpp*/
 	void generate_tdfault_list();
@@ -200,6 +215,8 @@ private:
 
 	/*  in init_flist.cpp */
 	int num_of_gate_fault; // total number of gate-level uncollapsed faults in the whole circuit
+	string fault_map_path;
+	void load_mapped_fault_list();
 
 	char itoc(const int &);
 
@@ -263,6 +280,9 @@ private:
 	/* declared in podem.cpp */
 	int no_of_backtracks{}; // current number of backtracks
 	unsigned long total_backtrace_steps{}; // gate-to-input traversals during backtrace
+	unsigned long episode_backtrace_steps{};
+	unsigned long rl_pi_visits{};
+	unsigned long rl_pending_pi_assignments{};
 	bool find_test{};				// true when a test pattern is found
 	bool no_test{};					// true when it is proven that no test exists for this fault
 
@@ -284,6 +304,7 @@ private:
 									 const vector<wptr> &);
 	bool rl_enabled_for(smartatpg::DecisionMode) const;
 	string fault_identifier(fptr) const;
+	void notify_pi_result(bool detected);
 	void notify_episode_end(const int &);
 
 	shared_ptr<smartatpg::DecisionPolicy> decision_policy;
@@ -454,7 +475,7 @@ private:
 	// A fault is defined on a wire.
 	// The fault name is associated with a node.
 	// If there is no fanout:
-	//   wireA \ 
+	//   wireA (upper input)
   //         node1  - wireC - node2
 	//   wireB /
 	//  then wireC has two faults, associated with "node1 output faults"
@@ -487,5 +508,6 @@ private:
 		int fault_no;				 /* fault index */
 		int detected_time{}; /* for N-detect */
 		bool tried_dtc;			 // for DTC flag
+		string external_id; // original fault ID when using a mapped binary netlist
 	};										 // class FAULT
 };											 // class ATPG

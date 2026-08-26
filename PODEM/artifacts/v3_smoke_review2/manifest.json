@@ -1,0 +1,35 @@
+{
+  "format": "RL_PODEM_PAPER_TRAINING_V3",
+  "training_fault_count_per_circuit": 2,
+  "validation_fault_count_per_circuit": 2,
+  "backtrack_limits": {
+    "profile": 500,
+    "training": 500,
+    "validation": 500
+  },
+  "profile_seed": 14,
+  "split_seed": 2026,
+  "circuits": [
+    {
+      "name": "c432",
+      "source_circuit": "E:\\桌面\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\sample_circuits\\c432.bench",
+      "circuit": "E:\\桌面\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\sample_circuits\\c432_binary.bench",
+      "fault_map": "E:\\桌面\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\sample_circuits\\c432_binary.faultmap",
+      "embeddings": "E:\\桌面\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\v2_smoke\\c432_binary.emb",
+      "artifact_sha256": {
+        "source_circuit": "b4ac80a9b44ea2d956bbea725c34e5f7b10d88e8e3ad1014b9b4d1608fa8114f",
+        "circuit": "0e390b74ac47d247a37b3f46b2c1a52efdfbd4aea3bbfd178f243bba22405547",
+        "fault_map": "7554763345b7076975f2881063ff9480874ac22b4808629600a89861603a6e66",
+        "embeddings": "36096dbf0760488066720a12b526c850d2ba5a6744bbc821c7ceb5cf616ff9c6"
+      },
+      "training_fault_ids": [
+        "G199:GO:sa1",
+        "G426:GO:sa0"
+      ],
+      "validation_fault_ids": [
+        "G430:GI1:sa1",
+        "G418:GO:sa0"
+      ]
+    }
+  ]
+}

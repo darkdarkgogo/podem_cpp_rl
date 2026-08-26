@@ -1,0 +1,12 @@
+
+#Circuit Summary:
+#---------------
+#number of inputs = 36
+#number of outputs = 7
+#number of gates = 288
+#number of wires = 324
+#atpg: cputime for reading in circuit sample_circuits\c432_binary.bench: 0.000000s 0.000000s
+#atpg: cputime for levelling circuit sample_circuits\c432_binary.bench: 0.001000s 0.001000s
+#atpg: cputime for rearranging gate inputs sample_circuits\c432_binary.bench: 0.000000s 0.001000s
+#atpg: cputime for creating dummy nodes sample_circuits\c432_binary.bench: 0.000000s 0.001000s
+ATPG failed: Cannot open fault map: sample_circuits\missing.faultmap

@@ -26,6 +26,9 @@ int ATPG::podem(const fptr fault, int &current_backtracks)
 		sort_wlist[i]->value = U;
 	}
 	no_of_backtracks = 0;
+	episode_backtrace_steps = 0;
+	rl_pi_visits = 0;
+	rl_pending_pi_assignments = 0;
 	find_test = false;
 	no_test = false;
 	rl_decision_sequence = 0;
@@ -57,6 +60,7 @@ int ATPG::podem(const fptr fault, int &current_backtracks)
 				forward_imply(wfault); // propagate fault effect
 			if (check_test())
 				find_test = true; // if fault effect reaches PO, done. Fig 7.10
+			notify_pi_result(find_test);
 			break;
 		case CONFLICT:
 			no_test = true; // cannot achieve initial objective, no test
@@ -101,6 +105,7 @@ int ATPG::podem(const fptr fault, int &current_backtracks)
 					decision_tree.front()->value = decision_tree.front()->value ^ 1; // flip last decision
 					decision_tree.front()->set_changed();														 // this PI has been changed
 					decision_tree.front()->set_all_assigned();
+					++rl_pending_pi_assignments;
 					no_of_backtracks++;
 				++rl_path_lock_generation;
 				rl_propagation_lock = nullptr;
@@ -121,7 +126,9 @@ int ATPG::podem(const fptr fault, int &current_backtracks)
 			sim();
 			if (wfault = fault_evaluate(fault))
 				forward_imply(wfault);
-			if (check_test())
+			const bool detected_this_assignment = check_test();
+			notify_pi_result(detected_this_assignment);
+			if (detected_this_assignment)
 			{
 				find_test = true;
 				/* if multiple patterns per fault, print out every test cube */
@@ -156,6 +163,7 @@ int ATPG::podem(const fptr fault, int &current_backtracks)
 							decision_tree.front()->value = decision_tree.front()->value ^ 1;
 							decision_tree.front()->set_changed();
 							decision_tree.front()->set_all_assigned();
+							++rl_pending_pi_assignments;
 							no_of_backtracks++;
 							++rl_path_lock_generation;
 							rl_propagation_lock = nullptr;
@@ -438,6 +446,7 @@ ATPG::wptr ATPG::find_pi_assignment(const wptr object_wire, const int &object_le
 	if (object_wire->is_input())
 	{
 		object_wire->value = object_level;
+		++rl_pending_pi_assignments;
 		return (object_wire);
 	}
 
@@ -484,6 +493,8 @@ ATPG::wptr ATPG::find_pi_assignment(const wptr object_wire, const int &object_le
 						object_level, candidates);
 				new_object_wire = candidates[selected];
 			}
+			else if (!new_object_wire && candidates.empty())
+				return nullptr;
 
 			if (new_object_wire)
 			{
@@ -535,6 +546,9 @@ ATPG::wptr ATPG::find_pi_assignment(const wptr object_wire, const int &object_le
 		if (new_object_wire)
 		{
 			total_backtrace_steps++;
+			episode_backtrace_steps++;
+			if (decision_policy && decision_policy->wants_training_events())
+				decision_policy->on_backtrace_step(last_policy_decision_sequence);
 			return (find_pi_assignment(new_object_wire, new_object_level));
 		}
 		else
@@ -844,6 +858,8 @@ int ATPG::backward_imply(const wptr current_wire, const int &desired_logic_value
 		}
 		current_wire->value = desired_logic_value; // assign PI to the objective value
 		current_wire->set_changed();
+		if (rl_podem_episode_active)
+			++rl_pending_pi_assignments;
 		// CHANGED means the logic value on this wire has recently been changed
 		return (TRUE);
 	}

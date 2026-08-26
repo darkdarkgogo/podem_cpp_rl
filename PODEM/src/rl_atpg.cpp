@@ -11,13 +11,33 @@ void ATPG::set_decision_policy(
 
 void ATPG::enable_rl_inference(const string &embedding_path,
                                const string &actor_path) {
-  decision_policy = make_shared<smartatpg::NativeActorPolicy>(
+  shared_ptr<smartatpg::DecisionPolicy> policy =
+      make_shared<smartatpg::NativeActorPolicy>(
       embedding_path, actor_path, smartatpg::fnv1a_file_hash(filename),
       rl_gate_names_by_id);
+  if ((smartatpg::rl_mode_enables(rl_mode,
+                                  smartatpg::DecisionMode::BACKTRACE) &&
+       !policy->supports(smartatpg::DecisionMode::BACKTRACE)) ||
+      (smartatpg::rl_mode_enables(rl_mode,
+                                  smartatpg::DecisionMode::PROPAGATION) &&
+       !policy->supports(smartatpg::DecisionMode::PROPAGATION))) {
+    throw runtime_error("Selected RL mode is not supported by this actor");
+  }
+  decision_policy = policy;
 }
 
 void ATPG::set_rl_mode(const string &value) {
-  rl_mode = smartatpg::parse_rl_mode(value);
+  const smartatpg::RlMode selected = smartatpg::parse_rl_mode(value);
+  if (decision_policy &&
+      ((smartatpg::rl_mode_enables(selected,
+                                   smartatpg::DecisionMode::BACKTRACE) &&
+        !decision_policy->supports(smartatpg::DecisionMode::BACKTRACE)) ||
+       (smartatpg::rl_mode_enables(selected,
+                                   smartatpg::DecisionMode::PROPAGATION) &&
+        !decision_policy->supports(smartatpg::DecisionMode::PROPAGATION)))) {
+    throw runtime_error("Selected RL mode is not supported by this actor");
+  }
+  rl_mode = selected;
 }
 
 void ATPG::disable_rl_policy() {
@@ -112,10 +132,24 @@ bool ATPG::rl_enabled_for(smartatpg::DecisionMode mode) const {
 }
 
 string ATPG::fault_identifier(const fptr fault) const {
+  if (!fault->external_id.empty()) {
+    return fault->external_id;
+  }
   string id = fault->node ? fault->node->name : "<primary-input>";
   id += (fault->io == GO ? ":GO:" : ":GI" + to_string(fault->index) + ":");
   id += fault->fault_type == STUCK1 ? "sa1" : "sa0";
   return id;
+}
+
+void ATPG::notify_pi_result(bool detected) {
+  rl_pi_visits += rl_pending_pi_assignments;
+  rl_pending_pi_assignments = 0;
+  const bool aborted_at_limit = !detected && no_of_backtracks >= backtrack_limit;
+  if (decision_policy && decision_policy->wants_training_events() && !detected &&
+      !aborted_at_limit) {
+    decision_policy->on_pi_not_done(last_policy_decision_sequence,
+                                    no_of_backtracks, rl_pi_visits);
+  }
 }
 
 void ATPG::notify_episode_end(const int &outcome) {
@@ -127,6 +161,8 @@ void ATPG::notify_episode_end(const int &outcome) {
   result.fault_id = current_rl_fault_id;
   result.outcome = outcome;
   result.backtracks = no_of_backtracks;
+  result.backtrace_steps = episode_backtrace_steps;
+  result.pi_visits = rl_pi_visits;
   result.decisions = rl_decision_sequence;
   rl_podem_episode_active = false;
   decision_policy->on_episode_end(result);

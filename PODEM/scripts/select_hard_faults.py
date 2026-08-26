@@ -14,13 +14,23 @@ def main() -> None:
     parser.add_argument("--count", type=int, default=100)
     parser.add_argument("--backtrack-limit", type=int, default=97)
     parser.add_argument("--seed", type=int, default=14)
+    parser.add_argument("--fault-map", type=Path)
     args = parser.parse_args()
 
     profiles = profile_cpp_podem(
-        args.circuit, backtrack_limit=args.backtrack_limit, seed=args.seed
+        args.circuit,
+        backtrack_limit=args.backtrack_limit,
+        seed=args.seed,
+        fault_map_path=args.fault_map,
     )
     eligible = [profile for profile in profiles if int(profile["outcome"]) != 0]
-    eligible.sort(key=lambda item: (-int(item["backtracks"]), item["fault_id"]))
+    eligible.sort(
+        key=lambda item: (
+            -int(item["backtracks"]),
+            -int(item.get("backtrace_steps", 0)),
+            item["fault_id"],
+        )
+    )
     if len(eligible) < args.count:
         raise RuntimeError(
             f"Only {len(eligible)} non-redundant faults are available; "

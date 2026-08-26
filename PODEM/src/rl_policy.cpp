@@ -22,7 +22,18 @@ void require_finite(float value, const std::string &context) {
   require(std::isfinite(value), "Non-finite value in " + context);
 }
 
-std::vector<std::string> required_tensor_names() {
+std::vector<std::string> required_tensor_names(int version) {
+  if (version == 2) {
+    return {
+        "gate_encoder.0.weight",
+        "gate_encoder.0.bias",
+        "objective_value_embedding.weight",
+        "backtrace_actor.0.weight",
+        "backtrace_actor.0.bias",
+        "backtrace_actor.2.weight",
+        "backtrace_actor.2.bias",
+    };
+  }
   return {
       "gate_encoder.0.weight",
       "gate_encoder.0.bias",
@@ -104,7 +115,10 @@ void ActorModel::load(const std::string &path) {
 
   std::string header;
   std::getline(input, header);
-  require(header == "SMARTATPG_ACTOR_V1",
+  version_ = header == "SMARTATPG_ACTOR_V1"
+                 ? 1
+                 : (header == "SMARTATPG_ACTOR_V2" ? 2 : 0);
+  require(version_ != 0,
           "Unsupported actor format in: " + path);
 
   std::string key;
@@ -139,7 +153,7 @@ void ActorModel::load(const std::string &path) {
   }
   require(found_end, "Actor file is missing the end marker: " + path);
 
-  const std::vector<std::string> names = required_tensor_names();
+  const std::vector<std::string> names = required_tensor_names(version_);
   for (const std::string &name : names) {
     tensor(name);
   }
@@ -151,11 +165,7 @@ void ActorModel::load(const std::string &path) {
                   tensor("gate_encoder.0.bias").cols ==
               hidden_dim_,
           "gate_encoder bias dimensions do not match actor header");
-  require(tensor("mode_embedding.weight").rows == 2 &&
-              tensor("mode_embedding.weight").cols == hidden_dim_,
-          "mode_embedding dimensions must be [2, hidden_dim]");
-
-  const auto validate_actor = [this](const std::string &prefix) {
+  const auto validate_v1_actor = [this](const std::string &prefix) {
     const Tensor &hidden_weight = tensor(prefix + ".0.weight");
     const Tensor &hidden_bias = tensor(prefix + ".0.bias");
     const Tensor &output_weight = tensor(prefix + ".2.weight");
@@ -170,11 +180,34 @@ void ActorModel::load(const std::string &path) {
     require(output_bias.values.size() == 1,
             prefix + " output bias dimensions are invalid");
   };
-  validate_actor("backtrace_actor");
-  validate_actor("propagation_actor");
 
   gate_weight_ = &tensor("gate_encoder.0.weight");
   gate_bias_ = &tensor("gate_encoder.0.bias");
+  mode_embedding_ = nullptr;
+  objective_value_embedding_ = nullptr;
+  if (version_ == 2) {
+    const Tensor &value_embedding = tensor("objective_value_embedding.weight");
+    require(value_embedding.rows == 2 && value_embedding.cols == hidden_dim_,
+            "objective_value_embedding dimensions must be [2, hidden_dim]");
+    require(tensor("backtrace_actor.0.weight").rows == hidden_dim_ &&
+                tensor("backtrace_actor.0.weight").cols == hidden_dim_,
+            "V2 backtrace hidden weight dimensions are invalid");
+    require(tensor("backtrace_actor.0.bias").values.size() == hidden_dim_,
+            "V2 backtrace hidden bias dimensions are invalid");
+    require(tensor("backtrace_actor.2.weight").rows == 2 &&
+                tensor("backtrace_actor.2.weight").cols == hidden_dim_,
+            "V2 backtrace output weight dimensions must be [2, hidden_dim]");
+    require(tensor("backtrace_actor.2.bias").values.size() == 2,
+            "V2 backtrace output bias dimensions must be [2]");
+    objective_value_embedding_ = &value_embedding;
+    return;
+  }
+
+  require(tensor("mode_embedding.weight").rows == 2 &&
+              tensor("mode_embedding.weight").cols == hidden_dim_,
+          "mode_embedding dimensions must be [2, hidden_dim]");
+  validate_v1_actor("backtrace_actor");
+  validate_v1_actor("propagation_actor");
   mode_embedding_ = &tensor("mode_embedding.weight");
   backtrace_head_.hidden_weight = &tensor("backtrace_actor.0.weight");
   backtrace_head_.hidden_bias = &tensor("backtrace_actor.0.bias");
@@ -363,6 +396,36 @@ std::vector<float> ActorModel::optimized_logits(
   return logits;
 }
 
+std::vector<float> ActorModel::backtrace_action_logits(
+    const std::vector<float> &objective, int objective_value) const {
+  require(version_ == 2,
+          "Object-only backtrace logits require a V2 actor");
+  require(objective.size() == embedding_dim_,
+          "Gate embedding dimension does not match V2 actor");
+  require(objective_value == 0 || objective_value == 1,
+          "Backtrace objective value must be 0 or 1");
+  require(gate_weight_ != nullptr && gate_bias_ != nullptr &&
+              objective_value_embedding_ != nullptr,
+          "V2 actor tensors are not initialized");
+
+  std::vector<float> state(hidden_dim_);
+  for (std::size_t row = 0; row < hidden_dim_; ++row) {
+    float value = gate_bias_->values[row];
+    const std::size_t offset = row * embedding_dim_;
+    for (std::size_t col = 0; col < embedding_dim_; ++col) {
+      value += gate_weight_->values[offset + col] * objective[col];
+    }
+    state[row] = std::tanh(value) +
+                 objective_value_embedding_->values[
+                     static_cast<std::size_t>(objective_value) * hidden_dim_ + row];
+  }
+  const std::vector<float> hidden =
+      dense(tensor("backtrace_actor.0.weight"),
+            tensor("backtrace_actor.0.bias"), state, true);
+  return dense(tensor("backtrace_actor.2.weight"),
+               tensor("backtrace_actor.2.bias"), hidden, false);
+}
+
 NativeActorPolicy::NativeActorPolicy(
     const std::string &embedding_path, const std::string &actor_path,
     const std::string &expected_circuit_hash,
@@ -375,6 +438,23 @@ NativeActorPolicy::NativeActorPolicy(
   require(!gate_names_by_id.empty(), "Circuit gate table must not be empty");
 
   gate_count_ = gate_names_by_id.size();
+  if (actor_.is_v2()) {
+    v2_logits_cache_.resize(gate_count_ * 4);
+    for (std::size_t gate_id = 0; gate_id < gate_count_; ++gate_id) {
+      const std::vector<float> &embedding =
+          embeddings.at(gate_names_by_id[gate_id]);
+      for (int objective_value = 0; objective_value < 2; ++objective_value) {
+        const std::vector<float> logits =
+            actor_.backtrace_action_logits(embedding, objective_value);
+        const std::size_t offset = gate_id * 4 + objective_value * 2;
+        v2_logits_cache_[offset] = logits[0];
+        v2_logits_cache_[offset + 1] = logits[1];
+      }
+    }
+    embeddings.clear();
+    return;
+  }
+
   const std::size_t hidden_dim = actor_.hidden_dimension();
   backtrace_cache_.resize(gate_count_ * hidden_dim);
   propagation_cache_.resize(gate_count_ * hidden_dim);
@@ -401,6 +481,20 @@ const float *NativeActorPolicy::cached_gate(DecisionMode mode,
 int NativeActorPolicy::select(const DecisionRequest &request) {
   require(request.candidate_ids != nullptr && request.candidate_count > 1,
           "Policy should only be called for multi-candidate decisions");
+  if (actor_.is_v2()) {
+    require(request.mode == DecisionMode::BACKTRACE,
+            "V2 actor supports backtrace_rl only");
+    require(request.candidate_count == 2,
+            "V2 actor requires a binary gate with two available inputs");
+    require(request.objective_id < gate_count_,
+            "V2 objective gate ID is out of range");
+    require(request.objective_value == 0 || request.objective_value == 1,
+            "V2 objective value must be 0 or 1");
+    const std::size_t offset = request.objective_id * 4 +
+                               static_cast<std::size_t>(request.objective_value) * 2;
+    return v2_logits_cache_[offset + 1] > v2_logits_cache_[offset] ? 1 : 0;
+  }
+
   const std::size_t hidden_dim = actor_.hidden_dimension();
   const float *state = nullptr;
   if (request.mode == DecisionMode::BACKTRACE) {

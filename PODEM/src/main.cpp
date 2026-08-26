@@ -11,7 +11,7 @@ void usage();
 
 int main(int argc, char *argv[])
 {
-	string inpFile, vetFile, rlEmbeddingFile, rlActorFile;
+	string inpFile, vetFile, rlEmbeddingFile, rlActorFile, faultMapFile;
 	string rlMode = "backtrace_rl";
 	bool rlModeSpecified = false;
 	int i, j;
@@ -146,6 +146,16 @@ int main(int argc, char *argv[])
 			rlModeSpecified = true;
 			i += 2;
 		}
+		else if (strcmp(argv[i], "-fault-map") == 0)
+		{
+			if (i + 1 >= argc)
+			{
+				fprintf(stderr, "-fault-map requires a filename\n");
+				return EXIT_FAILURE;
+			}
+			faultMapFile = string(argv[i + 1]);
+			i += 2;
+		}
 		else if (argv[i][0] == '-')
 		{
 			j = 1;
@@ -197,6 +207,7 @@ int main(int argc, char *argv[])
 
 	/* read in and parse the input file */
 	atpg.input(inpFile); // input.cpp
+	atpg.set_fault_map_path(faultMapFile);
 	if (!rlEmbeddingFile.empty())
 	{
 		try
@@ -226,23 +237,22 @@ int main(int argc, char *argv[])
 	atpg.create_dummy_gate(); // init_flist.cpp
 	atpg.timer(stdout, "for creating dummy nodes");
 
-	if (!atpg.get_tdfsim_only() && atpg.get_SAF_atpg())
-		atpg.generate_fault_list(); // init_flist.cpp
-	else
-		atpg.generate_tdfault_list();
-	atpg.timer(stdout, "for generating fault list");
-
 	try
 	{
+		if (!atpg.get_tdfsim_only() && atpg.get_SAF_atpg())
+			atpg.generate_fault_list(); // init_flist.cpp
+		else
+			atpg.generate_tdfault_list();
+		atpg.timer(stdout, "for generating fault list");
 		atpg.test(); // atpg.cpp
+		if (!atpg.get_tdfsim_only())
+			atpg.compute_fault_coverage(); // init_flist.cpp
 	}
 	catch (const exception &error)
 	{
 		fprintf(stderr, "ATPG failed: %s\n", error.what());
 		return EXIT_FAILURE;
 	}
-	if (!atpg.get_tdfsim_only())
-		atpg.compute_fault_coverage(); // init_flist.cpp
 	atpg.timer(stdout, "for test pattern generation");
 	exit(EXIT_SUCCESS);
 }
@@ -258,6 +268,7 @@ void usage()
 	fprintf(stderr, "    -rl-emb <filename>: precomputed DeepGate embeddings\n");
 	fprintf(stderr, "    -rl-actor <filename>: exported PPO actor weights\n");
 	fprintf(stderr, "    -rl-mode <backtrace_rl|propagate_rl|both_rl>: RL decision scope (default: backtrace_rl)\n");
+	fprintf(stderr, "    -fault-map <filename>: preserve source collapsed faults on a transformed netlist\n");
 	exit(EXIT_FAILURE);
 
 } /* end of usage() */

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Tuple, Union
+from typing import Optional, Tuple, Union
 
 import torch
 
@@ -61,7 +61,17 @@ def _ensure_deepgate_importable() -> None:
     )
 
 
-def load_aligned_gate_embeddings(circuit, checkpoint_path: str) -> int:
+def _resolve_device(device: Optional[Union[str, torch.device]]) -> torch.device:
+    if device is not None:
+        return torch.device(device)
+    return torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
+
+def load_aligned_gate_embeddings(
+    circuit,
+    checkpoint_path: str,
+    device: Optional[Union[str, torch.device]] = None,
+) -> int:
     _ensure_deepgate_importable()
 
     from deepgate_recgnn_extractor import encode_bench
@@ -72,7 +82,12 @@ def load_aligned_gate_embeddings(circuit, checkpoint_path: str) -> int:
 
     print(f"[DeepGateBridge] Loading embeddings for bench: {bench_path}")
     print(f"[DeepGateBridge] DeepGate checkpoint: {checkpoint_path}")
-    result = encode_bench(bench_path, checkpoint_path=checkpoint_path, verbose=True)
+    result = encode_bench(
+        bench_path,
+        checkpoint_path=checkpoint_path,
+        device=_resolve_device(device),
+        verbose=True,
+    )
     node_embeddings = result["node_embeddings"]
     gate_meta = result["gate_meta"]
     embedding_by_name = {
@@ -128,6 +143,7 @@ def export_cpp_embeddings(
     bench_path: Union[str, Path],
     checkpoint_path: Union[str, Path],
     output_path: Union[str, Path],
+    device: Optional[Union[str, torch.device]] = None,
 ) -> Tuple[int, int]:
     """Encode one circuit and write the versioned C++ embedding table."""
     _ensure_deepgate_importable()
@@ -138,6 +154,7 @@ def export_cpp_embeddings(
     result = encode_bench(
         str(bench_path),
         checkpoint_path=str(Path(checkpoint_path).resolve()),
+        device=_resolve_device(device),
         verbose=True,
     )
     embeddings = result["node_embeddings"].detach().cpu().float()

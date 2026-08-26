@@ -15,13 +15,19 @@ atpg circuit.bench
 Run native RL inference after exporting artifacts:
 
 ```text
-atpg -rl-emb circuit.emb -rl-actor actor.txt -rl-mode backtrace_rl circuit.bench
+atpg -fault-map circuit_binary.faultmap -rl-emb circuit_binary.emb -rl-actor actor_v2.txt -rl-mode backtrace_rl circuit_binary.bench
 ```
 
 The embedding file is circuit-specific. The executable verifies its FNV-1a hash against the exact `.bench` file. `-rl-emb` and `-rl-actor` must be supplied together.
-The optional `-rl-mode` accepts `backtrace_rl`, `propagate_rl`, or `both_rl`.
-It defaults to `backtrace_rl`, which leaves D-frontier propagation on the
-original PODEM heuristic.
+V2 actors support `backtrace_rl` only. They produce both input logits in one
+forward pass and native C++ precomputes four floats per gate (objective 0/1,
+left/right). The PODEM hot path only applies the unknown-input mask, honors the
+path lock, and compares two cached values. V1 actors remain loadable and retain
+the legacy propagation modes.
+
+The `.faultmap` restores the source circuit's collapsed fault IDs and
+equivalent-fault weights on the transformed binary netlist. Its circuit hash is
+verified before ATPG starts.
 
 ## Set up the Python training environment
 
@@ -49,24 +55,50 @@ library lacks `std::mutex`. The two environment variables above make
 setuptools use the compiler environment already initialized by the Developer
 Command Prompt, including newer Visual Studio releases.
 
-## Export and train
+## Prepare and train the paper-reward V3 workflow
 
-The Python RL tools are included in this project. Run them from `PODEM`:
-
-```text
-python scripts/export_cpp_embeddings.py CIRCUIT.bench DEEPGATE_CHECKPOINT CIRCUIT.emb
-python scripts/train_cpp_podem.py CIRCUIT.bench CIRCUIT.emb PPO_CHECKPOINT ACTOR.txt --passes 1 --rl-mode backtrace_rl
-```
-
-Training calls the C++ PODEM engine through pybind11. At each enabled
-multi-candidate decision, Python samples an action from PPO. C++ remains
-responsible for objective generation, implication, fault propagation,
-backtracking, and test detection.
-
-To export an existing compatible PPO checkpoint without training:
+Convert any individual combinational benchmark without modifying its source:
 
 ```text
-python scripts/export_cpp_actor.py PPO_CHECKPOINT ACTOR.txt
+python scripts/convert_binary_bench.py sample_circuits/c432.bench
 ```
 
-The native actor uses deterministic `argmax` selection. Python training uses categorical sampling.
+The converter builds balanced two-input AND/OR/NAND/NOR trees, checks 256 random
+vectors for PO equivalence, and verifies the mapped fault catalog through C++.
+
+Prepare the paper-style `c6288` and full-scan `s38417` data. This command
+generates binary netlists, GPU DeepGate embeddings, profiles faults with a
+500-backtrack limit, and deterministically splits the top 150 hard faults into
+100 training faults and 50 validation faults per circuit:
+
+```text
+python scripts/prepare_paper_training.py artifacts/paper_v3 --count 100 --validation-count 50 --backtrack-limit 500 --deepgate-checkpoint artifacts/formal/deepgate_best.pth --device cuda:0
+```
+
+Train a fresh object-only PPO+RND model with the SmartATPG paper reward:
+
+```text
+python scripts/train_paper_rnd.py artifacts/paper_v3/training_manifest.json artifacts/paper_v3/training_state_v3.pth artifacts/paper_v3/actor_v2_best.txt --sweeps 5 --backtrack-limit 500
+```
+
+The extrinsic reward is `-0.1` per non-PI backtrace step,
+`10 - 7.5 * exp(0.07 * (backtracks + PI visits))` for a non-terminal PI,
+`+100` for detection, and `-100` for an undetected or aborted fault. RND remains
+a separately scaled intrinsic exploration bonus.
+
+Validation uses deterministic `argmax` without PPO or RND updates. The script
+writes `actor_v2_best.txt` for deployment and `actor_v2_latest.txt` for resume
+and diagnostics. Model selection first maximizes detected faults, then minimizes
+aborted faults, backtracks, gate-to-input backtrace steps, and decisions. V3
+training checkpoints intentionally reject V1/V2 checkpoints; the older actors
+and checkpoints remain untouched. The V3 manifest binds the source circuit,
+binary circuit, fault map, and embedding file by SHA256. Checkpoints also bind
+all PPO/RND hyperparameters, while each training record stores separate
+extrinsic, intrinsic, scaled-intrinsic, PPO-loss, and RND-loss metrics.
+
+Run the automated reward, event, checkpoint, validation, and Python/C++ parity
+checks after rebuilding the pybind extension:
+
+```text
+python scripts/verify_paper_v3.py
+```

@@ -10,9 +10,23 @@
 /**********************************************************************/
 
 #include "atpg.h"
+#include <cctype>
 #include <unordered_map>
+#include <unordered_set>
+
+namespace {
+
+void require_fault_map(bool condition, const string &message) {
+  if (!condition) throw runtime_error(message);
+}
+
+} // namespace
 
 void ATPG::generate_fault_list() {
+  if (!fault_map_path.empty()) {
+    load_mapped_fault_list();
+    return;
+  }
   int fault_num;
   wptr w;
   nptr n;
@@ -176,8 +190,162 @@ void ATPG::generate_fault_list() {
     //cout << f->fault_no << f->node->name << ":" << (f->io?"O":"I") << (f->io?9:(f->index)) << "SA" << f->fault_type << endl;
   }
 
+  unordered_map<string, int> identifier_counts;
+  for (fptr fault : flist_undetect) {
+    ++identifier_counts[fault_identifier(fault)];
+  }
+  unordered_map<string, int> duplicate_indices;
+  for (fptr fault : flist_undetect) {
+    const string identifier = fault_identifier(fault);
+    if (identifier_counts[identifier] <= 1) continue;
+    const int duplicate_index = duplicate_indices[identifier]++;
+    if (duplicate_index > 0) {
+      fault->external_id =
+          identifier + "@dup" + to_string(duplicate_index);
+    }
+  }
+
   fprintf(stdout, "#number of equivalent faults = %d\n", fault_num);
 }/* end of generate_fault_list */
+
+vector<ATPG::FaultCatalogEntry> ATPG::get_fault_catalog() const {
+  vector<FaultCatalogEntry> result;
+  for (const fptr fault : flist_undetect) {
+    FaultCatalogEntry entry;
+    entry.fault_id = fault_identifier(fault);
+    entry.node_name = fault->node->name;
+    entry.input_wire_name = fault->io == GI
+        ? fault->node->iwire[fault->index]->name
+        : "-";
+    entry.io = fault->io;
+    entry.input_index = fault->io == GI ? fault->index : -1;
+    entry.input_occurrence = -1;
+    if (fault->io == GI) {
+      entry.input_occurrence = 0;
+      for (int index = 0; index < fault->index; ++index) {
+        if (fault->node->iwire[index]->name == entry.input_wire_name) {
+          ++entry.input_occurrence;
+        }
+      }
+    }
+    entry.fault_type = fault->fault_type;
+    entry.eqv_fault_num = fault->eqv_fault_num;
+    result.push_back(entry);
+  }
+  return result;
+}
+
+void ATPG::load_mapped_fault_list() {
+  ifstream input(fault_map_path.c_str());
+  require_fault_map(input.good(), "Cannot open fault map: " + fault_map_path);
+
+  string token;
+  require_fault_map(static_cast<bool>(input >> token) &&
+                        token == "SMARTATPG_FAULT_MAP_V2",
+                    "Unsupported fault map format: " + fault_map_path);
+  string source_hash;
+  string circuit_hash;
+  size_t count = 0;
+  int expected_uncollapsed = 0;
+  require_fault_map(static_cast<bool>(input >> token >> source_hash) &&
+                        token == "source_hash" && source_hash.size() == 16 &&
+                        all_of(source_hash.begin(), source_hash.end(),
+                               [](unsigned char value) {
+                                 return isxdigit(value) != 0;
+                               }),
+                    "Invalid source hash in fault map: " + fault_map_path);
+  require_fault_map(static_cast<bool>(input >> token >> circuit_hash) &&
+                        token == "circuit_hash",
+                    "Invalid circuit hash in fault map: " + fault_map_path);
+  require_fault_map(circuit_hash == smartatpg::fnv1a_file_hash(filename),
+                    "Fault map circuit hash does not match: " + filename);
+  require_fault_map(static_cast<bool>(input >> token >> count) &&
+                        token == "count" && count > 0,
+                    "Invalid fault count in fault map: " + fault_map_path);
+  require_fault_map(static_cast<bool>(input >> token >> expected_uncollapsed) &&
+                        token == "uncollapsed_total" && expected_uncollapsed > 0,
+                    "Invalid uncollapsed count in fault map: " + fault_map_path);
+
+  unordered_set<string> fault_ids;
+  int uncollapsed_total = 0;
+  for (size_t fault_no = 0; fault_no < count; ++fault_no) {
+    string external_id;
+    string node_name;
+    string input_wire_name;
+    int io = -1;
+    int mapped_input_occurrence = -1;
+    int fault_type = -1;
+    int eqv_fault_num = 0;
+    require_fault_map(
+        static_cast<bool>(input >> token >> external_id >> node_name >>
+                          input_wire_name >> io >> mapped_input_occurrence >>
+                          fault_type >> eqv_fault_num) &&
+            token == "fault",
+        "Truncated fault map record in: " + fault_map_path);
+    require_fault_map(fault_ids.insert(external_id).second,
+                      "Duplicate fault ID in fault map: " + external_id);
+    require_fault_map((io == GI || io == GO) &&
+                          (fault_type == STUCK0 || fault_type == STUCK1) &&
+                          eqv_fault_num > 0,
+                      "Invalid fault attributes for: " + external_id);
+
+    nptr node = nfind(node_name);
+    require_fault_map(node != nullptr,
+                      "Unknown mapped fault node: " + node_name);
+    int input_index = 0;
+    wptr target_wire = nullptr;
+    if (io == GI) {
+      require_fault_map(mapped_input_occurrence >= 0,
+                        "Mapped input occurrence is invalid on node " +
+                            node_name);
+      int occurrence = 0;
+      bool found_input = false;
+      for (size_t index = 0; index < node->iwire.size(); ++index) {
+        if (node->iwire[index]->name != input_wire_name) continue;
+        if (occurrence++ == mapped_input_occurrence) {
+          input_index = static_cast<int>(index);
+          target_wire = node->iwire[index];
+          found_input = true;
+          break;
+        }
+      }
+      require_fault_map(found_input,
+                        "Unknown mapped input wire '" + input_wire_name +
+                            "' on node " + node_name);
+    } else {
+      require_fault_map(input_wire_name == "-" &&
+                            mapped_input_occurrence == -1,
+                        "GO fault must use '-' and index -1");
+      require_fault_map(!node->owire.empty(),
+                        "Mapped GO node has no output wire: " + node_name);
+      target_wire = node->owire.front();
+    }
+
+    fptr_s fault(new(nothrow) FAULT);
+    if (fault == nullptr) error("No more room!");
+    fault->node = node;
+    fault->io = static_cast<short>(io);
+    fault->index = static_cast<short>(input_index);
+    fault->fault_type = static_cast<short>(fault_type);
+    fault->eqv_fault_num = eqv_fault_num;
+    fault->to_swlist = target_wire->wlist_index;
+    fault->fault_no = static_cast<int>(fault_no);
+    fault->external_id = external_id;
+    uncollapsed_total += eqv_fault_num;
+    flist_undetect.push_front(fault.get());
+    flist.push_front(move(fault));
+  }
+  require_fault_map(static_cast<bool>(input >> token) && token == "end",
+                    "Fault map is missing its end marker: " + fault_map_path);
+  require_fault_map(!(input >> token),
+                    "Unexpected trailing data in fault map: " + fault_map_path);
+  require_fault_map(uncollapsed_total == expected_uncollapsed,
+                    "Fault map equivalent-fault total does not match header");
+  flist.reverse();
+  flist_undetect.reverse();
+  num_of_gate_fault = expected_uncollapsed;
+  fprintf(stdout, "#number of equivalent faults = %zu\n", count);
+}
 
 /* computing the actual fault coverage */
 void ATPG::compute_fault_coverage() {
