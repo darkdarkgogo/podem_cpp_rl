@@ -42,7 +42,11 @@ For every recognized expanded XOR cell:
    `Y` implementation gates. This removes their gate-output faults and any
    gate-input branch faults represented inside the expanded cell.
 2. Keep the `GO-SA0` and `GO-SA1` records on the original XOR output, such as
-   `G223`.
+   `G223`. If ordinary fault collapsing moved either fault into a downstream
+   representative, restore it as an explicit XOR-output record and remove its
+   complete old equivalence class from that representative's weight. For the
+   validated five-gate expansion, the old class has weight 1 for output SA0 and
+   weight 3 for output SA1; the restored logical output record has weight 1.
 3. Normalize each retained XOR output record to `eqv_fault_num = 1`. The source
    collapsed catalog can otherwise carry internal equivalent faults in this
    weight even after their explicit records have been removed.
@@ -60,8 +64,10 @@ to validate both values.
 
 The existing binary conversion of multi-input AND, OR, NAND, and NOR gates uses
 `__smartatpg_bin_*` nodes. Its fault map is generated from the original source
-catalog, so those synthetic nodes already receive no independent fault records.
-This behavior remains unchanged and is covered by regression checks.
+catalog, so synthetic output wires receive no independent fault records. An
+original gate-input branch fault can name a synthetic leaf gate as its mapped
+target, but its faulted input wire remains an original boundary wire. This
+behavior remains unchanged and is covered by regression checks.
 
 Original gate-input branch faults are not globally removed. Only faults inside
 a recognized XOR implementation are filtered. Changing the entire project to
@@ -79,7 +85,7 @@ and topology do not change. Curriculum manifests and teacher data reference a
 specific fault catalog and must be regenerated before any further training.
 Old training and benchmark artifacts are retained for comparison.
 
-Based on the current catalogs, the expected filtered collapsed counts are 452
+Based on the current catalogs, the expected filtered collapsed counts are 461
 records for `c432` and 534 records for `c499`. These values are regression-test
 expectations rather than constants in production filtering logic.
 
@@ -92,7 +98,8 @@ Verification must cover:
 3. Every recognized XOR output has exactly one `GO-SA0` and one `GO-SA1`, each
    with `eqv_fault_num = 1`.
 4. A malformed or partially matching expanded XOR causes conversion to fail.
-5. No `__smartatpg_bin_*` node receives an independent fault record.
+5. No `__smartatpg_bin_*` output wire receives an independent fault record;
+   mapped original input-branch records must still name an original input wire.
 6. `c6288`, which contains no commented expanded XOR cells, retains the same
    fault catalog and acts as the control circuit.
 7. The C++ loader accepts every regenerated map and reports totals matching its
