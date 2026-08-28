@@ -19,7 +19,7 @@
       "artifact_sha256": {
         "source_circuit": "b4ac80a9b44ea2d956bbea725c34e5f7b10d88e8e3ad1014b9b4d1608fa8114f",
         "circuit": "0e390b74ac47d247a37b3f46b2c1a52efdfbd4aea3bbfd178f243bba22405547",
-        "fault_map": "7554763345b7076975f2881063ff9480874ac22b4808629600a89861603a6e66",
+        "fault_map": "11880c752bad76859a6037ed84f03ccb1a4c8bf0a763a9bc62b90dbc55ba3d98",
         "embeddings": "36096dbf0760488066720a12b526c850d2ba5a6744bbc821c7ceb5cf616ff9c6"
       },
       "training_fault_ids": [

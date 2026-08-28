@@ -28,6 +28,7 @@ struct DecisionRequest {
   std::vector<std::string> candidate_names;
   const std::size_t *candidate_ids = nullptr;
   std::size_t candidate_count = 0;
+  int heuristic_action = -1;
   unsigned long sequence;
   std::string fault_id;
   int backtracks;
@@ -72,6 +73,10 @@ private:
 
 class ActorModel {
 public:
+  ActorModel() = default;
+  ActorModel(const ActorModel &) = delete;
+  ActorModel &operator=(const ActorModel &) = delete;
+
   void load(const std::string &path);
   std::vector<float> backtrace_logits(
       const std::vector<float> &objective,
@@ -112,6 +117,9 @@ private:
   std::vector<float> dense(const Tensor &weight, const Tensor &bias,
                            const std::vector<float> &input,
                            bool apply_tanh) const;
+  void backtrace_action_logits_into(const float *objective,
+                                    int objective_value, float *state,
+                                    float *hidden, float *logits) const;
   const Tensor &tensor(const std::string &name) const;
 
   std::size_t embedding_dim_ = 0;
@@ -134,6 +142,8 @@ public:
                     const std::string &actor_path,
                     const std::string &expected_circuit_hash,
                     const std::vector<std::string> &gate_names_by_id);
+  NativeActorPolicy(const NativeActorPolicy &) = delete;
+  NativeActorPolicy &operator=(const NativeActorPolicy &) = delete;
   int select(const DecisionRequest &request) override;
   bool needs_gate_names() const override { return false; }
   bool supports(DecisionMode mode) const override {
@@ -149,7 +159,9 @@ private:
   std::vector<float> propagation_cache_;
   std::vector<float> state_buffer_;
   std::vector<float> hidden_buffer_;
+  std::vector<float> v2_embedding_cache_;
   std::vector<float> v2_logits_cache_;
+  std::vector<unsigned char> v2_cache_valid_;
 };
 
 std::string fnv1a_file_hash(const std::string &path);

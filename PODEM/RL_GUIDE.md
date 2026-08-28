@@ -20,14 +20,17 @@ atpg -fault-map circuit_binary.faultmap -rl-emb circuit_binary.emb -rl-actor act
 
 The embedding file is circuit-specific. The executable verifies its FNV-1a hash against the exact `.bench` file. `-rl-emb` and `-rl-actor` must be supplied together.
 V2 actors support `backtrace_rl` only. They produce both input logits in one
-forward pass and native C++ precomputes four floats per gate (objective 0/1,
-left/right). The PODEM hot path only applies the unknown-input mask, honors the
-path lock, and compares two cached values. V1 actors remain loadable and retain
-the legacy propagation modes.
+forward pass. Native C++ stores embeddings by numeric gate ID and lazily computes
+the two logits on the first use of each `(gate, objective value)` pair. Later
+uses compare the cached values directly. The PODEM hot path still applies the
+unknown-input filtering and honors the path lock. V1 actors remain loadable and
+retain the legacy propagation modes.
 
-The `.faultmap` restores the source circuit's collapsed fault IDs and
-equivalent-fault weights on the transformed binary netlist. Its circuit hash is
-verified before ATPG starts.
+The `.faultmap` maps selected source fault sites and equivalent-fault weights
+onto the transformed binary netlist. For comment-declared XOR cells implemented
+as private NAND/NOT networks, only the logical XOR output `GO-SA0/GO-SA1` faults
+are retained; private `W/Z/X/Y` implementation faults are excluded. Its circuit
+hash is verified before ATPG starts.
 
 ## Set up the Python training environment
 
@@ -63,8 +66,10 @@ Convert any individual combinational benchmark without modifying its source:
 python scripts/convert_binary_bench.py sample_circuits/c432.bench
 ```
 
-The converter builds balanced two-input AND/OR/NAND/NOR trees, checks 256 random
-vectors for PO equivalence, and verifies the mapped fault catalog through C++.
+The converter builds balanced two-input AND/OR/NAND/NOR trees, filters expanded
+XOR implementation-only faults, checks 256 random vectors for PO equivalence,
+and verifies the mapped fault catalog through C++. Regenerate training manifests
+and teacher profiles whenever a fault map changes.
 
 Prepare the paper-style `c6288` and full-scan `s38417` data. This command
 generates binary netlists, GPU DeepGate embeddings, profiles faults with a

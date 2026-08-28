@@ -511,6 +511,10 @@ class BacktracePPOAgentV2:
         rnd_beta=0.05,
         rnd_lr=1e-4,
         rnd_bonus_clip=5.0,
+        normalize_returns=True,
+        entropy_coef=0.01,
+        return_scale=1.0,
+        max_grad_norm=0.0,
     ):
         self.lr_actor = float(lr_actor)
         self.lr_critic = float(lr_critic)
@@ -522,6 +526,12 @@ class BacktracePPOAgentV2:
         self.rnd_beta = float(rnd_beta)
         self.rnd_lr = float(rnd_lr)
         self.rnd_bonus_clip = float(rnd_bonus_clip)
+        self.normalize_returns = bool(normalize_returns)
+        self.entropy_coef = float(entropy_coef)
+        self.return_scale = float(return_scale)
+        self.max_grad_norm = float(max_grad_norm)
+        if self.return_scale <= 0.0 or self.max_grad_norm < 0.0:
+            raise ValueError("Return scale must be positive and gradient norm non-negative.")
         self.buffer = RolloutBuffer()
         self.last_selected_step_idx = None
         self.last_selected_mode = None
@@ -600,7 +610,9 @@ class BacktracePPOAgentV2:
         action = dist.sample()
         logprob = dist.log_prob(action)
         rnd_observation = self._rnd_observation(objective_embedding, objective_value)
-        intrinsic_reward = self._intrinsic_reward(rnd_observation)
+        intrinsic_reward = (
+            self._intrinsic_reward(rnd_observation) if self.rnd_beta > 0.0 else 0.0
+        )
         self.buffer.steps.append(
             BacktraceDecisionStepV2(
                 objective_embedding=objective_embedding.detach().cpu(),
@@ -664,10 +676,12 @@ class BacktracePPOAgentV2:
             discounted_reward = step.reward + self.gamma * discounted_reward
             returns.insert(0, discounted_reward)
         returns = torch.tensor(returns, dtype=torch.float64, device=device)
-        if returns.numel() > 1:
-            returns = (returns - returns.mean()) / (returns.std() + 1e-12)
-        elif returns.abs().item() > 1.0:
-            returns = returns / returns.abs()
+        returns = returns / self.return_scale
+        if self.normalize_returns:
+            if returns.numel() > 1:
+                returns = (returns - returns.mean()) / (returns.std() + 1e-12)
+            elif returns.abs().item() > 1.0:
+                returns = returns / returns.abs()
         returns = returns.to(dtype=torch.float32)
 
         old_logprobs = torch.stack(
@@ -697,7 +711,7 @@ class BacktracePPOAgentV2:
                 ) * advantages[index]
                 policy_loss = -torch.min(surrogate1, surrogate2)
                 value_loss = self.mse_loss(state_value.squeeze(), returns[index])
-                loss = policy_loss + 0.5 * value_loss - 0.01 * entropy
+                loss = policy_loss + 0.5 * value_loss - self.entropy_coef * entropy
                 losses.append(loss)
                 policy_losses.append(policy_loss)
                 value_losses.append(value_loss)
@@ -706,6 +720,10 @@ class BacktracePPOAgentV2:
             total_loss = torch.stack(losses).mean()
             self.optimizer.zero_grad()
             total_loss.backward()
+            if self.max_grad_norm > 0.0:
+                torch.nn.utils.clip_grad_norm_(
+                    self.policy.parameters(), self.max_grad_norm
+                )
             self.optimizer.step()
             final_metrics = {
                 "total_loss": float(total_loss.detach().item()),
@@ -719,10 +737,13 @@ class BacktracePPOAgentV2:
                 "ratio_mean": float(torch.stack(ratios).mean().detach().item()),
             }
 
-        rnd_loss = self.rnd.prediction_error(rnd_observations).mean()
-        self.rnd_optimizer.zero_grad()
-        rnd_loss.backward()
-        self.rnd_optimizer.step()
+        if self.rnd_beta > 0.0:
+            rnd_loss = self.rnd.prediction_error(rnd_observations).mean()
+            self.rnd_optimizer.zero_grad()
+            rnd_loss.backward()
+            self.rnd_optimizer.step()
+        else:
+            rnd_loss = torch.zeros((), dtype=torch.float32, device=device)
         self.policy_old.load_state_dict(self.policy.state_dict())
         self.update_count += 1
         metrics = {
@@ -774,6 +795,10 @@ class BacktracePPOAgentV2:
             "rnd_beta": self.rnd_beta,
             "rnd_lr": self.rnd_lr,
             "rnd_bonus_clip": self.rnd_bonus_clip,
+            "normalize_returns": self.normalize_returns,
+            "entropy_coef": self.entropy_coef,
+            "return_scale": self.return_scale,
+            "max_grad_norm": self.max_grad_norm,
         }
 
     def load_training_state_dict(self, state):
@@ -783,7 +808,12 @@ class BacktracePPOAgentV2:
             raise ValueError("V2 checkpoint embedding dimension changed.")
         if int(state["hidden_dim"]) != self.hidden_dim:
             raise ValueError("V2 checkpoint hidden dimension changed.")
-        if state.get("hyperparameters") != self.hyperparameters():
+        saved_hyperparameters = dict(state.get("hyperparameters", {}))
+        saved_hyperparameters.setdefault("normalize_returns", True)
+        saved_hyperparameters.setdefault("entropy_coef", 0.01)
+        saved_hyperparameters.setdefault("return_scale", 1.0)
+        saved_hyperparameters.setdefault("max_grad_norm", 0.0)
+        if saved_hyperparameters != self.hyperparameters():
             raise ValueError("V2 checkpoint PPO/RND hyperparameters changed.")
         self.policy.load_state_dict(state["policy"])
         self.policy_old.load_state_dict(state["policy_old"])

@@ -398,17 +398,30 @@ std::vector<float> ActorModel::optimized_logits(
 
 std::vector<float> ActorModel::backtrace_action_logits(
     const std::vector<float> &objective, int objective_value) const {
-  require(version_ == 2,
-          "Object-only backtrace logits require a V2 actor");
+  std::vector<float> state(hidden_dim_);
+  std::vector<float> hidden(hidden_dim_);
+  std::vector<float> logits(2);
   require(objective.size() == embedding_dim_,
           "Gate embedding dimension does not match V2 actor");
+  backtrace_action_logits_into(objective.data(), objective_value, state.data(),
+                               hidden.data(), logits.data());
+  return logits;
+}
+
+void ActorModel::backtrace_action_logits_into(
+    const float *objective, int objective_value, float *state, float *hidden,
+    float *logits) const {
+  require(version_ == 2,
+          "Object-only backtrace logits require a V2 actor");
   require(objective_value == 0 || objective_value == 1,
           "Backtrace objective value must be 0 or 1");
+  require(objective != nullptr && state != nullptr && hidden != nullptr &&
+              logits != nullptr,
+          "V2 actor buffers must not be null");
   require(gate_weight_ != nullptr && gate_bias_ != nullptr &&
               objective_value_embedding_ != nullptr,
           "V2 actor tensors are not initialized");
 
-  std::vector<float> state(hidden_dim_);
   for (std::size_t row = 0; row < hidden_dim_; ++row) {
     float value = gate_bias_->values[row];
     const std::size_t offset = row * embedding_dim_;
@@ -419,11 +432,28 @@ std::vector<float> ActorModel::backtrace_action_logits(
                  objective_value_embedding_->values[
                      static_cast<std::size_t>(objective_value) * hidden_dim_ + row];
   }
-  const std::vector<float> hidden =
-      dense(tensor("backtrace_actor.0.weight"),
-            tensor("backtrace_actor.0.bias"), state, true);
-  return dense(tensor("backtrace_actor.2.weight"),
-               tensor("backtrace_actor.2.bias"), hidden, false);
+
+  const Tensor &hidden_weight = tensor("backtrace_actor.0.weight");
+  const Tensor &hidden_bias = tensor("backtrace_actor.0.bias");
+  for (std::size_t row = 0; row < hidden_dim_; ++row) {
+    float value = hidden_bias.values[row];
+    const std::size_t offset = row * hidden_dim_;
+    for (std::size_t col = 0; col < hidden_dim_; ++col) {
+      value += hidden_weight.values[offset + col] * state[col];
+    }
+    hidden[row] = std::tanh(value);
+  }
+
+  const Tensor &output_weight = tensor("backtrace_actor.2.weight");
+  const Tensor &output_bias = tensor("backtrace_actor.2.bias");
+  for (std::size_t row = 0; row < 2; ++row) {
+    float value = output_bias.values[row];
+    const std::size_t offset = row * hidden_dim_;
+    for (std::size_t col = 0; col < hidden_dim_; ++col) {
+      value += output_weight.values[offset + col] * hidden[col];
+    }
+    logits[row] = value;
+  }
 }
 
 NativeActorPolicy::NativeActorPolicy(
@@ -439,19 +469,19 @@ NativeActorPolicy::NativeActorPolicy(
 
   gate_count_ = gate_names_by_id.size();
   if (actor_.is_v2()) {
+    const std::size_t embedding_dim = actor_.embedding_dimension();
+    v2_embedding_cache_.resize(gate_count_ * embedding_dim);
     v2_logits_cache_.resize(gate_count_ * 4);
+    v2_cache_valid_.assign(gate_count_ * 2, 0);
     for (std::size_t gate_id = 0; gate_id < gate_count_; ++gate_id) {
       const std::vector<float> &embedding =
           embeddings.at(gate_names_by_id[gate_id]);
-      for (int objective_value = 0; objective_value < 2; ++objective_value) {
-        const std::vector<float> logits =
-            actor_.backtrace_action_logits(embedding, objective_value);
-        const std::size_t offset = gate_id * 4 + objective_value * 2;
-        v2_logits_cache_[offset] = logits[0];
-        v2_logits_cache_[offset + 1] = logits[1];
-      }
+      std::copy(embedding.begin(), embedding.end(),
+                v2_embedding_cache_.begin() + gate_id * embedding_dim);
     }
     embeddings.clear();
+    state_buffer_.resize(actor_.hidden_dimension());
+    hidden_buffer_.resize(actor_.hidden_dimension());
     return;
   }
 
@@ -490,8 +520,19 @@ int NativeActorPolicy::select(const DecisionRequest &request) {
             "V2 objective gate ID is out of range");
     require(request.objective_value == 0 || request.objective_value == 1,
             "V2 objective value must be 0 or 1");
+    const std::size_t cache_key =
+        request.objective_id * 2 +
+        static_cast<std::size_t>(request.objective_value);
     const std::size_t offset = request.objective_id * 4 +
                                static_cast<std::size_t>(request.objective_value) * 2;
+    if (!v2_cache_valid_[cache_key]) {
+      actor_.backtrace_action_logits_into(
+          &v2_embedding_cache_[request.objective_id *
+                               actor_.embedding_dimension()],
+          request.objective_value, state_buffer_.data(), hidden_buffer_.data(),
+          &v2_logits_cache_[offset]);
+      v2_cache_valid_[cache_key] = 1;
+    }
     return v2_logits_cache_[offset + 1] > v2_logits_cache_[offset] ? 1 : 0;
   }
 

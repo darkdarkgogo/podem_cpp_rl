@@ -28,6 +28,7 @@ public:
     data["objective_name"] = request.objective_name;
     data["objective_value"] = request.objective_value;
     data["candidate_names"] = request.candidate_names;
+    data["heuristic_action"] = request.heuristic_action;
     data["sequence"] = request.sequence;
     data["fault_id"] = request.fault_id;
     data["backtracks"] = request.backtracks;

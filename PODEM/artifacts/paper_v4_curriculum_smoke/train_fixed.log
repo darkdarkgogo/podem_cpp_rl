@@ -1,0 +1,927 @@
+BC_RESUME epoch=2/2
+BC_RESULT best_accuracy=0.592950
+VALIDATION {"aggregate": {"aborted": 0, "decisions": 4784, "detected": 30, "mean_backtrace_ratio": 2.08954891811956, "mean_backtrack_ratio": 9.595114942528735, "score": [-30, 0, 9.595114942528735, 2.08954891811956, 4784]}, "circuits": {"c1355": {"aborted": 0, "backtrace_steps": 1425, "backtracks": 34, "decisions": 284, "detected": 3, "episodes": 3, "pi_visits": 166, "redundant": 0}, "c1908": {"aborted": 0, "backtrace_steps": 948, "backtracks": 0, "decisions": 107, "detected": 3, "episodes": 3, "pi_visits": 60, "redundant": 0}, "c2670": {"aborted": 0, "backtrace_steps": 451, "backtracks": 4, "decisions": 71, "detected": 3, "episodes": 3, "pi_visits": 50, "redundant": 0}, "c3540": {"aborted": 0, "backtrace_steps": 566, "backtracks": 0, "decisions": 87, "detected": 3, "episodes": 3, "pi_visits": 43, "redundant": 0}, "c432": {"aborted": 0, "backtrace_steps": 206, "backtracks": 1, "decisions": 58, "detected": 3, "episodes": 3, "pi_visits": 35, "redundant": 0}, "c499": {"aborted": 0, "backtrace_steps": 1171, "backtracks": 0, "decisions": 177, "detected": 3, "episodes": 3, "pi_visits": 95, "redundant": 0}, "c5315": {"aborted": 0, "backtrace_steps": 474, "backtracks": 13, "decisions": 78, "detected": 3, "episodes": 3, "pi_visits": 69, "redundant": 0}, "c6288": {"aborted": 0, "backtrace_steps": 13704, "backtracks": 495, "decisions": 3695, "detected": 3, "episodes": 3, "pi_visits": 1069, "redundant": 0}, "c7552": {"aborted": 0, "backtrace_steps": 947, "backtracks": 7, "decisions": 173, "detected": 3, "episodes": 3, "pi_visits": 82, "redundant": 0}, "s38417_scan": {"aborted": 0, "backtrace_steps": 379, "backtracks": 1, "decisions": 54, "detected": 3, "episodes": 3, "pi_visits": 44, "redundant": 0}}, "label": "behavior_cloning"}
+TRAIN_START stage=easy sweep=1/1 circuit=c432 difficulty=easy faults=1
+TRAIN_RESULT {"circuit": "c432", "difficulty": "easy", "learning": {"combined_reward_sum": 85.54068673650532, "entropy_mean": 0.6808596253395081, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 85.29411764705883, "intrinsic_reward_sum": 4.931381788929846, "policy_loss_mean": -0.5940961837768555, "ratio_mean": 1.0065299272537231, "rnd_loss_mean": 0.03653612732887268, "scaled_intrinsic_reward_sum": 0.2465690894464923, "steps": 34, "total_loss_mean": -0.5895708799362183, "value_loss_mean": 0.022667858749628067}, "stage": 0, "stage_name": "easy", "summary": {"aborted": 0, "backtrace_steps": 126, "backtracks": 0, "decisions": 34, "detected": 1, "episodes": 1, "pi_visits": 13, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=easy sweep=1/1 circuit=c3540 difficulty=easy faults=1
+TRAIN_RESULT {"circuit": "c3540", "difficulty": "easy", "learning": {"combined_reward_sum": 98.3686366164014, "entropy_mean": 0.6784715056419373, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 98.21428571428571, "intrinsic_reward_sum": 3.0870180423138875, "policy_loss_mean": -0.2142055183649063, "ratio_mean": 1.0076874494552612, "rnd_loss_mean": 0.03714701533317566, "scaled_intrinsic_reward_sum": 0.15435090211569438, "steps": 13, "total_loss_mean": -0.2048223316669464, "value_loss_mean": 0.032335810363292694}, "stage": 0, "stage_name": "easy", "summary": {"aborted": 0, "backtrace_steps": 33, "backtracks": 0, "decisions": 13, "detected": 1, "episodes": 1, "pi_visits": 10, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=easy sweep=1/1 circuit=s38417_scan difficulty=easy faults=1
+TRAIN_RESULT {"circuit": "s38417_scan", "difficulty": "easy", "learning": {"combined_reward_sum": 100.01254730659421, "entropy_mean": 0.6915271282196045, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 100.0, "intrinsic_reward_sum": 0.25094613188418, "policy_loss_mean": 0.1378450244665146, "ratio_mean": 0.9147750735282898, "rnd_loss_mean": 0.03624655306339264, "scaled_intrinsic_reward_sum": 0.012547306594209003, "steps": 1, "total_loss_mean": 0.132305309176445, "value_loss_mean": 0.0027511215303093195}, "stage": 0, "stage_name": "easy", "summary": {"aborted": 0, "backtrace_steps": 4, "backtracks": 0, "decisions": 1, "detected": 1, "episodes": 1, "pi_visits": 2, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=easy sweep=1/1 circuit=c1355 difficulty=easy faults=1
+TRAIN_RESULT {"circuit": "c1355", "difficulty": "easy", "learning": {"combined_reward_sum": 99.81883212347662, "entropy_mean": 0.6924874782562256, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 99.42857142857143, "intrinsic_reward_sum": 7.805213898104091, "policy_loss_mean": -0.0507553294301033, "ratio_mean": 0.9872288703918457, "rnd_loss_mean": 0.03533293306827545, "scaled_intrinsic_reward_sum": 0.39026069490520454, "steps": 28, "total_loss_mean": -0.05656379833817482, "value_loss_mean": 0.0022328102495521307}, "stage": 0, "stage_name": "easy", "summary": {"aborted": 0, "backtrace_steps": 148, "backtracks": 0, "decisions": 28, "detected": 1, "episodes": 1, "pi_visits": 13, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=easy sweep=1/1 circuit=c5315 difficulty=easy faults=1
+TRAIN_RESULT {"circuit": "c5315", "difficulty": "easy", "learning": {"combined_reward_sum": 99.53764850298872, "entropy_mean": 0.689507246017456, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 99.47368421052632, "intrinsic_reward_sum": 1.2792858492479766, "policy_loss_mean": -0.024497296661138535, "ratio_mean": 1.0023536682128906, "rnd_loss_mean": 0.03611926734447479, "scaled_intrinsic_reward_sum": 0.06396429246239883, "steps": 4, "total_loss_mean": -0.02990068681538105, "value_loss_mean": 0.0029833652079105377}, "stage": 0, "stage_name": "easy", "summary": {"aborted": 0, "backtrace_steps": 20, "backtracks": 0, "decisions": 4, "detected": 1, "episodes": 1, "pi_visits": 5, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=easy sweep=1/1 circuit=c7552 difficulty=easy faults=1
+TRAIN_RESULT {"circuit": "c7552", "difficulty": "easy", "learning": {"combined_reward_sum": 100.11655312910275, "entropy_mean": 0.6860105395317078, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 99.8076923076923, "intrinsic_reward_sum": 6.1772164282091, "policy_loss_mean": 0.00895819440484047, "ratio_mean": 1.0074354410171509, "rnd_loss_mean": 0.03631352260708809, "scaled_intrinsic_reward_sum": 0.308860821410455, "steps": 18, "total_loss_mean": 0.0022841200698167086, "value_loss_mean": 0.0003720601671375334}, "stage": 0, "stage_name": "easy", "summary": {"aborted": 0, "backtrace_steps": 106, "backtracks": 0, "decisions": 18, "detected": 1, "episodes": 1, "pi_visits": 15, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=easy sweep=1/1 circuit=c499 difficulty=easy faults=1
+TRAIN_RESULT {"circuit": "c499", "difficulty": "easy", "learning": {"combined_reward_sum": 99.66323288813841, "entropy_mean": 0.6853219866752625, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 98.40375586854461, "intrinsic_reward_sum": 25.189540391875912, "policy_loss_mean": 0.0053442963398993015, "ratio_mean": 0.9981250762939453, "rnd_loss_mean": 0.03518662601709366, "scaled_intrinsic_reward_sum": 1.2594770195937957, "steps": 63, "total_loss_mean": -0.0011062792036682367, "value_loss_mean": 0.0008052870398387313}, "stage": 0, "stage_name": "easy", "summary": {"aborted": 0, "backtrace_steps": 494, "backtracks": 0, "decisions": 63, "detected": 1, "episodes": 1, "pi_visits": 31, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=easy sweep=1/1 circuit=c1908 difficulty=easy faults=1
+TRAIN_RESULT {"circuit": "c1908", "difficulty": "easy", "learning": {"combined_reward_sum": 92.88588749030673, "entropy_mean": 0.6843475699424744, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 92.29729729729729, "intrinsic_reward_sum": 11.771803860188832, "policy_loss_mean": 0.061962299048900604, "ratio_mean": 0.9970914721488953, "rnd_loss_mean": 0.03571857511997223, "scaled_intrinsic_reward_sum": 0.5885901930094416, "steps": 25, "total_loss_mean": 0.05574975907802582, "value_loss_mean": 0.00126187177374959}, "stage": 0, "stage_name": "easy", "summary": {"aborted": 0, "backtrace_steps": 131, "backtracks": 0, "decisions": 25, "detected": 1, "episodes": 1, "pi_visits": 13, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=easy sweep=1/1 circuit=c6288 difficulty=easy faults=1
+TRAIN_RESULT {"circuit": "c6288", "difficulty": "easy", "learning": {"combined_reward_sum": 75.8668647666207, "entropy_mean": 0.6820011734962463, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 74.43396226415095, "intrinsic_reward_sum": 28.65805004939487, "policy_loss_mean": 0.20074594020843506, "ratio_mean": 0.9951381087303162, "rnd_loss_mean": 0.036377016454935074, "scaled_intrinsic_reward_sum": 1.4329025024697435, "steps": 54, "total_loss_mean": 0.19406604766845703, "value_loss_mean": 0.000280217791441828}, "stage": 0, "stage_name": "easy", "summary": {"aborted": 0, "backtrace_steps": 165, "backtracks": 1, "decisions": 54, "detected": 1, "episodes": 1, "pi_visits": 23, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=easy sweep=1/1 circuit=c2670 difficulty=easy faults=1
+TRAIN_RESULT {"circuit": "c2670", "difficulty": "easy", "learning": {"combined_reward_sum": 98.3751952195095, "entropy_mean": 0.680665135383606, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 97.87234042553192, "intrinsic_reward_sum": 10.057095879551522, "policy_loss_mean": -0.27215102314949036, "ratio_mean": 1.001090407371521, "rnd_loss_mean": 0.03539714589715004, "scaled_intrinsic_reward_sum": 0.5028547939775762, "steps": 18, "total_loss_mean": -0.2668187916278839, "value_loss_mean": 0.024277806282043457}, "stage": 0, "stage_name": "easy", "summary": {"aborted": 0, "backtrace_steps": 114, "backtracks": 0, "decisions": 18, "detected": 1, "episodes": 1, "pi_visits": 10, "redundant": 0}, "sweep": 1}
+
+#Circuit Summary:
+#---------------
+#number of inputs = 36
+#number of outputs = 7
+#number of gates = 288
+#number of wires = 324
+#number of equivalent faults = 560
+
+#Circuit Summary:
+#---------------
+#number of inputs = 41
+#number of outputs = 32
+#number of gates = 662
+#number of wires = 703
+#number of equivalent faults = 1158
+
+#Circuit Summary:
+#---------------
+#number of inputs = 41
+#number of outputs = 32
+#number of gates = 590
+#number of wires = 631
+#number of equivalent faults = 1574
+
+#Circuit Summary:
+#---------------
+#number of inputs = 33
+#number of outputs = 25
+#number of gates = 1056
+#number of wires = 1089
+#number of equivalent faults = 1876
+
+#Circuit Summary:
+#---------------
+#number of inputs = 157
+#number of outputs = 64
+#number of gates = 1400
+#number of wires = 1557
+#number of equivalent faults = 2595
+
+#Circuit Summary:
+#---------------
+#number of inputs = 50
+#number of outputs = 22
+#number of gates = 1983
+#number of wires = 2033
+#number of equivalent faults = 3428
+
+#Circuit Summary:
+#---------------
+#number of inputs = 178
+#number of outputs = 123
+#number of gates = 2973
+#number of wires = 3151
+#number of equivalent faults = 5350
+
+#Circuit Summary:
+#---------------
+#number of inputs = 207
+#number of outputs = 108
+#number of gates = 4042
+#number of wires = 4249
+#number of equivalent faults = 7550
+
+#Circuit Summary:
+#---------------
+#number of inputs = 32
+#number of outputs = 32
+#number of gates = 2416
+#number of wires = 2448
+#number of equivalent faults = 7744
+
+#Circuit Summary:
+#---------------
+#number of inputs = 1664
+#number of outputs = 1742
+#number of gates = 23319
+#number of wires = 24983
+#number of equivalent faults = 31180
+
+#Circuit Summary:
+#---------------
+#number of inputs = 36
+#number of outputs = 7
+#number of gates = 288
+#number of wires = 324
+#number of equivalent faults = 560
+
+#Circuit Summary:
+#---------------
+#number of inputs = 50
+#number of outputs = 22
+#number of gates = 1983
+#number of wires = 2033
+#number of equivalent faults = 3428
+
+#Circuit Summary:
+#---------------
+#number of inputs = 1664
+#number of outputs = 1742
+#number of gates = 23319
+#number of wires = 24983
+#number of equivalent faults = 31180
+
+#Circuit Summary:
+#---------------
+#number of inputs = 41
+#number of outputs = 32
+#number of gates = 590
+#number of wires = 631
+#number of equivalent faults = 1574
+
+#Circuit Summary:
+#---------------
+#number of inputs = 178
+#number of outputs = 123
+#number of gates = 2973
+#number of wires = 3151
+#number of equivalent faults = 5350
+
+#Circuit Summary:
+#---------------
+#number of inputs = 207
+#number of outputs = 108
+#number of gates = 4042
+#number of wires = 4249
+#number of equivalent faults = 7550
+
+#Circuit Summary:
+#---------------
+#number of inputs = 41
+#number of outputs = 32
+#number of gates = 662
+#number of wires = 703
+#number of equivalent faults = 1158
+
+#Circuit Summary:
+#---------------
+#number of inputs = 33
+#number of outputs = 25
+#number of gates = 1056
+#number of wires = 1089
+#number of equivalent faults = 1876
+
+#Circuit Summary:
+#---------------
+#number of inputs = 32
+#number of outputs = 32
+#number of gates = 2416
+#number of wires = 2448
+#number of equivalent faults = 7744
+
+#Circuit Summary:
+#---------------
+#number of inputs = 157
+#number of outputs = 64
+#number of gates = 1400
+#number of wires = 1557
+#number of equivalent faults = 2595
+
+#Circuit Summary:
+#---------------
+#number of inputs = 36
+#number of outputs = 7
+#number of gates = 288
+#number of wires = 324
+#number of equivalent faults = 560
+
+#Circuit Summary:
+#---------------
+#number of inputs = 41
+#number of outputs = 32
+#number of gates = 662
+#number of wires = 703
+#number of equivalent faults = 1158
+
+#Circuit Summary:
+#---------------
+#number of inputs = 41
+#number of outputs = 32
+#number of gates = 590
+#number of wires = 631
+#number of equivalent faults = 1574
+
+#Circuit Summary:
+#---------------
+#number of inputs = 33
+#number of outputs = 25
+#number of gates = 1056
+#number of wires = 1089
+#number of equivalent faults = 1876
+
+#Circuit Summary:
+#---------------
+#number of inputs = 157
+#number of outputs = 64
+#numVALIDATION selection=best {"aggregate": {"aborted": 0, "decisions": 1686, "detected": 30, "mean_backtrace_ratio": 1.2373439901029868, "mean_backtrack_ratio": 0.14560723514211887, "score": [-30, 0, 0.14560723514211887, 1.2373439901029868, 1686]}, "circuits": {"c1355": {"aborted": 0, "backtrace_steps": 1877, "backtracks": 0, "decisions": 306, "detected": 3, "episodes": 3, "pi_visits": 123, "redundant": 0}, "c1908": {"aborted": 0, "backtrace_steps": 675, "backtracks": 0, "decisions": 74, "detected": 3, "episodes": 3, "pi_visits": 40, "redundant": 0}, "c2670": {"aborted": 0, "backtrace_steps": 524, "backtracks": 0, "decisions": 69, "detected": 3, "episodes": 3, "pi_visits": 50, "redundant": 0}, "c3540": {"aborted": 0, "backtrace_steps": 510, "backtracks": 1, "decisions": 91, "detected": 3, "episodes": 3, "pi_visits": 41, "redundant": 0}, "c432": {"aborted": 0, "backtrace_steps": 397, "backtracks": 0, "decisions": 85, "detected": 3, "episodes": 3, "pi_visits": 41, "redundant": 0}, "c499": {"aborted": 0, "backtrace_steps": 1773, "backtracks": 0, "decisions": 205, "detected": 3, "episodes": 3, "pi_visits": 114, "redundant": 0}, "c5315": {"aborted": 0, "backtrace_steps": 547, "backtracks": 0, "decisions": 87, "detected": 3, "episodes": 3, "pi_visits": 47, "redundant": 0}, "c6288": {"aborted": 0, "backtrace_steps": 2592, "backtracks": 4, "decisions": 508, "detected": 3, "episodes": 3, "pi_visits": 86, "redundant": 0}, "c7552": {"aborted": 0, "backtrace_steps": 979, "backtracks": 0, "decisions": 147, "detected": 3, "episodes": 3, "pi_visits": 82, "redundant": 0}, "s38417_scan": {"aborted": 0, "backtrace_steps": 449, "backtracks": 0, "decisions": 114, "detected": 3, "episodes": 3, "pi_visits": 45, "redundant": 0}}, "label": "easy_sweep_1"}
+TRAIN_START stage=medium sweep=1/1 circuit=c1355 difficulty=medium faults=1
+TRAIN_RESULT {"circuit": "c1355", "difficulty": "medium", "learning": {"combined_reward_sum": 80.51000800356948, "entropy_mean": 0.6804069876670837, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 79.34615384615384, "intrinsic_reward_sum": 58.19270787078203, "policy_loss_mean": 0.07059194147586823, "ratio_mean": 1.0005894899368286, "rnd_loss_mean": 0.034694306552410126, "scaled_intrinsic_reward_sum": 1.1638541574156407, "steps": 96, "total_loss_mean": 0.07755722105503082, "value_loss_mean": 0.020734630525112152}, "stage": 1, "stage_name": "medium", "summary": {"aborted": 0, "backtrace_steps": 554, "backtracks": 1, "decisions": 96, "detected": 1, "episodes": 1, "pi_visits": 43, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=medium sweep=1/1 circuit=c1908 difficulty=easy faults=1
+TRAIN_RESULT {"circuit": "c1908", "difficulty": "easy", "learning": {"combined_reward_sum": 99.64527889002419, "entropy_mean": 0.6827225089073181, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 99.45945945945945, "intrinsic_reward_sum": 9.290971528236891, "policy_loss_mean": -0.07425514608621597, "ratio_mean": 1.0091054439544678, "rnd_loss_mean": 0.03493497520685196, "scaled_intrinsic_reward_sum": 0.18581943056473782, "steps": 14, "total_loss_mean": -0.07559311389923096, "value_loss_mean": 0.004151293076574802}, "stage": 1, "stage_name": "medium", "summary": {"aborted": 0, "backtrace_steps": 78, "backtracks": 0, "decisions": 14, "detected": 1, "episodes": 1, "pi_visits": 9, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=medium sweep=1/1 circuit=c3540 difficulty=easy faults=1
+TRAIN_RESULT {"circuit": "c3540", "difficulty": "easy", "learning": {"combined_reward_sum": 96.28156774832543, "entropy_mean": 0.6726315021514893, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 96.07142857142857, "intrinsic_reward_sum": 10.506958844843037, "policy_loss_mean": 0.019062988460063934, "ratio_mean": 1.0017645359039307, "rnd_loss_mean": 0.03615698963403702, "scaled_intrinsic_reward_sum": 0.21013917689686076, "steps": 15, "total_loss_mean": 0.016055062413215637, "value_loss_mean": 0.0007104647229425609}, "stage": 1, "stage_name": "medium", "summary": {"aborted": 0, "backtrace_steps": 39, "backtracks": 0, "decisions": 15, "detected": 1, "episodes": 1, "pi_visits": 11, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=medium sweep=1/1 circuit=c499 difficulty=easy faults=1
+TRAIN_RESULT {"circuit": "c499", "difficulty": "easy", "learning": {"combined_reward_sum": 104.67560814937966, "entropy_mean": 0.6813933253288269, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 104.27230046948357, "intrinsic_reward_sum": 20.165383994804685, "policy_loss_mean": -0.04945540428161621, "ratio_mean": 1.001909852027893, "rnd_loss_mean": 0.03488728776574135, "scaled_intrinsic_reward_sum": 0.40330767989609373, "steps": 29, "total_loss_mean": -0.05199331045150757, "value_loss_mean": 0.0017381213838234544}, "stage": 1, "stage_name": "medium", "summary": {"aborted": 0, "backtrace_steps": 244, "backtracks": 0, "decisions": 29, "detected": 1, "episodes": 1, "pi_visits": 15, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=medium sweep=1/1 circuit=c1908 difficulty=medium faults=1
+TRAIN_RESULT {"circuit": "c1908", "difficulty": "medium", "learning": {"combined_reward_sum": 100.05585245679039, "entropy_mean": 0.6786668300628662, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 99.79797979797979, "intrinsic_reward_sum": 12.893632940530084, "policy_loss_mean": 0.02384994924068451, "ratio_mean": 0.9901523590087891, "rnd_loss_mean": 0.03491969406604767, "scaled_intrinsic_reward_sum": 0.2578726588106017, "steps": 18, "total_loss_mean": 0.02085466869175434, "value_loss_mean": 0.0007961028604768217}, "stage": 1, "stage_name": "medium", "summary": {"aborted": 0, "backtrace_steps": 101, "backtracks": 0, "decisions": 18, "detected": 1, "episodes": 1, "pi_visits": 13, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=medium sweep=1/1 circuit=c7552 difficulty=easy faults=1
+TRAIN_RESULT {"circuit": "c7552", "difficulty": "easy", "learning": {"combined_reward_sum": 100.07204613045722, "entropy_mean": 0.6746471524238586, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 99.8076923076923, "intrinsic_reward_sum": 13.217691138245831, "policy_loss_mean": 0.040900349617004395, "ratio_mean": 0.9915454983711243, "rnd_loss_mean": 0.03506285697221756, "scaled_intrinsic_reward_sum": 0.26435382276491665, "steps": 18, "total_loss_mean": 0.03778376057744026, "value_loss_mean": 0.0005132875521667302}, "stage": 1, "stage_name": "medium", "summary": {"aborted": 0, "backtrace_steps": 106, "backtracks": 0, "decisions": 18, "detected": 1, "episodes": 1, "pi_visits": 15, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=medium sweep=1/1 circuit=c2670 difficulty=easy faults=1
+TRAIN_RESULT {"circuit": "c2670", "difficulty": "easy", "learning": {"combined_reward_sum": 98.56481821590587, "entropy_mean": 0.6737070083618164, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 98.29787234042553, "intrinsic_reward_sum": 13.347293774016839, "policy_loss_mean": -0.006784217897802591, "ratio_mean": 1.0080598592758179, "rnd_loss_mean": 0.034701839089393616, "scaled_intrinsic_reward_sum": 0.26694587548033677, "steps": 18, "total_loss_mean": -0.009807656519114971, "value_loss_mean": 0.0006901921005919576}, "stage": 1, "stage_name": "medium", "summary": {"aborted": 0, "backtrace_steps": 110, "backtracks": 0, "decisions": 18, "detected": 1, "episodes": 1, "pi_visits": 10, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=medium sweep=1/1 circuit=s38417_scan difficulty=medium faults=1
+TRAIN_RESULT {"circuit": "s38417_scan", "difficulty": "medium", "learning": {"combined_reward_sum": 98.21107720246512, "entropy_mean": 0.673295795917511, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 97.33624454148472, "intrinsic_reward_sum": 43.74163304902057, "policy_loss_mean": -0.012904848903417587, "ratio_mean": 1.0004655122756958, "rnd_loss_mean": 0.034532856196165085, "scaled_intrinsic_reward_sum": 0.8748326609804115, "steps": 57, "total_loss_mean": -0.016220103949308395, "value_loss_mean": 0.00010244941950077191}, "stage": 1, "stage_name": "medium", "summary": {"aborted": 0, "backtrace_steps": 290, "backtracks": 0, "decisions": 57, "detected": 1, "episodes": 1, "pi_visits": 36, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=medium sweep=1/1 circuit=c6288 difficulty=easy faults=1
+TRAIN_RESULT {"circuit": "c6288", "difficulty": "easy", "learning": {"combined_reward_sum": 83.98474640331492, "entropy_mean": 0.6704317331314087, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 82.45283018867924, "intrinsic_reward_sum": 76.59581073178381, "policy_loss_mean": 0.15126217901706696, "ratio_mean": 0.9941741228103638, "rnd_loss_mean": 0.03532971441745758, "scaled_intrinsic_reward_sum": 1.5319162146356764, "steps": 91, "total_loss_mean": 0.14835195243358612, "value_loss_mean": 0.0008838671492412686}, "stage": 1, "stage_name": "medium", "summary": {"aborted": 0, "backtrace_steps": 292, "backtracks": 0, "decisions": 91, "detected": 1, "episodes": 1, "pi_visits": 31, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=medium sweep=1/1 circuit=c5315 difficulty=medium faults=1
+TRAIN_RESULT {"circuit": "c5315", "difficulty": "medium", "learning": {"combined_reward_sum": 101.32047523719656, "entropy_mean": 0.6567248106002808, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 100.84210526315789, "intrinsic_reward_sum": 23.918498701933387, "policy_loss_mean": -0.16854748129844666, "ratio_mean": 1.0151625871658325, "rnd_loss_mean": 0.0341113843023777, "scaled_intrinsic_reward_sum": 0.47836997403866777, "steps": 28, "total_loss_mean": -0.16696248948574066, "value_loss_mean": 0.009737197309732437}, "stage": 1, "stage_name": "medium", "summary": {"aborted": 0, "backtrace_steps": 174, "backtracks": 0, "decisions": 28, "detected": 1, "episodes": 1, "pi_visits": 18, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=medium sweep=1/1 circuit=c1355 difficulty=easy faults=1
+TRAIN_RESULT {"circuit": "c1355", "difficulty": "easy", "learning": {"combined_reward_sum": 95.44791534328301, "entropy_mean": 0.6410362720489502, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 94.85714285714286, "intrinsic_reward_sum": 29.53862430700771, "policy_loss_mean": -0.004362381994724274, "ratio_mean": 1.0079909563064575, "rnd_loss_mean": 0.033868130296468735, "scaled_intrinsic_reward_sum": 0.5907724861401542, "steps": 34, "total_loss_mean": -0.004437088500708342, "value_loss_mean": 0.00626094825565815}, "stage": 1, "stage_name": "medium", "summary": {"aborted": 0, "backtrace_steps": 212, "backtracks": 0, "decisions": 34, "detected": 1, "episodes": 1, "pi_visits": 14, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=medium sweep=1/1 circuit=c3540 difficulty=medium faults=1
+TRAIN_RESULT {"circuit": "c3540", "difficulty": "medium", "learning": {"combined_reward_sum": 119.27286521157133, "entropy_mean": 0.641769528388977, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 118.70535714285714, "intrinsic_reward_sum": 28.375403435709217, "policy_loss_mean": -0.16540317237377167, "ratio_mean": 1.0015723705291748, "rnd_loss_mean": 0.034836068749427795, "scaled_intrinsic_reward_sum": 0.5675080687141844, "steps": 31, "total_loss_mean": -0.1679481714963913, "value_loss_mean": 0.0013277564430609345}, "stage": 1, "stage_name": "medium", "summary": {"aborted": 0, "backtrace_steps": 253, "backtracks": 0, "decisions": 31, "detected": 1, "episodes": 1, "pi_visits": 11, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=medium sweep=1/1 circuit=c499 difficulty=medium faults=1
+TRAIN_RESULT {"circuit": "c499", "difficulty": "medium", "learning": {"combined_reward_sum": 102.64478676044762, "entropy_mean": 0.6529350280761719, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 101.49905123339659, "intrinsic_reward_sum": 57.286776352551485, "policy_loss_mean": 0.15534400939941406, "ratio_mean": 1.000226616859436, "rnd_loss_mean": 0.03404567018151283, "scaled_intrinsic_reward_sum": 1.1457355270510297, "steps": 62, "total_loss_mean": 0.1574588567018509, "value_loss_mean": 0.0107590826228261}, "stage": 1, "stage_name": "medium", "summary": {"aborted": 0, "backtrace_steps": 448, "backtracks": 0, "decisions": 62, "detected": 1, "episodes": 1, "pi_visits": 33, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=medium sweep=1/1 circuit=c432 difficulty=medium faults=1
+TRAIN_RESULT {"circuit": "c432", "difficulty": "medium", "learning": {"combined_reward_sum": 97.73934967360864, "entropy_mean": 0.6335000395774841, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 97.34042553191489, "intrinsic_reward_sum": 19.946207084687508, "policy_loss_mean": 0.1367538571357727, "ratio_mean": 0.996825098991394, "rnd_loss_mean": 0.03405052423477173, "scaled_intrinsic_reward_sum": 0.3989241416937502, "steps": 21, "total_loss_mean": 0.13743428885936737, "value_loss_mean": 0.007695866748690605}, "stage": 1, "stage_name": "medium", "summary": {"aborted": 0, "backtrace_steps": 119, "backtracks": 0, "decisions": 21, "detected": 1, "episodes": 1, "pi_visits": 13, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=medium sweep=1/1 circuit=c6288 difficulty=medium faults=1
+TRAIN_RESULT {"circuit": "c6288", "difficulty": "medium", "learning": {"combined_reward_sum": 55.02107107403859, "entropy_mean": 0.6621776223182678, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 51.687041564792175, "intrinsic_reward_sum": 166.70147546232073, "policy_loss_mean": 0.3482424318790436, "ratio_mean": 0.9993665218353271, "rnd_loss_mean": 0.034689225256443024, "scaled_intrinsic_reward_sum": 3.3340295092464145, "steps": 163, "total_loss_mean": 0.3469410538673401, "value_loss_mean": 0.00401908066123724}, "stage": 1, "stage_name": "medium", "summary": {"aborted": 0, "backtrace_steps": 749, "backtracks": 4, "decisions": 163, "detected": 1, "episodes": 1, "pi_visits": 38, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=medium sweep=1/1 circuit=c5315 difficulty=easy faults=1
+TRAIN_RESULT {"circuit": "c5315", "difficulty": "easy", "learning": {"combined_reward_sum": 99.55812160023856, "entropy_mean": 0.6859849691390991, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 99.47368421052632, "intrinsic_reward_sum": 4.221869485612101, "policy_loss_mean": -0.4328848719596863, "ratio_mean": 1.070407509803772, "rnd_loss_mean": 0.03419055417180061, "scaled_intrinsic_reward_sum": 0.08443738971224202, "steps": 4, "total_loss_mean": -0.3822785019874573, "value_loss_mean": 0.10807254910469055}, "stage": 1, "stage_name": "medium", "summary": {"aborted": 0, "backtrace_steps": 20, "backtracks": 0, "decisions": 4, "detected": 1, "episodes": 1, "pi_visits": 5, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=medium sweep=1/1 circuit=c432 difficulty=easy faults=1
+TRAIN_RESULT {"circuit": "c432", "difficulty": "easy", "learning": {"combined_reward_sum": 41.65592952864805, "entropy_mean": 0.6802910566329956, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 40.0, "intrinsic_reward_sum": 82.79647643240273, "policy_loss_mean": 0.28606441617012024, "ratio_mean": 0.9788711071014404, "rnd_loss_mean": 0.033679597079753876, "scaled_intrinsic_reward_sum": 1.6559295286480546, "steps": 78, "total_loss_mean": 0.31413698196411133, "value_loss_mean": 0.06294795125722885}, "stage": 1, "stage_name": "medium", "summary": {"aborted": 0, "backtrace_steps": 462, "backtracks": 20, "decisions": 78, "detected": 1, "episodes": 1, "pi_visits": 54, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=medium sweep=1/1 circuit=s38417_scan difficulty=easy faults=1
+TRAIN_RESULT {"circuit": "s38417_scan", "difficulty": "easy", "learning": {"combined_reward_sum": 95.06847614918385, "entropy_mean": 0.6828896999359131, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 95.0, "intrinsic_reward_sum": 3.423807459192192, "policy_loss_mean": -0.32616126537323, "ratio_mean": 1.0783944129943848, "rnd_loss_mean": 0.03549228981137276, "scaled_intrinsic_reward_sum": 0.06847614918384384, "steps": 3, "total_loss_mean": -0.29709288477897644, "value_loss_mean": 0.06496565788984299}, "stage": 1, "stage_name": "medium", "summary": {"aborted": 0, "backtrace_steps": 6, "backtracks": 0, "decisions": 3, "detected": 1, "episodes": 1, "pi_visits": 2, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=medium sweep=1/1 circuit=c2670 difficulty=medium faults=1
+ber of gates = 1400
+#number of wires = 1557
+#number of equivalent faults = 2595
+
+#Circuit Summary:
+#---------------
+#number of inputs = 50
+#number of outputs = 22
+#number of gates = 1983
+#number of wires = 2033
+#number of equivalent faults = 3428
+
+#Circuit Summary:
+#---------------
+#number of inputs = 178
+#number of outputs = 123
+#number of gates = 2973
+#number of wires = 3151
+#number of equivalent faults = 5350
+
+#Circuit Summary:
+#---------------
+#number of inputs = 207
+#number of outputs = 108
+#number of gates = 4042
+#number of wires = 4249
+#number of equivalent faults = 7550
+
+#Circuit Summary:
+#---------------
+#number of inputs = 32
+#number of outputs = 32
+#number of gates = 2416
+#number of wires = 2448
+#number of equivalent faults = 7744
+
+#Circuit Summary:
+#---------------
+#number of inputs = 1664
+#number of outputs = 1742
+#number of gates = 23319
+#number of wires = 24983
+#number of equivalent faults = 31180
+
+#Circuit Summary:
+#---------------
+#number of inputs = 41
+#number of outputs = 32
+#number of gates = 590
+#number of wires = 631
+#number of equivalent faults = 1574
+
+#Circuit Summary:
+#---------------
+#number of inputs = 33
+#number of outputs = 25
+#number of gates = 1056
+#number of wires = 1089
+#number of equivalent faults = 1876
+
+#Circuit Summary:
+#---------------
+#number of inputs = 50
+#number of outputs = 22
+#number of gates = 1983
+#number of wires = 2033
+#number of equivalent faults = 3428
+
+#Circuit Summary:
+#---------------
+#number of inputs = 41
+#number of outputs = 32
+#number of gates = 662
+#number of wires = 703
+#number of equivalent faults = 1158
+
+#Circuit Summary:
+#---------------
+#number of inputs = 33
+#number of outputs = 25
+#number of gates = 1056
+#number of wires = 1089
+#number of equivalent faults = 1876
+
+#Circuit Summary:
+#---------------
+#number of inputs = 207
+#number of outputs = 108
+#number of gates = 4042
+#number of wires = 4249
+#number of equivalent faults = 7550
+
+#Circuit Summary:
+#---------------
+#number of inputs = 157
+#number of outputs = 64
+#number of gates = 1400
+#number of wires = 1557
+#number of equivalent faults = 2595
+
+#Circuit Summary:
+#---------------
+#number of inputs = 1664
+#number of outputs = 1742
+#number of gates = 23319
+#number of wires = 24983
+#number of equivalent faults = 31180
+
+#Circuit Summary:
+#---------------
+#number of inputs = 32
+#number of outputs = 32
+#number of gates = 2416
+#number of wires = 2448
+#number of equivalent faults = 7744
+
+#Circuit Summary:
+#---------------
+#number of inputs = 178
+#number of outputs = 123
+#number of gates = 2973
+#number of wires = 3151
+#number of equivalent faults = 5350
+
+#Circuit Summary:
+#---------------
+#number of inputs = 41
+#number of outputs = 32
+#number of gates = 590
+#number of wires = 631
+#number of equivalent faults = 1574
+
+#Circuit Summary:
+#---------------
+#number of inputs = 50
+#number of outputs = 22
+#number of gates = 1983
+#number of wires = 2033
+#number of equivalent faults = 3428
+
+#Circuit Summary:
+#---------------
+#number of inputs = 41
+#number of outputs = 32
+#number of gates = 662
+#number of wires = 703
+#number of equivalent faults = 1158
+
+#Circuit Summary:
+#---------------
+#number of inputs = 36
+#number of outputs = 7
+#number of gates = 288
+#number of wires = 324
+#number of equivalent faults = 560
+
+#Circuit Summary:
+#---------------
+#number of inputs = 32
+#number of outputs = 32
+#number of gates = 2416
+#number of wires = 2448
+#number of equivalent faults = 7744
+
+#Circuit Summary:
+#---------------
+#number of inputs = 178
+#number of outputs = 123
+#number of gates = 2973
+#number of wires = 3151
+#number of equivalent faults = 5350
+
+#Circuit Summary:
+#---------------
+#number of inputs = 36
+#number of outputs = 7
+#number of gates = 288
+#number of wires = 324
+#number of equivalent faults = 560
+
+#Circuit Summary:
+#---------------
+#number of inputs = 1664
+#number of outputs = 1742
+#number of gates = 23319
+#number of wires = 24983
+#number of equivalent faults = 31180
+
+#Circuit Summary:
+#---------------
+#number of inputs = 157
+#number of outputs = 64
+#number of gates = 1400
+#number of wires = 1557
+#number of equivalent faultTRAIN_RESULT {"circuit": "c2670", "difficulty": "medium", "learning": {"combined_reward_sum": 82.75569941137483, "entropy_mean": 0.6930134892463684, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 81.69811320754717, "intrinsic_reward_sum": 52.87931019138385, "policy_loss_mean": -0.24568241834640503, "ratio_mean": 1.010193943977356, "rnd_loss_mean": 0.033149756491184235, "scaled_intrinsic_reward_sum": 1.057586203827677, "steps": 49, "total_loss_mean": -0.24790020287036896, "value_loss_mean": 0.0024945884943008423}, "stage": 1, "stage_name": "medium", "summary": {"aborted": 0, "backtrace_steps": 300, "backtracks": 0, "decisions": 49, "detected": 1, "episodes": 1, "pi_visits": 16, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=medium sweep=1/1 circuit=c7552 difficulty=medium faults=1
+TRAIN_RESULT {"circuit": "c7552", "difficulty": "medium", "learning": {"combined_reward_sum": 120.6377694395853, "entropy_mean": 0.6881903409957886, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 119.83935742971887, "intrinsic_reward_sum": 39.92060049332106, "policy_loss_mean": -0.3406325578689575, "ratio_mean": 1.0262391567230225, "rnd_loss_mean": 0.0334065742790699, "scaled_intrinsic_reward_sum": 0.7984120098664212, "steps": 36, "total_loss_mean": -0.3392527997493744, "value_loss_mean": 0.009641353040933609}, "stage": 1, "stage_name": "medium", "summary": {"aborted": 0, "backtrace_steps": 253, "backtracks": 0, "decisions": 36, "detected": 1, "episodes": 1, "pi_visits": 18, "redundant": 0}, "sweep": 1}
+VALIDATION selection=kept {"aggregate": {"aborted": 0, "decisions": 1435, "detected": 30, "mean_backtrace_ratio": 1.148388717642592, "mean_backtrack_ratio": 0.4074979951884523, "score": [-30, 0, 0.4074979951884523, 1.148388717642592, 1435]}, "circuits": {"c1355": {"aborted": 0, "backtrace_steps": 1857, "backtracks": 0, "decisions": 255, "detected": 3, "episodes": 3, "pi_visits": 123, "redundant": 0}, "c1908": {"aborted": 0, "backtrace_steps": 308, "backtracks": 0, "decisions": 50, "detected": 3, "episodes": 3, "pi_visits": 29, "redundant": 0}, "c2670": {"aborted": 0, "backtrace_steps": 2264, "backtracks": 180, "decisions": 255, "detected": 3, "episodes": 3, "pi_visits": 416, "redundant": 0}, "c3540": {"aborted": 0, "backtrace_steps": 576, "backtracks": 2, "decisions": 97, "detected": 3, "episodes": 3, "pi_visits": 51, "redundant": 0}, "c432": {"aborted": 0, "backtrace_steps": 490, "backtracks": 0, "decisions": 88, "detected": 3, "episodes": 3, "pi_visits": 54, "redundant": 0}, "c499": {"aborted": 0, "backtrace_steps": 1403, "backtracks": 0, "decisions": 195, "detected": 3, "episodes": 3, "pi_visits": 103, "redundant": 0}, "c5315": {"aborted": 0, "backtrace_steps": 577, "backtracks": 3, "decisions": 83, "detected": 3, "episodes": 3, "pi_visits": 59, "redundant": 0}, "c6288": {"aborted": 0, "backtrace_steps": 1108, "backtracks": 9, "decisions": 211, "detected": 3, "episodes": 3, "pi_visits": 97, "redundant": 0}, "c7552": {"aborted": 0, "backtrace_steps": 695, "backtracks": 0, "decisions": 97, "detected": 3, "episodes": 3, "pi_visits": 64, "redundant": 0}, "s38417_scan": {"aborted": 0, "backtrace_steps": 459, "backtracks": 0, "decisions": 104, "detected": 3, "episodes": 3, "pi_visits": 47, "redundant": 0}}, "label": "medium_sweep_1"}
+TRAIN_START stage=hard sweep=1/1 circuit=s38417_scan difficulty=easy faults=1
+TRAIN_RESULT {"circuit": "s38417_scan", "difficulty": "easy", "learning": {"combined_reward_sum": 100.0, "entropy_mean": 0.6650784015655518, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 100.0, "intrinsic_reward_sum": 0.0, "policy_loss_mean": 0.126067116856575, "ratio_mean": 0.8662834763526917, "rnd_loss_mean": 0.0, "scaled_intrinsic_reward_sum": 0.0, "steps": 1, "total_loss_mean": 0.12795789539813995, "value_loss_mean": 0.00511173065751791}, "stage": 2, "stage_name": "hard", "summary": {"aborted": 0, "backtrace_steps": 4, "backtracks": 0, "decisions": 1, "detected": 1, "episodes": 1, "pi_visits": 2, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=hard sweep=1/1 circuit=c2670 difficulty=medium faults=1
+TRAIN_RESULT {"circuit": "c2670", "difficulty": "medium", "learning": {"combined_reward_sum": 97.0754716981132, "entropy_mean": 0.6706631183624268, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 97.0754716981132, "intrinsic_reward_sum": 0.0, "policy_loss_mean": 0.5246868133544922, "ratio_mean": 0.9971756935119629, "rnd_loss_mean": 0.0, "scaled_intrinsic_reward_sum": 0.0, "steps": 29, "total_loss_mean": 0.5627328753471375, "value_loss_mean": 0.07743345946073532}, "stage": 2, "stage_name": "hard", "summary": {"aborted": 0, "backtrace_steps": 137, "backtracks": 0, "decisions": 29, "detected": 1, "episodes": 1, "pi_visits": 9, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=hard sweep=1/1 circuit=c6288 difficulty=hard faults=1
+TRAIN_RESULT {"circuit": "c6288", "difficulty": "hard", "learning": {"combined_reward_sum": 129.44978297792036, "entropy_mean": 0.6555200219154358, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 129.44978297792036, "intrinsic_reward_sum": 0.0, "policy_loss_mean": -0.32965996861457825, "ratio_mean": 0.9993401765823364, "rnd_loss_mean": 0.0, "scaled_intrinsic_reward_sum": 0.0, "steps": 87, "total_loss_mean": -0.2801051735877991, "value_loss_mean": 0.10042063146829605}, "stage": 2, "stage_name": "hard", "summary": {"aborted": 0, "backtrace_steps": 594, "backtracks": 2, "decisions": 87, "detected": 1, "episodes": 1, "pi_visits": 29, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=hard sweep=1/1 circuit=c499 difficulty=easy faults=1
+TRAIN_RESULT {"circuit": "c499", "difficulty": "easy", "learning": {"combined_reward_sum": 104.74178403755869, "entropy_mean": 0.6586850881576538, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 104.74178403755869, "intrinsic_reward_sum": 0.0, "policy_loss_mean": -0.0046442351303994656, "ratio_mean": 0.9979931712150574, "rnd_loss_mean": 0.0, "scaled_intrinsic_reward_sum": 0.0, "steps": 28, "total_loss_mean": 0.004331516567617655, "value_loss_mean": 0.01926887035369873}, "stage": 2, "stage_name": "hard", "summary": {"aborted": 0, "backtrace_steps": 224, "backtracks": 0, "decisions": 28, "detected": 1, "episodes": 1, "pi_visits": 15, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=hard sweep=1/1 circuit=c1908 difficulty=medium faults=1
+TRAIN_RESULT {"circuit": "c1908", "difficulty": "medium", "learning": {"combined_reward_sum": 80.0, "entropy_mean": 0.6520872116088867, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 80.0, "intrinsic_reward_sum": 0.0, "policy_loss_mean": 0.35932666063308716, "ratio_mean": 0.9913194179534912, "rnd_loss_mean": 0.0, "scaled_intrinsic_reward_sum": 0.0, "steps": 42, "total_loss_mean": 0.38066044449806213, "value_loss_mean": 0.04397176206111908}, "stage": 2, "stage_name": "hard", "summary": {"aborted": 0, "backtrace_steps": 350, "backtracks": 0, "decisions": 42, "detected": 1, "episodes": 1, "pi_visits": 23, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=hard sweep=1/1 circuit=c2670 difficulty=hard faults=1
+TRAIN_RESULT {"circuit": "c2670", "difficulty": "hard", "learning": {"combined_reward_sum": 95.56923076923077, "entropy_mean": 0.6385347247123718, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 95.56923076923077, "intrinsic_reward_sum": 0.0, "policy_loss_mean": 0.02792217954993248, "ratio_mean": 1.0006901025772095, "rnd_loss_mean": 0.0, "scaled_intrinsic_reward_sum": 0.0, "steps": 63, "total_loss_mean": 0.03533443436026573, "value_loss_mean": 0.016101578250527382}, "stage": 2, "stage_name": "hard", "summary": {"aborted": 0, "backtrace_steps": 469, "backtracks": 0, "decisions": 63, "detected": 1, "episodes": 1, "pi_visits": 42, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=hard sweep=1/1 circuit=c7552 difficulty=easy faults=1
+TRAIN_RESULT {"circuit": "c7552", "difficulty": "easy", "learning": {"combined_reward_sum": 101.63461538461539, "entropy_mean": 0.6314358711242676, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 101.63461538461539, "intrinsic_reward_sum": 0.0, "policy_loss_mean": -0.18888995051383972, "ratio_mean": 1.00537109375, "rnd_loss_mean": 0.0, "scaled_intrinsic_reward_sum": 0.0, "steps": 16, "total_loss_mean": -0.1820547878742218, "value_loss_mean": 0.014933190308511257}, "stage": 2, "stage_name": "hard", "summary": {"aborted": 0, "backtrace_steps": 87, "backtracks": 0, "decisions": 16, "detected": 1, "episodes": 1, "pi_visits": 13, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=hard sweep=1/1 circuit=c7552 difficulty=medium faults=1
+TRAIN_RESULT {"circuit": "c7552", "difficulty": "medium", "learning": {"combined_reward_sum": 122.9718875502008, "entropy_mean": 0.6284433603286743, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 122.9718875502008, "intrinsic_reward_sum": 0.0, "policy_loss_mean": -0.330305278301239, "ratio_mean": 1.0219523906707764, "rnd_loss_mean": 0.0, "scaled_intrinsic_reward_sum": 0.0, "steps": 32, "total_loss_mean": -0.3249359726905823, "value_loss_mean": 0.011995481327176094}, "stage": 2, "stage_name": "hard", "summary": {"aborted": 0, "backtrace_steps": 175, "backtracks": 0, "decisions": 32, "detected": 1, "episodes": 1, "pi_visits": 18, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=hard sweep=1/1 circuit=c432 difficulty=hard faults=1
+TRAIN_RESULT {"circuit": "c432", "difficulty": "hard", "learning": {"combined_reward_sum": 114.13333333333333, "entropy_mean": 0.6087803244590759, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 114.13333333333333, "intrinsic_reward_sum": 0.0, "policy_loss_mean": -0.002050660317763686, "ratio_mean": 0.9938510060310364, "rnd_loss_mean": 0.0, "scaled_intrinsic_reward_sum": 0.0, "steps": 28, "total_loss_mean": 0.004189036786556244, "value_loss_mean": 0.013696955516934395}, "stage": 2, "stage_name": "hard", "summary": {"aborted": 0, "backtrace_steps": 119, "backtracks": 0, "decisions": 28, "detected": 1, "episodes": 1, "pi_visits": 16, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=hard sweep=1/1 circuit=c1355 difficulty=hard faults=1
+TRAIN_RESULT {"circuit": "c1355", "difficulty": "hard", "learning": {"combined_reward_sum": 40.0, "entropy_mean": 0.600684642791748, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 40.0, "intrinsic_reward_sum": 0.0, "policy_loss_mean": 0.8555833101272583, "ratio_mean": 0.9998669624328613, "rnd_loss_mean": 0.0, "scaled_intrinsic_reward_sum": 0.0, "steps": 1348, "total_loss_mean": 1.103009819984436, "value_loss_mean": 0.49605444073677063}, "stage": 2, "stage_name": "hard", "summary": {"aborted": 0, "backtrace_steps": 6233, "backtracks": 352, "decisions": 1348, "detected": 1, "episodes": 1, "pi_visits": 735, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=hard sweep=1/1 circuit=c499 difficulty=medium faults=1
+TRAIN_RESULT {"circuit": "c499", "difficulty": "medium", "learning": {"combined_reward_sum": 100.05692599620494, "entropy_mean": 0.5929793119430542, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 100.05692599620494, "intrinsic_reward_sum": 0.0, "policy_loss_mean": 0.06460846215486526, "ratio_mean": 0.9997898936271667, "rnd_loss_mean": 0.0, "scaled_intrinsic_reward_sum": 0.0, "steps": 70, "total_loss_mean": 0.07466556131839752, "value_loss_mean": 0.021300140768289566}, "stage": 2, "stage_name": "hard", "summary": {"aborted": 0, "backtrace_steps": 524, "backtracks": 0, "decisions": 70, "detected": 1, "episodes": 1, "pi_visits": 41, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=hard sweep=1/1 circuit=c7552 difficulty=hard faults=1
+TRAIN_RESULT {"circuit": "c7552", "difficulty": "hard", "learning": {"combined_reward_sum": 117.73156899810964, "entropy_mean": 0.5897425413131714, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 117.73156899810964, "intrinsic_reward_sum": 0.0, "policy_loss_mean": -0.2906612753868103, "ratio_mean": 1.0003209114074707, "rnd_loss_mean": 0.0, "scaled_intrinsic_reward_sum": 0.0, "steps": 89, "total_loss_mean": -0.27100908756256104, "value_loss_mean": 0.04048382490873337}, "stage": 2, "stage_name": "hard", "summary": {"aborted": 0, "backtrace_steps": 649, "backtracks": 0, "decisions": 89, "detected": 1, "episodes": 1, "pi_visits": 54, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=hard sweep=1/1 circuit=c6288 difficulty=easy faults=1
+TRAIN_RESULT {"circuit": "c6288", "difficulty": "easy", "learning": {"combined_reward_sum": 98.01886792452831, "entropy_mean": 0.5865368843078613, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 98.01886792452831, "intrinsic_reward_sum": 0.0, "policy_loss_mean": 0.01210717111825943, "ratio_mean": 0.9975785613059998, "rnd_loss_mean": 0.0, "scaled_intrinsic_reward_sum": 0.0, "steps": 34, "total_loss_mean": 0.018576886504888535, "value_loss_mean": 0.014112504199147224}, "stage": 2, "stage_name": "hard", "summary": {"aborted": 0, "backtrace_steps": 127, "backtracks": 0, "decisions": 34, "detected": 1, "episodes": 1, "pi_visits": 23, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=hard sweep=1/1 circuit=c1908 difficulty=easy faults=1
+s = 2595
+
+#Circuit Summary:
+#---------------
+#number of inputs = 207
+#number of outputs = 108
+#number of gates = 4042
+#number of wires = 4249
+#number of equivalent faults = 7550
+
+#Circuit Summary:
+#---------------
+#number of inputs = 36
+#number of outputs = 7
+#number of gates = 288
+#number of wires = 324
+#number of equivalent faults = 560
+
+#Circuit Summary:
+#---------------
+#number of inputs = 41
+#number of outputs = 32
+#number of gates = 662
+#number of wires = 703
+#number of equivalent faults = 1158
+
+#Circuit Summary:
+#---------------
+#number of inputs = 41
+#number of outputs = 32
+#number of gates = 590
+#number of wires = 631
+#number of equivalent faults = 1574
+
+#Circuit Summary:
+#---------------
+#number of inputs = 33
+#number of outputs = 25
+#number of gates = 1056
+#number of wires = 1089
+#number of equivalent faults = 1876
+
+#Circuit Summary:
+#---------------
+#number of inputs = 157
+#number of outputs = 64
+#number of gates = 1400
+#number of wires = 1557
+#number of equivalent faults = 2595
+
+#Circuit Summary:
+#---------------
+#number of inputs = 50
+#number of outputs = 22
+#number of gates = 1983
+#number of wires = 2033
+#number of equivalent faults = 3428
+
+#Circuit Summary:
+#---------------
+#number of inputs = 178
+#number of outputs = 123
+#number of gates = 2973
+#number of wires = 3151
+#number of equivalent faults = 5350
+
+#Circuit Summary:
+#---------------
+#number of inputs = 207
+#number of outputs = 108
+#number of gates = 4042
+#number of wires = 4249
+#number of equivalent faults = 7550
+
+#Circuit Summary:
+#---------------
+#number of inputs = 32
+#number of outputs = 32
+#number of gates = 2416
+#number of wires = 2448
+#number of equivalent faults = 7744
+
+#Circuit Summary:
+#---------------
+#number of inputs = 1664
+#number of outputs = 1742
+#number of gates = 23319
+#number of wires = 24983
+#number of equivalent faults = 31180
+
+#Circuit Summary:
+#---------------
+#number of inputs = 1664
+#number of outputs = 1742
+#number of gates = 23319
+#number of wires = 24983
+#number of equivalent faults = 31180
+
+#Circuit Summary:
+#---------------
+#number of inputs = 157
+#number of outputs = 64
+#number of gates = 1400
+#number of wires = 1557
+#number of equivalent faults = 2595
+
+#Circuit Summary:
+#---------------
+#number of inputs = 32
+#number of outputs = 32
+#number of gates = 2416
+#number of wires = 2448
+#number of equivalent faults = 7744
+
+#Circuit Summary:
+#---------------
+#number of inputs = 41
+#number of outputs = 32
+#number of gates = 662
+#number of wires = 703
+#number of equivalent faults = 1158
+
+#Circuit Summary:
+#---------------
+#number of inputs = 33
+#number of outputs = 25
+#number of gates = 1056
+#number of wires = 1089
+#number of equivalent faults = 1876
+
+#Circuit Summary:
+#---------------
+#number of inputs = 157
+#number of outputs = 64
+#number of gates = 1400
+#number of wires = 1557
+#number of equivalent faults = 2595
+
+#Circuit Summary:
+#---------------
+#number of inputs = 207
+#number of outputs = 108
+#number of gates = 4042
+#number of wires = 4249
+#number of equivalent faults = 7550
+
+#Circuit Summary:
+#---------------
+#number of inputs = 207
+#number of outputs = 108
+#number of gates = 4042
+#number of wires = 4249
+#number of equivalent faults = 7550
+
+#Circuit Summary:
+#---------------
+#number of inputs = 36
+#number of outputs = 7
+#number of gates = 288
+#number of wires = 324
+#number of equivalent faults = 560
+
+#Circuit Summary:
+#---------------
+#number of inputs = 41
+#number of outputs = 32
+#number of gates = 590
+#number of wires = 631
+#number of equivalent faults = 1574
+
+#Circuit Summary:
+#---------------
+#number of inputs = 41
+#number of outputs = 32
+#number of gates = 662
+#number of wires = 703
+#number of equivalent faults = 1158
+
+#Circuit Summary:
+#---------------
+#number of inputs = 207
+#number of outputs = 108
+#number of gates = 4042
+#number of wires = 4249
+#number of equivalent faults = 7550
+
+#Circuit Summary:
+#---------------
+#number of inputs = 32
+#number of outputs = 32
+#number of gates = 2416
+#number of wires = 2448
+#number of equivalent faults = 7744
+
+#Circuit Summary:
+#---------------
+#number of inputs = 33
+#number oTRAIN_RESULT {"circuit": "c1908", "difficulty": "easy", "learning": {"combined_reward_sum": 94.5945945945946, "entropy_mean": 0.5825909972190857, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 94.5945945945946, "intrinsic_reward_sum": 0.0, "policy_loss_mean": 0.12690050899982452, "ratio_mean": 0.999998152256012, "rnd_loss_mean": 0.0, "scaled_intrinsic_reward_sum": 0.0, "steps": 15, "total_loss_mean": 0.12992428243160248, "value_loss_mean": 0.0072127641178667545}, "stage": 2, "stage_name": "hard", "summary": {"aborted": 0, "backtrace_steps": 114, "backtracks": 0, "decisions": 15, "detected": 1, "episodes": 1, "pi_visits": 13, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=hard sweep=1/1 circuit=c5315 difficulty=hard faults=1
+TRAIN_RESULT {"circuit": "c5315", "difficulty": "hard", "learning": {"combined_reward_sum": 122.79151943462898, "entropy_mean": 0.5881953239440918, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 122.79151943462898, "intrinsic_reward_sum": 0.0, "policy_loss_mean": -0.21331965923309326, "ratio_mean": 1.0037970542907715, "rnd_loss_mean": 0.0, "scaled_intrinsic_reward_sum": 0.0, "steps": 27, "total_loss_mean": -0.19935385882854462, "value_loss_mean": 0.02910800278186798}, "stage": 2, "stage_name": "hard", "summary": {"aborted": 0, "backtrace_steps": 204, "backtracks": 0, "decisions": 27, "detected": 1, "episodes": 1, "pi_visits": 18, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=hard sweep=1/1 circuit=c2670 difficulty=easy faults=1
+TRAIN_RESULT {"circuit": "c2670", "difficulty": "easy", "learning": {"combined_reward_sum": 99.7872340425532, "entropy_mean": 0.5939873456954956, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 99.7872340425532, "intrinsic_reward_sum": 0.0, "policy_loss_mean": 0.08440211415290833, "ratio_mean": 1.002435326576233, "rnd_loss_mean": 0.0, "scaled_intrinsic_reward_sum": 0.0, "steps": 18, "total_loss_mean": 0.09087663888931274, "value_loss_mean": 0.014137019403278828}, "stage": 2, "stage_name": "hard", "summary": {"aborted": 0, "backtrace_steps": 96, "backtracks": 0, "decisions": 18, "detected": 1, "episodes": 1, "pi_visits": 10, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=hard sweep=1/1 circuit=c3540 difficulty=hard faults=1
+TRAIN_RESULT {"circuit": "c3540", "difficulty": "hard", "learning": {"combined_reward_sum": 44.53125, "entropy_mean": 0.5947219133377075, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 44.53125, "intrinsic_reward_sum": 0.0, "policy_loss_mean": 0.6672583222389221, "ratio_mean": 0.9985358119010925, "rnd_loss_mean": 0.0, "scaled_intrinsic_reward_sum": 0.0, "steps": 135, "total_loss_mean": 0.7853125929832458, "value_loss_mean": 0.2372981309890747}, "stage": 2, "stage_name": "hard", "summary": {"aborted": 0, "backtrace_steps": 815, "backtracks": 34, "decisions": 135, "detected": 1, "episodes": 1, "pi_visits": 79, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=hard sweep=1/1 circuit=c1908 difficulty=hard faults=1
+TRAIN_RESULT {"circuit": "c1908", "difficulty": "hard", "learning": {"combined_reward_sum": 101.18556701030928, "entropy_mean": 0.5971365571022034, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 101.18556701030928, "intrinsic_reward_sum": 0.0, "policy_loss_mean": -0.13261257112026215, "ratio_mean": 0.9992313385009766, "rnd_loss_mean": 0.0, "scaled_intrinsic_reward_sum": 0.0, "steps": 38, "total_loss_mean": -0.1042768731713295, "value_loss_mean": 0.057865653187036514}, "stage": 2, "stage_name": "hard", "summary": {"aborted": 0, "backtrace_steps": 342, "backtracks": 0, "decisions": 38, "detected": 1, "episodes": 1, "pi_visits": 28, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=hard sweep=1/1 circuit=c6288 difficulty=medium faults=1
+TRAIN_RESULT {"circuit": "c6288", "difficulty": "medium", "learning": {"combined_reward_sum": 98.82640586797066, "entropy_mean": 0.599604070186615, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 98.82640586797066, "intrinsic_reward_sum": 0.0, "policy_loss_mean": -0.2125539779663086, "ratio_mean": 1.0013396739959717, "rnd_loss_mean": 0.0, "scaled_intrinsic_reward_sum": 0.0, "steps": 72, "total_loss_mean": -0.2063669115304947, "value_loss_mean": 0.013573307543992996}, "stage": 2, "stage_name": "hard", "summary": {"aborted": 0, "backtrace_steps": 457, "backtracks": 0, "decisions": 72, "detected": 1, "episodes": 1, "pi_visits": 30, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=hard sweep=1/1 circuit=c1355 difficulty=easy faults=1
+TRAIN_RESULT {"circuit": "c1355", "difficulty": "easy", "learning": {"combined_reward_sum": 86.92857142857143, "entropy_mean": 0.6028517484664917, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 86.92857142857143, "intrinsic_reward_sum": 0.0, "policy_loss_mean": 0.019809111952781677, "ratio_mean": 1.0006762742996216, "rnd_loss_mean": 0.0, "scaled_intrinsic_reward_sum": 0.0, "steps": 53, "total_loss_mean": 0.022789424285292625, "value_loss_mean": 0.007166330702602863}, "stage": 2, "stage_name": "hard", "summary": {"aborted": 0, "backtrace_steps": 323, "backtracks": 0, "decisions": 53, "detected": 1, "episodes": 1, "pi_visits": 23, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=hard sweep=1/1 circuit=c1355 difficulty=medium faults=1
+TRAIN_RESULT {"circuit": "c1355", "difficulty": "medium", "learning": {"combined_reward_sum": 99.0576923076923, "entropy_mean": 0.607681155204773, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 99.0576923076923, "intrinsic_reward_sum": 0.0, "policy_loss_mean": -0.036492642015218735, "ratio_mean": 0.9999648928642273, "rnd_loss_mean": 0.0, "scaled_intrinsic_reward_sum": 0.0, "steps": 98, "total_loss_mean": -0.03685895353555679, "value_loss_mean": 0.000482735427794978}, "stage": 2, "stage_name": "hard", "summary": {"aborted": 0, "backtrace_steps": 569, "backtracks": 0, "decisions": 98, "detected": 1, "episodes": 1, "pi_visits": 42, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=hard sweep=1/1 circuit=c499 difficulty=hard faults=1
+TRAIN_RESULT {"circuit": "c499", "difficulty": "hard", "learning": {"combined_reward_sum": 127.24867724867725, "entropy_mean": 0.6146177053451538, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 127.24867724867725, "intrinsic_reward_sum": 0.0, "policy_loss_mean": -0.29393401741981506, "ratio_mean": 1.0061403512954712, "rnd_loss_mean": 0.0, "scaled_intrinsic_reward_sum": 0.0, "steps": 28, "total_loss_mean": -0.2808759808540344, "value_loss_mean": 0.02734534814953804}, "stage": 2, "stage_name": "hard", "summary": {"aborted": 0, "backtrace_steps": 208, "backtracks": 0, "decisions": 28, "detected": 1, "episodes": 1, "pi_visits": 14, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=hard sweep=1/1 circuit=s38417_scan difficulty=hard faults=1
+TRAIN_RESULT {"circuit": "s38417_scan", "difficulty": "hard", "learning": {"combined_reward_sum": 108.85096700796359, "entropy_mean": 0.6295527219772339, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 108.85096700796359, "intrinsic_reward_sum": 0.0, "policy_loss_mean": 0.04476967826485634, "ratio_mean": 1.0013571977615356, "rnd_loss_mean": 0.0, "scaled_intrinsic_reward_sum": 0.0, "steps": 17, "total_loss_mean": 0.05238533020019531, "value_loss_mean": 0.016490411013364792}, "stage": 2, "stage_name": "hard", "summary": {"aborted": 0, "backtrace_steps": 101, "backtracks": 0, "decisions": 17, "detected": 1, "episodes": 1, "pi_visits": 8, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=hard sweep=1/1 circuit=c432 difficulty=medium faults=1
+TRAIN_RESULT {"circuit": "c432", "difficulty": "medium", "learning": {"combined_reward_sum": 66.80851063829788, "entropy_mean": 0.6350555419921875, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 66.80851063829788, "intrinsic_reward_sum": 0.0, "policy_loss_mean": 0.5501354932785034, "ratio_mean": 0.9989891052246094, "rnd_loss_mean": 0.0, "scaled_intrinsic_reward_sum": 0.0, "steps": 34, "total_loss_mean": 0.6254991888999939, "value_loss_mean": 0.1519976258277893}, "stage": 2, "stage_name": "hard", "summary": {"aborted": 0, "backtrace_steps": 218, "backtracks": 1, "decisions": 34, "detected": 1, "episodes": 1, "pi_visits": 20, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=hard sweep=1/1 circuit=c432 difficulty=easy faults=1
+TRAIN_RESULT {"circuit": "c432", "difficulty": "easy", "learning": {"combined_reward_sum": 80.0, "entropy_mean": 0.6364139914512634, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 80.0, "intrinsic_reward_sum": 0.0, "policy_loss_mean": 0.18745312094688416, "ratio_mean": 0.9999186992645264, "rnd_loss_mean": 0.0, "scaled_intrinsic_reward_sum": 0.0, "steps": 37, "total_loss_mean": 0.19269706308841705, "value_loss_mean": 0.011760711669921875}, "stage": 2, "stage_name": "hard", "summary": {"aborted": 0, "backtrace_steps": 165, "backtracks": 0, "decisions": 37, "detected": 1, "episodes": 1, "pi_visits": 18, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=hard sweep=1/1 circuit=c3540 difficulty=easy faults=1
+TRAIN_RESULT {"circuit": "c3540", "difficulty": "easy", "learning": {"combined_reward_sum": 98.21428571428571, "entropy_mean": 0.658256471157074, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 98.21428571428571, "intrinsic_reward_sum": 0.0, "policy_loss_mean": -0.29487505555152893, "ratio_mean": 1.0266681909561157, "rnd_loss_mean": 0.0, "scaled_intrinsic_reward_sum": 0.0, "steps": 13, "total_loss_mean": -0.2869912087917328, "value_loss_mean": 0.01708420366048813}, "stage": 2, "stage_name": "hard", "summary": {"aborted": 0, "backtrace_steps": 33, "backtracks": 0, "decisions": 13, "detected": 1, "episodes": 1, "pi_visits": 10, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=hard sweep=1/1 circuit=c3540 difficulty=medium faults=1
+TRAIN_RESULT {"circuit": "c3540", "difficulty": "medium", "learning": {"combined_reward_sum": 111.69642857142857, "entropy_mean": 0.6393144130706787, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 111.69642857142857, "intrinsic_reward_sum": 0.0, "policy_loss_mean": -0.2828054130077362, "ratio_mean": 1.0038573741912842, "rnd_loss_mean": 0.0, "scaled_intrinsic_reward_sum": 0.0, "steps": 56, "total_loss_mean": -0.26919257640838623, "value_loss_mean": 0.028504330664873123}, "stage": 2, "stage_name": "hard", "summary": {"aborted": 0, "backtrace_steps": 410, "backtracks": 0, "decisions": 56, "detected": 1, "episodes": 1, "pi_visits": 19, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=hard sweep=1/1 circuit=s38417_scan difficulty=medium faults=1
+TRAIN_RESULT {"circuit": "s38417_scan", "difficulty": "medium", "learning": {"combined_reward_sum": 96.06986899563319, "entropy_mean": 0.649616539478302, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 96.06986899563319, "intrinsic_reward_sum": 0.0, "policy_loss_mean": 0.07152190804481506, "ratio_mean": 1.003324031829834, "rnd_loss_mean": 0.0, "scaled_intrinsic_reward_sum": 0.0, "steps": 51, "total_loss_mean": 0.08194804191589355, "value_loss_mean": 0.022151513025164604}, "stage": 2, "stage_name": "hard", "summary": {"aborted": 0, "backtrace_steps": 319, "backtracks": 0, "decisions": 51, "detected": 1, "episodes": 1, "pi_visits": 39, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=hard sweep=1/1 circuit=c5315 difficulty=easy faults=1
+TRAIN_RESULT {"circuit": "c5315", "difficulty": "easy", "learning": {"combined_reward_sum": 99.47368421052632, "entropy_mean": 0.6656126976013184, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 99.47368421052632, "intrinsic_reward_sum": 0.0, "policy_loss_mean": 0.1241515725851059, "ratio_mean": 0.9957259297370911, "rnd_loss_mean": 0.0, "scaled_intrinsic_reward_sum": 0.0, "steps": 4, "total_loss_mean": 0.12503653764724731, "value_loss_mean": 0.003101171227172017}, "stage": 2, "stage_name": "hard", "summary": {"aborted": 0, "backtrace_steps": 20, "backtracks": 0, "decisions": 4, "detected": 1, "episodes": 1, "pi_visits": 5, "redundant": 0}, "sweep": 1}
+TRAIN_START stage=hard sweep=1/1 circuit=c5315 difficulty=medium faults=1
+TRAIN_RESULT {"circuit": "c5315", "difficulty": "medium", "learning": {"combined_reward_sum": 101.3157894736842, "entropy_mean": 0.6541535258293152, "episodes": 1, "episodes_with_updates": 1, "extrinsic_reward_sum": 101.3157894736842, "intrinsic_reward_sum": 0.0, "policy_loss_mean": 0.020722322165966034, "ratio_mean": 0.9995279312133789, "rnd_loss_mean": 0.0, "scaled_intrinsic_reward_sum": 0.0, "steps": 24, "total_loss_mean": 0.0222602691501379, "value_loss_mean": 0.004384200554341078}, "stage": 2, "stage_name": "hard", "summary": {"aborted": 0, "backtrace_steps": 165, "backtracks": 0, "decisions": 24, "detected": 1, "episodes": 1, "pi_visits": 19, "redundant": 0}, "sweep": 1}
+f outputs = 25
+#number of gates = 1056
+#number of wires = 1089
+#number of equivalent faults = 1876
+
+#Circuit Summary:
+#---------------
+#number of inputs = 178
+#number of outputs = 123
+#number of gates = 2973
+#number of wires = 3151
+#number of equivalent faults = 5350
+
+#Circuit Summary:
+#---------------
+#number of inputs = 157
+#number of outputs = 64
+#number of gates = 1400
+#number of wires = 1557
+#number of equivalent faults = 2595
+
+#Circuit Summary:
+#---------------
+#number of inputs = 50
+#number of outputs = 22
+#number of gates = 1983
+#number of wires = 2033
+#number of equivalent faults = 3428
+
+#Circuit Summary:
+#---------------
+#number of inputs = 33
+#number of outputs = 25
+#number of gates = 1056
+#number of wires = 1089
+#number of equivalent faults = 1876
+
+#Circuit Summary:
+#---------------
+#number of inputs = 32
+#number of outputs = 32
+#number of gates = 2416
+#number of wires = 2448
+#number of equivalent faults = 7744
+
+#Circuit Summary:
+#---------------
+#number of inputs = 41
+#number of outputs = 32
+#number of gates = 590
+#number of wires = 631
+#number of equivalent faults = 1574
+
+#Circuit Summary:
+#---------------
+#number of inputs = 41
+#number of outputs = 32
+#number of gates = 590
+#number of wires = 631
+#number of equivalent faults = 1574
+
+#Circuit Summary:
+#---------------
+#number of inputs = 41
+#number of outputs = 32
+#number of gates = 662
+#number of wires = 703
+#number of equivalent faults = 1158
+
+#Circuit Summary:
+#---------------
+#number of inputs = 1664
+#number of outputs = 1742
+#number of gates = 23319
+#number of wires = 24983
+#number of equivalent faults = 31180
+
+#Circuit Summary:
+#---------------
+#number of inputs = 36
+#number of outputs = 7
+#number of gates = 288
+#number of wires = 324
+#number of equivalent faults = 560
+
+#Circuit Summary:
+#---------------
+#number of inputs = 36
+#number of outputs = 7
+#number of gates = 288
+#number of wires = 324
+#number of equivalent faults = 560
+
+#Circuit Summary:
+#---------------
+#number of inputs = 50
+#number of outputs = 22
+#number of gates = 1983
+#number of wires = 2033
+#number of equivalent faults = 3428
+
+#Circuit Summary:
+#---------------
+#number of inputs = 50
+#number of outputs = 22
+#number of gates = 1983
+#number of wires = 2033
+#number of equivalent faults = 3428
+
+#Circuit Summary:
+#---------------
+#number of inputs = 1664
+#number of outputs = 1742
+#number of gates = 23319
+#number of wires = 24983
+#number of equivalent faults = 31180
+
+#Circuit Summary:
+#---------------
+#number of inputs = 178
+#number of outputs = 123
+#number of gates = 2973
+#number of wires = 3151
+#number of equivalent faults = 5350
+
+#Circuit Summary:
+#---------------
+#number of inputs = 178
+#number of outputs = 123
+#number of gates = 2973
+#number of wires = 3151
+#number of equivalent faults = 5350
+
+#Circuit Summary:
+#---------------
+#number of inputs = 36
+#number of outputs = 7
+#number of gates = 288
+#number of wires = 324
+#number of equivalent faults = 560
+
+#Circuit Summary:
+#---------------
+#number of inputs = 41
+#number of outputs = 32
+#number of gates = 662
+#number of wires = 703
+#number of equivalent faults = 1158
+
+#Circuit Summary:
+#---------------
+#number of inputs = 41
+#number of outputs = 32
+#number of gates = 590
+#number of wires = 631
+#number of equivalent faults = 1574
+
+#Circuit Summary:
+#---------------
+#number of inputs = 33
+#number of outputs = 25
+#number of gates = 1056
+#number of wires = 1089
+#number of equivalent faults = 1876
+
+#Circuit Summary:
+#---------------
+#number of inputs = 157
+#number of outputs = 64
+#number of gates = 1400
+#number of wires = 1557
+#number of equivalent faults = 2595
+
+#Circuit Summary:
+#---------------
+#number of inputs = 50
+#number of outputs = 22
+#number of gates = 1983
+#number of wires = 2033
+#number of equivalent faults = 3428
+
+#Circuit Summary:
+#---------------
+#number of inputs = 178
+#number of outputs = 123
+#number of gates = 2973
+#number of wires = 3151
+#number of equivalent faults = 5350
+
+#Circuit Summary:
+#---------------
+#number of inputs = 207
+#number of outputs = 108
+#number of gates = 4042
+#number of wires = 4249
+#number of equivalentVALIDATION selection=kept {"aggregate": {"aborted": 0, "decisions": 1435, "detected": 30, "mean_backtrace_ratio": 1.148388717642592, "mean_backtrack_ratio": 0.4074979951884523, "score": [-30, 0, 0.4074979951884523, 1.148388717642592, 1435]}, "circuits": {"c1355": {"aborted": 0, "backtrace_steps": 1857, "backtracks": 0, "decisions": 255, "detected": 3, "episodes": 3, "pi_visits": 123, "redundant": 0}, "c1908": {"aborted": 0, "backtrace_steps": 308, "backtracks": 0, "decisions": 50, "detected": 3, "episodes": 3, "pi_visits": 29, "redundant": 0}, "c2670": {"aborted": 0, "backtrace_steps": 2264, "backtracks": 180, "decisions": 255, "detected": 3, "episodes": 3, "pi_visits": 416, "redundant": 0}, "c3540": {"aborted": 0, "backtrace_steps": 576, "backtracks": 2, "decisions": 97, "detected": 3, "episodes": 3, "pi_visits": 51, "redundant": 0}, "c432": {"aborted": 0, "backtrace_steps": 490, "backtracks": 0, "decisions": 88, "detected": 3, "episodes": 3, "pi_visits": 54, "redundant": 0}, "c499": {"aborted": 0, "backtrace_steps": 1403, "backtracks": 0, "decisions": 195, "detected": 3, "episodes": 3, "pi_visits": 103, "redundant": 0}, "c5315": {"aborted": 0, "backtrace_steps": 577, "backtracks": 3, "decisions": 83, "detected": 3, "episodes": 3, "pi_visits": 59, "redundant": 0}, "c6288": {"aborted": 0, "backtrace_steps": 1108, "backtracks": 9, "decisions": 211, "detected": 3, "episodes": 3, "pi_visits": 97, "redundant": 0}, "c7552": {"aborted": 0, "backtrace_steps": 695, "backtracks": 0, "decisions": 97, "detected": 3, "episodes": 3, "pi_visits": 64, "redundant": 0}, "s38417_scan": {"aborted": 0, "backtrace_steps": 459, "backtracks": 0, "decisions": 104, "detected": 3, "episodes": 3, "pi_visits": 47, "redundant": 0}}, "label": "hard_sweep_1"}
+TRAINING_COMPLETE best=easy_sweep_1 score=[-30, 0, 0.14560723514211887, 1.2373439901029868, 1686]
+ faults = 7550
+
+#Circuit Summary:
+#---------------
+#number of inputs = 32
+#number of outputs = 32
+#number of gates = 2416
+#number of wires = 2448
+#number of equivalent faults = 7744
+
+#Circuit Summary:
+#---------------
+#number of inputs = 1664
+#number of outputs = 1742
+#number of gates = 23319
+#number of wires = 24983
+#number of equivalent faults = 31180

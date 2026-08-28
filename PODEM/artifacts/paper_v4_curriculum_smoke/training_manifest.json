@@ -1,0 +1,1325 @@
+{
+  "format": "RL_PODEM_CURRICULUM_V4",
+  "backtrack_limit": 500,
+  "profile_seed": 14,
+  "split_seed": 2026,
+  "smoke": true,
+  "train_counts_by_difficulty": {
+    "easy": 1,
+    "medium": 1,
+    "hard": 1
+  },
+  "validation_counts_by_difficulty": {
+    "easy": 1,
+    "medium": 1,
+    "hard": 1
+  },
+  "teacher_training": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v4_curriculum_smoke\\teacher_training.json",
+  "teacher_validation": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v4_curriculum_smoke\\teacher_validation.json",
+  "teacher_sha256": {
+    "training": "f1260b1807d2307f18ac51cfd99ad20738890747a4f6de303e93e76f829e817a",
+    "validation": "b72b78ec8825f3cdb67c704272b6540942230c376014c86b67ea26247b12b58d"
+  },
+  "circuits": [
+    {
+      "name": "c432",
+      "circuit": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\sample_circuits\\c432_binary.bench",
+      "fault_map": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\sample_circuits\\c432_binary.faultmap",
+      "embeddings": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\v2_smoke\\c432_binary.emb",
+      "profile": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v4_curriculum_smoke\\c432_profile.json",
+      "artifact_sha256": {
+        "circuit": "0e390b74ac47d247a37b3f46b2c1a52efdfbd4aea3bbfd178f243bba22405547",
+        "fault_map": "7554763345b7076975f2881063ff9480874ac22b4808629600a89861603a6e66",
+        "embeddings": "36096dbf0760488066720a12b526c850d2ba5a6744bbc821c7ceb5cf616ff9c6",
+        "profile": "da53af77b695e16152fa60e8451ffde7c93cc18a1a8d95b1a4d5fc45838fb694"
+      },
+      "available_by_difficulty": {
+        "easy": 216,
+        "medium": 217,
+        "hard": 109
+      },
+      "training_faults": [
+        {
+          "fault_id": "G413:GI3:sa1",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 51,
+          "difficulty": "easy"
+        },
+        {
+          "fault_id": "dummy_gate13:GO:sa0",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 94,
+          "difficulty": "medium"
+        },
+        {
+          "fault_id": "Y232:GO:sa1",
+          "outcome": 1,
+          "backtracks": 1,
+          "backtrace_steps": 75,
+          "difficulty": "hard"
+        }
+      ],
+      "validation_faults": [
+        {
+          "fault_id": "G199:GI6:sa1",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 28,
+          "difficulty": "easy"
+        },
+        {
+          "fault_id": "dummy_gate13:GO:sa1",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 94,
+          "difficulty": "medium"
+        },
+        {
+          "fault_id": "Y238:GO:sa1",
+          "outcome": 1,
+          "backtracks": 1,
+          "backtrace_steps": 75,
+          "difficulty": "hard"
+        }
+      ],
+      "teacher_summary": {
+        "training": {
+          "easy": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 25,
+            "backtracks": 0,
+            "backtrace_steps": 51,
+            "pi_visits": 12
+          },
+          "medium": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 22,
+            "backtracks": 0,
+            "backtrace_steps": 94,
+            "pi_visits": 13
+          },
+          "hard": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 21,
+            "backtracks": 1,
+            "backtrace_steps": 75,
+            "pi_visits": 12
+          }
+        },
+        "validation": {
+          "easy": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 13,
+            "backtracks": 0,
+            "backtrace_steps": 28,
+            "pi_visits": 10
+          },
+          "medium": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 22,
+            "backtracks": 0,
+            "backtrace_steps": 94,
+            "pi_visits": 13
+          },
+          "hard": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 21,
+            "backtracks": 1,
+            "backtrace_steps": 75,
+            "pi_visits": 12
+          }
+        }
+      }
+    },
+    {
+      "name": "c499",
+      "circuit": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\sample_circuits\\c499_binary.bench",
+      "fault_map": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\sample_circuits\\c499_binary.faultmap",
+      "embeddings": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v3\\benchmark_embeddings\\c499_binary.emb",
+      "profile": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v4_curriculum_smoke\\c499_profile.json",
+      "artifact_sha256": {
+        "circuit": "08a5ef784ebc21bf45ca663b2a4342d85dc0e69e6eb74486553b881d31932de2",
+        "fault_map": "717917f8791c2a268ce14ad456e91fb017bdf3e75522dae537f7fd78223bfd11",
+        "embeddings": "4aed55d6c6287601daed126c85f07937c19698f3c3112f30dd897639318614b7",
+        "profile": "3c8ac2148a9008b0521714b3f0c4e46986ef622932a7a26eacd3d1c3bdaae104"
+      },
+      "available_by_difficulty": {
+        "easy": 463,
+        "medium": 463,
+        "hard": 232
+      },
+      "training_faults": [
+        {
+          "fault_id": "dummy_gate12:GO:sa0",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 426,
+          "difficulty": "easy"
+        },
+        {
+          "fault_id": "Y211:GO:sa1",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 527,
+          "difficulty": "medium"
+        },
+        {
+          "fault_id": "G472:GO:sa0",
+          "outcome": 1,
+          "backtracks": 6,
+          "backtrace_steps": 756,
+          "difficulty": "hard"
+        }
+      ],
+      "validation_faults": [
+        {
+          "fault_id": "G453:GI1:sa1",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 229,
+          "difficulty": "easy"
+        },
+        {
+          "fault_id": "Y174:GI0:sa1",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 518,
+          "difficulty": "medium"
+        },
+        {
+          "fault_id": "G466:GI0:sa1",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 534,
+          "difficulty": "hard"
+        }
+      ],
+      "teacher_summary": {
+        "training": {
+          "easy": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 62,
+            "backtracks": 0,
+            "backtrace_steps": 426,
+            "pi_visits": 31
+          },
+          "medium": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 73,
+            "backtracks": 0,
+            "backtrace_steps": 527,
+            "pi_visits": 41
+          },
+          "hard": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 92,
+            "backtracks": 6,
+            "backtrace_steps": 756,
+            "pi_visits": 48
+          }
+        },
+        "validation": {
+          "easy": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 44,
+            "backtracks": 0,
+            "backtrace_steps": 229,
+            "pi_visits": 22
+          },
+          "medium": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 70,
+            "backtracks": 0,
+            "backtrace_steps": 518,
+            "pi_visits": 41
+          },
+          "hard": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 75,
+            "backtracks": 0,
+            "backtrace_steps": 534,
+            "pi_visits": 41
+          }
+        }
+      }
+    },
+    {
+      "name": "c1355",
+      "circuit": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\sample_circuits\\c1355_binary.bench",
+      "fault_map": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\sample_circuits\\c1355_binary.faultmap",
+      "embeddings": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v3\\benchmark_embeddings\\c1355_binary.emb",
+      "profile": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v4_curriculum_smoke\\c1355_profile.json",
+      "artifact_sha256": {
+        "circuit": "191e05628aac5306b3f734052d852510b8a6bf65879916ee9d37c0b9940be26a",
+        "fault_map": "1f12e0c99c30b85ca24bc83b6bd66235d5831c43054c6e453e180f3cb1dfeccb",
+        "embeddings": "cddc9213c853799bbac89592e13ee612a2c21dea3700ea9146c1a8f1b9e33d2b",
+        "profile": "b0da47f060163faacb119b5506a3ba299dfe2096fb0dde98da15cc601d9ce6e2"
+      },
+      "available_by_difficulty": {
+        "easy": 629,
+        "medium": 630,
+        "hard": 315
+      },
+      "training_faults": [
+        {
+          "fault_id": "G1272:GO:sa1",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 140,
+          "difficulty": "easy"
+        },
+        {
+          "fault_id": "G405:GI1:sa1",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 520,
+          "difficulty": "medium"
+        },
+        {
+          "fault_id": "G1117:GO:sa0",
+          "outcome": 1,
+          "backtracks": 1,
+          "backtrace_steps": 650,
+          "difficulty": "hard"
+        }
+      ],
+      "validation_faults": [
+        {
+          "fault_id": "G712:GO:sa1",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 500,
+          "difficulty": "easy"
+        },
+        {
+          "fault_id": "G398:GO:sa1",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 522,
+          "difficulty": "medium"
+        },
+        {
+          "fault_id": "G1016:GO:sa0",
+          "outcome": 1,
+          "backtracks": 1,
+          "backtrace_steps": 609,
+          "difficulty": "hard"
+        }
+      ],
+      "teacher_summary": {
+        "training": {
+          "easy": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 25,
+            "backtracks": 0,
+            "backtrace_steps": 140,
+            "pi_visits": 13
+          },
+          "medium": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 78,
+            "backtracks": 0,
+            "backtrace_steps": 520,
+            "pi_visits": 42
+          },
+          "hard": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 86,
+            "backtracks": 1,
+            "backtrace_steps": 650,
+            "pi_visits": 42
+          }
+        },
+        "validation": {
+          "easy": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 78,
+            "backtracks": 0,
+            "backtrace_steps": 500,
+            "pi_visits": 41
+          },
+          "medium": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 78,
+            "backtracks": 0,
+            "backtrace_steps": 522,
+            "pi_visits": 41
+          },
+          "hard": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 85,
+            "backtracks": 1,
+            "backtrace_steps": 609,
+            "pi_visits": 42
+          }
+        }
+      }
+    },
+    {
+      "name": "c1908",
+      "circuit": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\sample_circuits\\c1908_binary.bench",
+      "fault_map": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\sample_circuits\\c1908_binary.faultmap",
+      "embeddings": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v3\\benchmark_embeddings\\c1908_binary.emb",
+      "profile": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v4_curriculum_smoke\\c1908_profile.json",
+      "artifact_sha256": {
+        "circuit": "923ba5ea306f0d66c3fa2066a4d79844c40739685a4e61494fe0f0b2e1db2020",
+        "fault_map": "2b00427696edd155b527c2c758eab91f62d266049471a6a638d94eb05749920c",
+        "embeddings": "a7810439355f41c41c44e8fca31ca9896f26d1f3c16ffb7431bed9d658d95555",
+        "profile": "d84d1edcd939049510d4b1afb6451b140c40e407102b252897baa26db30059c9"
+      },
+      "available_by_difficulty": {
+        "easy": 736,
+        "medium": 736,
+        "hard": 368
+      },
+      "training_faults": [
+        {
+          "fault_id": "G895:GO:sa1",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 74,
+          "difficulty": "easy"
+        },
+        {
+          "fault_id": "G1031:GO:sa1",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 99,
+          "difficulty": "medium"
+        },
+        {
+          "fault_id": "G727:GI0:sa1",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 388,
+          "difficulty": "hard"
+        }
+      ],
+      "validation_faults": [
+        {
+          "fault_id": "G1763:GO:sa1",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 17,
+          "difficulty": "easy"
+        },
+        {
+          "fault_id": "G1200:GO:sa1",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 156,
+          "difficulty": "medium"
+        },
+        {
+          "fault_id": "G1867:GO:sa1",
+          "outcome": 1,
+          "backtracks": 1,
+          "backtrace_steps": 306,
+          "difficulty": "hard"
+        }
+      ],
+      "teacher_summary": {
+        "training": {
+          "easy": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 15,
+            "backtracks": 0,
+            "backtrace_steps": 74,
+            "pi_visits": 11
+          },
+          "medium": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 17,
+            "backtracks": 0,
+            "backtrace_steps": 99,
+            "pi_visits": 13
+          },
+          "hard": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 46,
+            "backtracks": 0,
+            "backtrace_steps": 388,
+            "pi_visits": 33
+          }
+        },
+        "validation": {
+          "easy": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 7,
+            "backtracks": 0,
+            "backtrace_steps": 17,
+            "pi_visits": 3
+          },
+          "medium": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 24,
+            "backtracks": 0,
+            "backtrace_steps": 156,
+            "pi_visits": 16
+          },
+          "hard": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 37,
+            "backtracks": 1,
+            "backtrace_steps": 306,
+            "pi_visits": 22
+          }
+        }
+      }
+    },
+    {
+      "name": "c2670",
+      "circuit": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\sample_circuits\\c2670_binary.bench",
+      "fault_map": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\sample_circuits\\c2670_binary.faultmap",
+      "embeddings": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v3\\benchmark_embeddings\\c2670_binary.emb",
+      "profile": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v4_curriculum_smoke\\c2670_profile.json",
+      "artifact_sha256": {
+        "circuit": "0bb6daaee84e31f4178d36d99aeab85d5dae76ca5ba74ef3cc84f3324fec5a16",
+        "fault_map": "da9338269245f7106cebf04bf21055ca0c5b71507ee341714976722b7fad6603",
+        "embeddings": "a45e3426520169f43481c124443d6be6a227d497190359d4ada7f6e021225228",
+        "profile": "d9ebe2417b7135721d399d6c6f0e862c667fe40f7b197ed49ea8f3364e1e6133"
+      },
+      "available_by_difficulty": {
+        "easy": 1002,
+        "medium": 1003,
+        "hard": 502
+      },
+      "training_faults": [
+        {
+          "fault_id": "G2583:GO:sa0",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 94,
+          "difficulty": "easy"
+        },
+        {
+          "fault_id": "G2524:GI0:sa0",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 106,
+          "difficulty": "medium"
+        },
+        {
+          "fault_id": "G630:GO:sa0",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 325,
+          "difficulty": "hard"
+        }
+      ],
+      "validation_faults": [
+        {
+          "fault_id": "G404:GO:sa1",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 56,
+          "difficulty": "easy"
+        },
+        {
+          "fault_id": "G2173:GO:sa0",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 113,
+          "difficulty": "medium"
+        },
+        {
+          "fault_id": "G2484:GI1:sa1",
+          "outcome": 1,
+          "backtracks": 116,
+          "backtrace_steps": 1174,
+          "difficulty": "hard"
+        }
+      ],
+      "teacher_summary": {
+        "training": {
+          "easy": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 18,
+            "backtracks": 0,
+            "backtrace_steps": 94,
+            "pi_visits": 10
+          },
+          "medium": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 24,
+            "backtracks": 0,
+            "backtrace_steps": 106,
+            "pi_visits": 5
+          },
+          "hard": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 51,
+            "backtracks": 0,
+            "backtrace_steps": 325,
+            "pi_visits": 37
+          }
+        },
+        "validation": {
+          "easy": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 11,
+            "backtracks": 0,
+            "backtrace_steps": 56,
+            "pi_visits": 10
+          },
+          "medium": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 19,
+            "backtracks": 0,
+            "backtrace_steps": 113,
+            "pi_visits": 11
+          },
+          "hard": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 137,
+            "backtracks": 116,
+            "backtrace_steps": 1174,
+            "pi_visits": 247
+          }
+        }
+      }
+    },
+    {
+      "name": "c3540",
+      "circuit": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\sample_circuits\\c3540_binary.bench",
+      "fault_map": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\sample_circuits\\c3540_binary.faultmap",
+      "embeddings": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v3\\benchmark_embeddings\\c3540_binary.emb",
+      "profile": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v4_curriculum_smoke\\c3540_profile.json",
+      "artifact_sha256": {
+        "circuit": "e34c06f1ca637e125ffce9600e6e3c4e3dc2b1c09e43a3a080383d907d5d709b",
+        "fault_map": "d71722222ab089275da3b9373fcb33d682064dedd55801b99696cf26b4d355b8",
+        "embeddings": "a52a02feabb348a657d7c121db4ccb11ee151e7512c376813276e45b406ae7d5",
+        "profile": "db500cb1e7c1a4a5539be21db633b52dec7517e7a4d911d311045fc9c2b616f9"
+      },
+      "available_by_difficulty": {
+        "easy": 1222,
+        "medium": 1222,
+        "hard": 611
+      },
+      "training_faults": [
+        {
+          "fault_id": "G721:GO:sa1",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 28,
+          "difficulty": "easy"
+        },
+        {
+          "fault_id": "G3257:GI2:sa0",
+          "outcome": 1,
+          "backtracks": 1,
+          "backtrace_steps": 224,
+          "difficulty": "medium"
+        },
+        {
+          "fault_id": "G3159:GO:sa1",
+          "outcome": 1,
+          "backtracks": 4,
+          "backtrace_steps": 320,
+          "difficulty": "hard"
+        }
+      ],
+      "validation_faults": [
+        {
+          "fault_id": "G721:GI0:sa1",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 28,
+          "difficulty": "easy"
+        },
+        {
+          "fault_id": "dummy_gate2:GO:sa0",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 236,
+          "difficulty": "medium"
+        },
+        {
+          "fault_id": "G3072:GO:sa1",
+          "outcome": 1,
+          "backtracks": 86,
+          "backtrace_steps": 1558,
+          "difficulty": "hard"
+        }
+      ],
+      "teacher_summary": {
+        "training": {
+          "easy": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 13,
+            "backtracks": 0,
+            "backtrace_steps": 28,
+            "pi_visits": 10
+          },
+          "medium": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 36,
+            "backtracks": 1,
+            "backtrace_steps": 224,
+            "pi_visits": 12
+          },
+          "hard": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 43,
+            "backtracks": 4,
+            "backtrace_steps": 320,
+            "pi_visits": 22
+          }
+        },
+        "validation": {
+          "easy": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 13,
+            "backtracks": 0,
+            "backtrace_steps": 28,
+            "pi_visits": 10
+          },
+          "medium": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 30,
+            "backtracks": 0,
+            "backtrace_steps": 236,
+            "pi_visits": 15
+          },
+          "hard": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 263,
+            "backtracks": 86,
+            "backtrace_steps": 1558,
+            "pi_visits": 180
+          }
+        }
+      }
+    },
+    {
+      "name": "c5315",
+      "circuit": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\sample_circuits\\c5315_binary.bench",
+      "fault_map": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\sample_circuits\\c5315_binary.faultmap",
+      "embeddings": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v3\\benchmark_embeddings\\c5315_binary.emb",
+      "profile": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v4_curriculum_smoke\\c5315_profile.json",
+      "artifact_sha256": {
+        "circuit": "25ec7b1b3ad3dae323f08302e8a13068d0a2e9d8ffeb26fba867861adaa6ab32",
+        "fault_map": "50bc84eecedafd27e6da7dfff4ea83ca0fce795562d9d30c8a0052516a03db30",
+        "embeddings": "eeab648990b539ab9665653a5199e0dbd46be7e0f3348500d76b94a68b1c5c96",
+        "profile": "d1e7c72cfb2177897e6108c86d6cc6947adf5e806882363d699f1f5a8598e422"
+      },
+      "available_by_difficulty": {
+        "easy": 2106,
+        "medium": 2106,
+        "hard": 1054
+      },
+      "training_faults": [
+        {
+          "fault_id": "G2888:GO:sa1",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 19,
+          "difficulty": "easy"
+        },
+        {
+          "fault_id": "G4072:GI0:sa0",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 190,
+          "difficulty": "medium"
+        },
+        {
+          "fault_id": "G3167:GO:sa1",
+          "outcome": 1,
+          "backtracks": 4,
+          "backtrace_steps": 283,
+          "difficulty": "hard"
+        }
+      ],
+      "validation_faults": [
+        {
+          "fault_id": "G1520:GO:sa1",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 16,
+          "difficulty": "easy"
+        },
+        {
+          "fault_id": "G3755:GI0:sa1",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 103,
+          "difficulty": "medium"
+        },
+        {
+          "fault_id": "G3810:GI2:sa1",
+          "outcome": 1,
+          "backtracks": 6,
+          "backtrace_steps": 258,
+          "difficulty": "hard"
+        }
+      ],
+      "teacher_summary": {
+        "training": {
+          "easy": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 4,
+            "backtracks": 0,
+            "backtrace_steps": 19,
+            "pi_visits": 5
+          },
+          "medium": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 30,
+            "backtracks": 0,
+            "backtrace_steps": 190,
+            "pi_visits": 19
+          },
+          "hard": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 50,
+            "backtracks": 4,
+            "backtrace_steps": 283,
+            "pi_visits": 28
+          }
+        },
+        "validation": {
+          "easy": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 4,
+            "backtracks": 0,
+            "backtrace_steps": 16,
+            "pi_visits": 4
+          },
+          "medium": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 24,
+            "backtracks": 0,
+            "backtrace_steps": 103,
+            "pi_visits": 13
+          },
+          "hard": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 37,
+            "backtracks": 6,
+            "backtrace_steps": 258,
+            "pi_visits": 34
+          }
+        }
+      }
+    },
+    {
+      "name": "c7552",
+      "circuit": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\sample_circuits\\c7552_binary.bench",
+      "fault_map": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\sample_circuits\\c7552_binary.faultmap",
+      "embeddings": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v3\\benchmark_embeddings\\c7552_binary.emb",
+      "profile": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v4_curriculum_smoke\\c7552_profile.json",
+      "artifact_sha256": {
+        "circuit": "5ea5f758ce29c6a2469a818a8251b024a7225f40515079f760b6225955d194f6",
+        "fault_map": "d5e34015550a06047f3f9ba594d14923f54aedb23b9efb8d794d493e7162d3e5",
+        "embeddings": "6d624e502b8135d0ae0ee73d4d208b03305e425e4b6c63f1fe0a124380fe90ae",
+        "profile": "223b03325892ef4540ea01fe843d4b6817765fac951cffc73449d619ff587042"
+      },
+      "available_by_difficulty": {
+        "easy": 2996,
+        "medium": 2996,
+        "hard": 1499
+      },
+      "training_faults": [
+        {
+          "fault_id": "G5327:GO:sa0",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 104,
+          "difficulty": "easy"
+        },
+        {
+          "fault_id": "G6977:GO:sa1",
+          "outcome": 1,
+          "backtracks": 2,
+          "backtrace_steps": 249,
+          "difficulty": "medium"
+        },
+        {
+          "fault_id": "G4417:GI1:sa1",
+          "outcome": 1,
+          "backtracks": 52,
+          "backtrace_steps": 529,
+          "difficulty": "hard"
+        }
+      ],
+      "validation_faults": [
+        {
+          "fault_id": "G7009:GI0:sa1",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 221,
+          "difficulty": "easy"
+        },
+        {
+          "fault_id": "G3327:GO:sa1",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 421,
+          "difficulty": "medium"
+        },
+        {
+          "fault_id": "G5981:GI0:sa1",
+          "outcome": 1,
+          "backtracks": 4,
+          "backtrace_steps": 104,
+          "difficulty": "hard"
+        }
+      ],
+      "teacher_summary": {
+        "training": {
+          "easy": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 18,
+            "backtracks": 0,
+            "backtrace_steps": 104,
+            "pi_visits": 15
+          },
+          "medium": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 39,
+            "backtracks": 2,
+            "backtrace_steps": 249,
+            "pi_visits": 23
+          },
+          "hard": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 86,
+            "backtracks": 52,
+            "backtrace_steps": 529,
+            "pi_visits": 125
+          }
+        },
+        "validation": {
+          "easy": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 33,
+            "backtracks": 0,
+            "backtrace_steps": 221,
+            "pi_visits": 21
+          },
+          "medium": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 64,
+            "backtracks": 0,
+            "backtrace_steps": 421,
+            "pi_visits": 37
+          },
+          "hard": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 22,
+            "backtracks": 4,
+            "backtrace_steps": 104,
+            "pi_visits": 16
+          }
+        }
+      }
+    },
+    {
+      "name": "c6288",
+      "circuit": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\sample_circuits\\c6288_binary.bench",
+      "fault_map": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\sample_circuits\\c6288_binary.faultmap",
+      "embeddings": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v3\\c6288_binary.emb",
+      "profile": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v4_curriculum_smoke\\c6288_profile.json",
+      "artifact_sha256": {
+        "circuit": "cd5dbaef62dd7bd58584d20e4f49d7f941ef012b5de25861c565a747ce9f59c2",
+        "fault_map": "7e9a598f554c9c9cd3213973e662e79fb75f7f730555aaf1f334df18a3ae726a",
+        "embeddings": "fd13090af42b85cd0cea1acda887c0fb63a04a456f670b76d513699373a76b30",
+        "profile": "9fdbdd193ea17bcfd160e919473665043c11cf79a952df718fadfac690621ee7"
+      },
+      "available_by_difficulty": {
+        "easy": 3084,
+        "medium": 3085,
+        "hard": 1543
+      },
+      "training_faults": [
+        {
+          "fault_id": "G1793:GI0:sa0",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 106,
+          "difficulty": "easy"
+        },
+        {
+          "fault_id": "G4317:GI1:sa0",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 409,
+          "difficulty": "medium"
+        },
+        {
+          "fault_id": "G5085:GI0:sa0",
+          "outcome": 1,
+          "backtracks": 350,
+          "backtrace_steps": 13626,
+          "difficulty": "hard"
+        }
+      ],
+      "validation_faults": [
+        {
+          "fault_id": "G3747:GI1:sa0",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 189,
+          "difficulty": "easy"
+        },
+        {
+          "fault_id": "G4870:GO:sa1",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 626,
+          "difficulty": "medium"
+        },
+        {
+          "fault_id": "G2969:GO:sa0",
+          "outcome": 1,
+          "backtracks": 9,
+          "backtrace_steps": 293,
+          "difficulty": "hard"
+        }
+      ],
+      "teacher_summary": {
+        "training": {
+          "easy": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 25,
+            "backtracks": 0,
+            "backtrace_steps": 106,
+            "pi_visits": 23
+          },
+          "medium": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 64,
+            "backtracks": 0,
+            "backtrace_steps": 409,
+            "pi_visits": 30
+          },
+          "hard": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 3848,
+            "backtracks": 350,
+            "backtrace_steps": 13626,
+            "pi_visits": 724
+          }
+        },
+        "validation": {
+          "easy": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 41,
+            "backtracks": 0,
+            "backtrace_steps": 189,
+            "pi_visits": 26
+          },
+          "medium": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 102,
+            "backtracks": 0,
+            "backtrace_steps": 626,
+            "pi_visits": 25
+          },
+          "hard": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 68,
+            "backtracks": 9,
+            "backtrace_steps": 293,
+            "pi_visits": 46
+          }
+        }
+      }
+    },
+    {
+      "name": "s38417_scan",
+      "circuit": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\sample_circuits\\s38417_scan_binary.bench",
+      "fault_map": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\sample_circuits\\s38417_scan_binary.faultmap",
+      "embeddings": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v3\\s38417_scan_binary.emb",
+      "profile": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v4_curriculum_smoke\\s38417_scan_profile.json",
+      "artifact_sha256": {
+        "circuit": "76171812efd46ec440a8cdb5892ae1ab8511124fe62a5279784733ceeae1d4aa",
+        "fault_map": "8b9f2a2227537dbe7c32a69be3c7dc2c02badf27c3d55881d5a202280b442ecb",
+        "embeddings": "4100323ea594e28d7ba5592733a8aa9efcf1bf453a9db622d6429b7d3175b07d",
+        "profile": "f3328751b0133dee6190109d4894ce7f267ab6c76e3c1df8c79a9343d86a6c21"
+      },
+      "available_by_difficulty": {
+        "easy": 12425,
+        "medium": 12425,
+        "hard": 6213
+      },
+      "training_faults": [
+        {
+          "fault_id": "dummy_gate1533:GO:sa1",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 4,
+          "difficulty": "easy"
+        },
+        {
+          "fault_id": "g18603:GO:sa1",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 229,
+          "difficulty": "medium"
+        },
+        {
+          "fault_id": "g9187:GO:sa1",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 879,
+          "difficulty": "hard"
+        }
+      ],
+      "validation_faults": [
+        {
+          "fault_id": "g12129:GI1:sa1",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 3,
+          "difficulty": "easy"
+        },
+        {
+          "fault_id": "g24399:GO:sa1",
+          "outcome": 1,
+          "backtracks": 0,
+          "backtrace_steps": 18,
+          "difficulty": "medium"
+        },
+        {
+          "fault_id": "g14221:GO:sa0",
+          "outcome": 1,
+          "backtracks": 1,
+          "backtrace_steps": 679,
+          "difficulty": "hard"
+        }
+      ],
+      "teacher_summary": {
+        "training": {
+          "easy": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 1,
+            "backtracks": 0,
+            "backtrace_steps": 4,
+            "pi_visits": 2
+          },
+          "medium": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 59,
+            "backtracks": 0,
+            "backtrace_steps": 229,
+            "pi_visits": 32
+          },
+          "hard": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 101,
+            "backtracks": 0,
+            "backtrace_steps": 879,
+            "pi_visits": 49
+          }
+        },
+        "validation": {
+          "easy": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 0,
+            "backtracks": 0,
+            "backtrace_steps": 3,
+            "pi_visits": 3
+          },
+          "medium": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 3,
+            "backtracks": 0,
+            "backtrace_steps": 18,
+            "pi_visits": 2
+          },
+          "hard": {
+            "episodes": 1,
+            "detected": 1,
+            "redundant": 0,
+            "aborted": 0,
+            "decisions": 121,
+            "backtracks": 1,
+            "backtrace_steps": 679,
+            "pi_visits": 70
+          }
+        }
+      }
+    }
+  ]
+}

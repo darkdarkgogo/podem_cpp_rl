@@ -101,6 +101,15 @@ int ATPG::choose_policy_candidate(smartatpg::DecisionMode mode,
   }
   request.candidate_ids = rl_candidate_ids_scratch.data();
   request.candidate_count = rl_candidate_ids_scratch.size();
+  if (mode == smartatpg::DecisionMode::BACKTRACE && objective_wire &&
+      !objective_wire->inode.empty()) {
+    const int gate_type = objective_wire->inode.front()->type;
+    const bool easiest =
+        ((gate_type == OR || gate_type == NAND) && objective_value) ||
+        ((gate_type == NOR || gate_type == AND) && !objective_value);
+    request.heuristic_action =
+        easiest ? 0 : static_cast<int>(candidate_wires.size() - 1);
+  }
   if (decision_policy->needs_gate_names()) {
     if (objective_wire) {
       request.objective_name = objective_wire->name;

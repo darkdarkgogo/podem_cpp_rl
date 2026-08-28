@@ -16,6 +16,15 @@ GATE_RE = re.compile(
     r"^\s*([A-Za-z0-9_.\[\]]+)\s*=\s*([A-Za-z][A-Za-z0-9_]*)"
     r"\s*\(([^()]*)\)\s*(?:#.*)?$"
 )
+EXPANDED_XOR_RE = re.compile(
+    r"^\s*#\s*([A-Za-z0-9_.\[\]]+)\s*=\s*XOR\s*\(\s*"
+    r"([A-Za-z0-9_.\[\]]+)\s*,\s*([A-Za-z0-9_.\[\]]+)\s*\)\s*$",
+    re.IGNORECASE,
+)
+EXPANDED_XOR_CANDIDATE_RE = re.compile(
+    r"^\s*#\s*[A-Za-z0-9_.\[\]]+\s*=\s*XOR\b",
+    re.IGNORECASE,
+)
 SUPPORTED_TYPES = {"AND", "OR", "NAND", "NOR", "NOT", "BUF", "XOR", "EQV"}
 ASSOCIATIVE_TYPES = {"AND", "OR", "NAND", "NOR"}
 SYNTHETIC_PREFIX = "__smartatpg_bin_"
@@ -26,6 +35,14 @@ class Gate:
     output: str
     gate_type: str
     inputs: tuple[str, ...]
+    line_no: int
+
+
+@dataclass(frozen=True)
+class ExpandedXorCell:
+    output: str
+    inputs: tuple[str, str]
+    private_outputs: tuple[str, str, str, str]
     line_no: int
 
 
@@ -93,6 +110,233 @@ def _parse_bench(
             f"Source uses reserved synthetic prefix '{SYNTHETIC_PREFIX}'."
         )
     return comments, ports, gates
+
+
+def _expanded_xor_cells(
+    source: Path, ports: list[str], gates: list[Gate]
+) -> list[ExpandedXorCell]:
+    gates_by_output = {gate.output: gate for gate in gates}
+    output_ports = {
+        match.group(2)
+        for port in ports
+        if (match := PORT_RE.fullmatch(port)) and match.group(1).upper() == "OUTPUT"
+    }
+    fanouts: dict[str, list[str]] = {}
+    for gate in gates:
+        for input_name in gate.inputs:
+            fanouts.setdefault(input_name, []).append(gate.output)
+
+    cells: list[ExpandedXorCell] = []
+    seen_outputs: set[str] = set()
+    for line_no, raw_line in enumerate(
+        source.read_text(encoding="utf-8").splitlines(), start=1
+    ):
+        match = EXPANDED_XOR_RE.fullmatch(raw_line)
+        if not match:
+            if EXPANDED_XOR_CANDIDATE_RE.match(raw_line):
+                raise ValueError(
+                    f"Malformed expanded XOR declaration on line {line_no}: "
+                    f"{raw_line.strip()}"
+                )
+            continue
+        output, first_input, second_input = match.groups()
+        if output in seen_outputs:
+            raise ValueError(
+                f"Duplicate expanded XOR declaration for '{output}' on line {line_no}."
+            )
+        seen_outputs.add(output)
+        if not output.startswith("G") or len(output) == 1:
+            raise ValueError(
+                f"Expanded XOR output '{output}' on line {line_no} must use a G suffix."
+            )
+
+        suffix = output[1:]
+        w_name, z_name = f"W{suffix}", f"Z{suffix}"
+        x_name, y_name = f"X{suffix}", f"Y{suffix}"
+        expected = {
+            w_name: ("NOT", (first_input,)),
+            z_name: ("NOT", (second_input,)),
+            x_name: ("NAND", (first_input, z_name)),
+            y_name: ("NAND", (second_input, w_name)),
+            output: ("NAND", (x_name, y_name)),
+        }
+        for gate_name, (gate_type, gate_inputs) in expected.items():
+            gate = gates_by_output.get(gate_name)
+            if (
+                gate is None
+                or gate.gate_type != gate_type
+                or gate.inputs != gate_inputs
+            ):
+                raise ValueError(
+                    f"Expanded XOR '{output}' on line {line_no} does not match its "
+                    f"expected {gate_name} implementation."
+                )
+
+        expected_private_fanouts = {
+            w_name: [y_name],
+            z_name: [x_name],
+            x_name: [output],
+            y_name: [output],
+        }
+        for private_name, expected_fanouts in expected_private_fanouts.items():
+            if (
+                private_name in output_ports
+                or fanouts.get(private_name, []) != expected_fanouts
+            ):
+                raise ValueError(
+                    f"Expanded XOR '{output}' private wire '{private_name}' "
+                    "is not private."
+                )
+        cells.append(
+            ExpandedXorCell(
+                output=output,
+                inputs=(first_input, second_input),
+                private_outputs=(w_name, z_name, x_name, y_name),
+                line_no=line_no,
+            )
+        )
+    return cells
+
+
+def _filter_expanded_xor_faults(
+    catalog: dict[str, Any], cells: list[ExpandedXorCell], gates: list[Gate]
+) -> tuple[dict[str, Any], int, int]:
+    private_outputs = {
+        output for cell in cells for output in cell.private_outputs
+    }
+    xor_outputs = {cell.output for cell in cells}
+    source_faults = [dict(fault) for fault in catalog["faults"]]
+    fanouts: dict[str, list[Gate]] = {}
+    for gate in gates:
+        for input_name in gate.inputs:
+            fanouts.setdefault(input_name, []).append(gate)
+
+    def find_output_fault(output: str, fault_type: int) -> Optional[int]:
+        return next(
+            (
+                index
+                for index, fault in enumerate(source_faults)
+                if str(fault["node_name"]) == output
+                and int(fault["io"]) == 1
+                and int(fault["fault_type"]) == fault_type
+            ),
+            None,
+        )
+
+    def collapsed_representative(output: str, fault_type: int) -> int:
+        wire_name = output
+        stuck_value = fault_type
+        visited: set[tuple[str, int]] = set()
+        while (wire_name, stuck_value) not in visited:
+            visited.add((wire_name, stuck_value))
+            representative = find_output_fault(wire_name, stuck_value)
+            if representative is not None:
+                return representative
+            consumers = fanouts.get(wire_name, [])
+            if len(consumers) != 1:
+                break
+            consumer = consumers[0]
+            if stuck_value == 0 and consumer.gate_type in {"AND", "BUF"}:
+                next_value = 0
+            elif stuck_value == 0 and consumer.gate_type in {"NAND", "NOT"}:
+                next_value = 1
+            elif stuck_value == 1 and consumer.gate_type in {"OR", "BUF"}:
+                next_value = 1
+            elif stuck_value == 1 and consumer.gate_type in {"NOR", "NOT"}:
+                next_value = 0
+            else:
+                break
+            wire_name = consumer.output
+            stuck_value = next_value
+        raise ValueError(
+            "Cannot locate the collapsed representative for "
+            f"{output}:GO:sa{fault_type}."
+        )
+
+    added_output_faults = 0
+    for cell in cells:
+        for fault_type in (0, 1):
+            if find_output_fault(cell.output, fault_type) is not None:
+                continue
+            representative_index = collapsed_representative(
+                cell.output, fault_type
+            )
+            representative = source_faults[representative_index]
+            representative_weight = int(representative["eqv_fault_num"])
+            # The final NAND's SA1 class also contains the SA0 classes of its
+            # two private X/Y inputs. SA0 has no such internal equivalents.
+            collapsed_class_weight = 3 if fault_type == 1 else 1
+            if representative_weight <= collapsed_class_weight:
+                raise ValueError(
+                    f"Collapsed representative for {cell.output}:GO:sa{fault_type} "
+                    "has no removable equivalent-fault weight."
+                )
+            representative["eqv_fault_num"] = (
+                representative_weight - collapsed_class_weight
+            )
+            output_fault = {
+                "fault_id": f"{cell.output}:GO:sa{fault_type}",
+                "node_name": cell.output,
+                "input_wire_name": "-",
+                "io": 1,
+                "input_occurrence": -1,
+                "fault_type": fault_type,
+                "eqv_fault_num": 1,
+            }
+            sibling_indices = [
+                index
+                for index, fault in enumerate(source_faults)
+                if str(fault["node_name"]) == cell.output and int(fault["io"]) == 1
+            ]
+            if sibling_indices:
+                insertion_index = (
+                    min(sibling_indices)
+                    if fault_type == 0
+                    else max(sibling_indices) + 1
+                )
+            else:
+                insertion_index = representative_index
+            source_faults.insert(insertion_index, output_fault)
+            added_output_faults += 1
+
+    filtered_faults: list[dict[str, Any]] = []
+    removed = 0
+
+    for fault in source_faults:
+        node_name = str(fault["node_name"])
+        io = int(fault["io"])
+        if node_name in private_outputs or (node_name in xor_outputs and io != 1):
+            removed += 1
+            continue
+        if node_name in xor_outputs:
+            fault["eqv_fault_num"] = 1
+        filtered_faults.append(fault)
+
+    for output in xor_outputs:
+        output_faults = [
+            fault
+            for fault in filtered_faults
+            if str(fault["node_name"]) == output and int(fault["io"]) == 1
+        ]
+        if (
+            len(output_faults) != 2
+            or {int(fault["fault_type"]) for fault in output_faults} != {0, 1}
+            or any(int(fault["eqv_fault_num"]) != 1 for fault in output_faults)
+        ):
+            raise ValueError(
+                f"Expanded XOR '{output}' must retain exactly GO-SA0 and GO-SA1."
+            )
+
+    return (
+        {
+            "faults": filtered_faults,
+            "uncollapsed_total": sum(
+                int(fault["eqv_fault_num"]) for fault in filtered_faults
+            ),
+        },
+        removed,
+        added_output_faults,
+    )
 
 
 def _binary_gate_lines(
@@ -307,6 +551,7 @@ def convert_binary_bench(
         raise ValueError("Source and destination must be different files.")
 
     comments, ports, gates = _parse_bench(source)
+    expanded_xor_cells = _expanded_xor_cells(source, ports, gates)
     gate_lines: list[str] = []
     gi_mapping: dict[tuple[str, str, int], tuple[str, str, int]] = {}
     synthetic_gates = 0
@@ -340,7 +585,10 @@ def convert_binary_bench(
         raise ValueError("Binary conversion left a gate with fan-in greater than two.")
     _verify_equivalence(ports, gates, binary_ports, binary_gates)
 
-    catalog = catalog_cpp_podem(source)
+    source_catalog = catalog_cpp_podem(source)
+    catalog, removed_xor_faults, added_xor_output_faults = (
+        _filter_expanded_xor_faults(source_catalog, expanded_xor_cells, gates)
+    )
     expected_records = _write_fault_map(
         source, destination, fault_map_path, catalog, gi_mapping
     )
@@ -366,6 +614,11 @@ def convert_binary_bench(
         "binary_gates": len(gate_lines),
         "converted_gates": converted_gates,
         "synthetic_gates": synthetic_gates,
+        "expanded_xor_cells": len(expanded_xor_cells),
+        "removed_xor_faults": removed_xor_faults,
+        "added_xor_output_faults": added_xor_output_faults,
+        "source_collapsed_faults": len(source_catalog["faults"]),
+        "source_uncollapsed_faults": int(source_catalog["uncollapsed_total"]),
         "collapsed_faults": len(catalog["faults"]),
         "uncollapsed_faults": int(catalog["uncollapsed_total"]),
     }
@@ -389,6 +642,9 @@ def main() -> None:
         "Converted binary BENCH: "
         f"gates={stats['original_gates']}->{stats['binary_gates']} "
         f"converted={stats['converted_gates']} synthetic={stats['synthetic_gates']} "
+        f"xor_cells={stats['expanded_xor_cells']} "
+        f"xor_faults_removed={stats['removed_xor_faults']} "
+        f"xor_output_faults_added={stats['added_xor_output_faults']} "
         f"faults={stats['collapsed_faults']}/{stats['uncollapsed_faults']}"
     )
     print(f"Circuit: {destination.resolve()}")
