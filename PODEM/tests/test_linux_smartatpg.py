@@ -11,7 +11,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from benchmark_smartatpg import _stage_circuit_copy, _summarize, percentage_change
-from run_smartatpg_linux import relocate_manifest
+from run_smartatpg_linux import _matches_artifact_hash, relocate_manifest
 
 
 def sha256(path):
@@ -19,6 +19,22 @@ def sha256(path):
 
 
 class LinuxManifestTests(unittest.TestCase):
+    def test_json_hash_accepts_only_lf_crlf_conversion(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            json_path = root / "artifact.json"
+            crlf = b'{\r\n  "value": 1\r\n}\r\n'
+            expected = hashlib.sha256(crlf).hexdigest()
+            json_path.write_bytes(crlf.replace(b"\r\n", b"\n"))
+            self.assertTrue(_matches_artifact_hash(json_path, expected))
+
+            json_path.write_bytes(b'{\n  "value": 2\n}\n')
+            self.assertFalse(_matches_artifact_hash(json_path, expected))
+
+            circuit_path = root / "artifact.bench"
+            circuit_path.write_bytes(crlf.replace(b"\r\n", b"\n"))
+            self.assertFalse(_matches_artifact_hash(circuit_path, expected))
+
     def test_windows_paths_are_relocated_and_hash_checked(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "repo"
@@ -35,6 +51,8 @@ class LinuxManifestTests(unittest.TestCase):
                 path = data / name
                 path.write_text(name, encoding="utf-8")
                 files[name] = path
+            teacher_crlf = b'{\r\n  "teacher": true\r\n}\r\n'
+            files["teacher_training.json"].write_bytes(teacher_crlf)
             windows = lambda name: f"C:\\old\\PODEM\\data\\{name}"
             manifest = {
                 "teacher_training": windows("teacher_training.json"),
@@ -58,6 +76,9 @@ class LinuxManifestTests(unittest.TestCase):
             source = root / "source.json"
             output = root / "run" / "manifest.json"
             source.write_text(json.dumps(manifest), encoding="utf-8")
+            files["teacher_training.json"].write_bytes(
+                teacher_crlf.replace(b"\r\n", b"\n")
+            )
             relocated = relocate_manifest(source, output, root)
             self.assertEqual(
                 Path(relocated["circuits"][0]["circuit"]),
