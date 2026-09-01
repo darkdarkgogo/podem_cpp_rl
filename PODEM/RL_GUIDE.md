@@ -115,6 +115,61 @@ updates PPO once per completed fault. There is no fixed-length rollout or
 mid-fault update: one rollout contains that fault's Actor decisions. An aborted
 fault is terminal for this training task, just like a detected fault.
 
+### Linux SmartATPG 20-round training
+
+Install a C++ compiler and Python development headers through the Linux
+distribution, create the desired Python environment, then run from the `PODEM`
+directory:
+
+```bash
+python -m pip install -r python-requirements.txt
+python -m pip install -e .
+python scripts/run_smartatpg_linux.py \
+  --output-dir artifacts/smartatpg_linux_20rounds \
+  --rounds 20 \
+  --benchmark-repeats 5
+```
+
+The editable install compiles `cpp_podem` as a Linux extension. The launcher
+uses SmartATPG graph descriptors and does not load DeepGate. It relocates the
+historical manifest's Windows paths into the current checkout and verifies every
+artifact hash before training. PyTorch uses `cuda:0` when CUDA is available and
+otherwise uses CPU.
+
+One round is one Easy sweep, one Medium sweep, and one Hard sweep. After each
+round the frozen deterministic policy evaluates all 1,000 training faults and
+all 500 validation faults, which this command reports as the test split:
+
+```text
+ROUND_EVAL round=1 train_mean_reward=... test_mean_reward=...
+```
+
+Re-running the same command resumes the checkpoint at the first incomplete
+training unit or missing round evaluation. The run directory contains
+`training_state.pth`, `actor_best.txt`, `actor_latest.txt`,
+`round_metrics.json`, and `train.log`.
+
+After round 20, the launcher builds a native executable and benchmarks heuristic
+PODEM, RL best, and RL final with identical circuits, faults, seed, and backtrack
+limit. One warm-up and five measured runs per model/circuit are used by default.
+The `final_benchmark` directory contains `final_comparison.json`,
+`final_comparison.csv`, and `FINAL_RESULTS.md`. Positive reduction percentages
+mean RL used fewer steps or less time than heuristic; negative values mean RL
+was worse. Offline SmartATPG graph/descriptor preprocessing is reported
+separately and excluded from native ATPG time.
+
+Use `--skip-benchmark` to stop after training and round evaluation. The final
+benchmark can later be run directly:
+
+```bash
+python scripts/benchmark_smartatpg.py \
+  artifacts/smartatpg_linux_20rounds/training_manifest.json \
+  artifacts/smartatpg_linux_20rounds/training_state.pth \
+  artifacts/smartatpg_linux_20rounds/native/atpg_rl_smartatpg \
+  artifacts/smartatpg_linux_20rounds/final_benchmark \
+  --repeats 5
+```
+
 Use an existing, hash-valid curriculum manifest and NEW output paths:
 
 ```text

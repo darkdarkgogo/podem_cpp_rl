@@ -1,5 +1,6 @@
 import copy
 import io
+import json
 import math
 import sys
 import tempfile
@@ -18,7 +19,14 @@ from rl_podem.curriculum import (
 from rl_podem.ppo import BacktracePPOAgentV2
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from train_curriculum import _parse_args, _validate_checkpoint_metadata, CHECKPOINT_FORMAT
+from train_curriculum import (
+    CHECKPOINT_FORMAT,
+    ROUND_CHECKPOINT_FORMAT,
+    _parse_args,
+    _run_reward_split,
+    _round_stage_plan,
+    _validate_checkpoint_metadata,
+)
 
 
 def make_agent(**overrides):
@@ -258,17 +266,124 @@ class ConfigurationTests(unittest.TestCase):
         self.assertEqual((args.advantage_method, args.gamma, args.return_scale), ("mc", 1.0, 50.0))
         self.assertFalse(args.normalize_advantages)
         self.assertTrue(args.log_rollouts)
+        rounds = _parse_args([
+            "manifest", "state", "actor", "--curriculum-rounds", "20"
+        ])
+        self.assertEqual(rounds.curriculum_rounds, 20)
 
     def test_cli_rejects_invalid_numbers(self):
         for option, value in (("--gamma", "nan"), ("--gae-lambda", "1.1"),
                               ("--return-scale", "0"), ("--return-scale", "inf")):
             with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
                 _parse_args(["manifest", "state", "actor", option, value])
+        with self.assertRaises(ValueError):
+            _parse_args([
+                "manifest", "state", "actor", "--curriculum-rounds", "0"
+            ])
+
+    def test_round_stage_plan_is_easy_medium_hard_for_every_round(self):
+        plan = _round_stage_plan(20)
+        self.assertEqual(len(plan), 60)
+        self.assertEqual(plan[:3], [
+            (1, 0, "easy"), (1, 1, "medium"), (1, 2, "hard")
+        ])
+        self.assertEqual(plan[-3:], [
+            (20, 0, "easy"), (20, 1, "medium"), (20, 2, "hard")
+        ])
+        with self.assertRaises(ValueError):
+            _round_stage_plan(0)
+
+    def test_reward_split_uses_fault_micro_average(self):
+        circuits = [
+            {
+                "name": "a",
+                "circuit": "a.bench",
+                "fault_map": "a.map",
+                "training_faults": [
+                    {"fault_id": "a1", "backtracks": 1, "backtrace_steps": 1},
+                    {"fault_id": "a2", "backtracks": 1, "backtrace_steps": 1},
+                ],
+            },
+            {
+                "name": "b",
+                "circuit": "b.bench",
+                "fault_map": "b.map",
+                "training_faults": [
+                    {"fault_id": "b1", "backtracks": 1, "backtrace_steps": 1},
+                ],
+            },
+        ]
+
+        class Evaluator:
+            def __init__(self, count, reward_sum):
+                self.run_metrics = {
+                    "fault_count": count,
+                    "reward_sum": reward_sum,
+                    "mean_reward": reward_sum / count,
+                }
+
+            def run(self, *args, **kwargs):
+                count = self.run_metrics["fault_count"]
+                return {
+                    "episodes": count,
+                    "detected": count,
+                    "aborted": 0,
+                    "redundant": 0,
+                    "decisions": count,
+                    "backtracks": 0,
+                    "backtrace_steps": 0,
+                }
+
+        result, _ = _run_reward_split(
+            circuits,
+            {"a": Evaluator(2, 30.0), "b": Evaluator(1, 60.0)},
+            "training",
+            2026,
+        )
+        self.assertEqual(result["aggregate"]["fault_count"], 3)
+        self.assertEqual(result["aggregate"]["reward_sum"], 90.0)
+        self.assertEqual(result["aggregate"]["mean_reward"], 30.0)
+
+    def test_zero_baseline_preserves_infinite_selection_penalty(self):
+        circuits = [{
+            "name": "a",
+            "circuit": "a.bench",
+            "fault_map": "a.map",
+            "training_faults": [{
+                "fault_id": "a1", "backtracks": 0, "backtrace_steps": 1,
+            }],
+        }]
+
+        class Evaluator:
+            run_metrics = {"fault_count": 1, "reward_sum": 99.0}
+
+            def run(self, *args, **kwargs):
+                return {"detected": 1, "aborted": 0, "decisions": 1,
+                        "backtracks": 1, "backtrace_steps": 1}
+
+        result, score = _run_reward_split(
+            circuits,
+            {"a": Evaluator()},
+            "training",
+            2026,
+        )
+        self.assertTrue(math.isinf(score[2]))
+        self.assertIsNone(result["aggregate"]["mean_backtrack_ratio"])
+        self.assertIsNone(result["aggregate"]["score"][2])
+        self.assertNotIn("Infinity", json.dumps(result))
 
     def test_config_mismatch_rejected(self):
         state = dict(format=CHECKPOINT_FORMAT, manifest_hash="test", config={"gamma": 1})
         with self.assertRaisesRegex(ValueError, "new checkpoint path"):
             _validate_checkpoint_metadata(state, "test", {"gamma": 0.99})
+        round_state = dict(
+            format=ROUND_CHECKPOINT_FORMAT,
+            manifest_hash="test",
+            config={"curriculum_rounds": 20},
+        )
+        _validate_checkpoint_metadata(
+            round_state, "test", {"curriculum_rounds": 20}
+        )
 
     def test_rollout_lengths_include_zero_decision_faults(self):
         self.assertEqual(rollout_length_stats([0, 1, 3, 128, 350]), dict(

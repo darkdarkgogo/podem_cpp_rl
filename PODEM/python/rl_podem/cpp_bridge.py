@@ -4,7 +4,7 @@ import math
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional, Tuple, Union
+from typing import Any, Callable, Optional, Tuple, Union
 
 import torch
 
@@ -555,6 +555,7 @@ class CppPodemBacktraceV2Evaluator(CppPodemBacktraceV2Trainer):
         quiet: bool = True,
         rl_mode: str = "backtrace_rl",
         fault_map_path: Optional[Union[str, Path]] = None,
+        event_callback: Optional[Callable[[dict[str, Any]], None]] = None,
     ) -> dict[str, Any]:
         if rl_mode != "backtrace_rl":
             raise ValueError("V2 actor requires rl_mode='backtrace_rl'.")
@@ -576,7 +577,7 @@ class CppPodemBacktraceV2Evaluator(CppPodemBacktraceV2Trainer):
             cpp_podem.run_stuck_at(
                 _native_circuit_path(resolved_circuit_path),
                 self.decision_callback,
-                None,
+                event_callback,
                 backtrack_limit,
                 seed,
                 fault_ids,

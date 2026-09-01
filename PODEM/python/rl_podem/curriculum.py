@@ -11,6 +11,7 @@ import torch
 import torch.nn.functional as F
 
 from .cpp_bridge import (
+    CppPodemBacktraceV2Evaluator,
     CppPodemBacktraceV2Trainer,
     _fnv1a_file_hash,
     _load_cpp_embedding_artifact,
@@ -149,6 +150,93 @@ def baseline_relative_reward(
     )
     parts["detection_reward"] = detection_reward
     return detection_reward + potential, parts
+
+
+class CppPodemCurriculumEvaluator(CppPodemBacktraceV2Evaluator):
+    """Evaluate a deterministic policy with curriculum rewards and no updates."""
+
+    def __init__(
+        self,
+        embedding_path,
+        baselines: Mapping[str, Mapping[str, Any]],
+        agent: BacktracePPOAgentV2,
+        reward_config: Mapping[str, float] = REWARD_CONFIG,
+    ):
+        super().__init__(embedding_path, agent=agent)
+        self.baselines = {str(key): dict(value) for key, value in baselines.items()}
+        self.reward_config = dict(reward_config)
+        self.current_fault_id: Optional[str] = None
+        self.episode_metrics: list[dict[str, Any]] = []
+        self.run_metrics: dict[str, Any] = {}
+
+    def event_callback(self, event: dict[str, Any]) -> None:
+        event_type = event["event"]
+        if event_type == "episode_start":
+            self.current_fault_id = str(event["fault_id"])
+            if self.current_fault_id not in self.baselines:
+                raise KeyError(
+                    f"Missing heuristic baseline for {self.current_fault_id}"
+                )
+            return
+        if event_type in ("backtrack", "backtrace_step", "pi_not_done"):
+            return
+        if event_type != "episode_end":
+            raise ValueError(f"Unknown C++ PODEM event: {event_type}")
+
+        fault_id = str(event["fault_id"])
+        if fault_id != self.current_fault_id:
+            raise RuntimeError(
+                "PODEM evaluation episode-end fault does not match episode-start fault."
+            )
+        reward, components = baseline_relative_reward(
+            int(event["outcome"]),
+            int(event["backtracks"]),
+            int(event["backtrace_steps"]),
+            self.baselines[fault_id],
+            self.reward_config,
+        )
+        if not math.isfinite(reward):
+            raise ValueError("Non-finite curriculum evaluation reward.")
+        self.episode_metrics.append({
+            "fault_id": fault_id,
+            "outcome": int(event["outcome"]),
+            "backtracks": int(event["backtracks"]),
+            "backtrace_steps": int(event["backtrace_steps"]),
+            "extrinsic_reward": reward,
+            **components,
+        })
+        self.current_fault_id = None
+
+    def run(self, *args, **kwargs) -> dict[str, Any]:
+        self.current_fault_id = None
+        self.episode_metrics = []
+        summary = super().run(*args, event_callback=self.event_callback, **kwargs)
+        if self.current_fault_id is not None:
+            raise RuntimeError("PODEM evaluation ended before episode_end.")
+        if int(summary["episodes"]) != len(self.episode_metrics):
+            raise RuntimeError(
+                "PODEM evaluation summary does not match reward episode count."
+            )
+        reward_sum = sum(item["extrinsic_reward"] for item in self.episode_metrics)
+        count = len(self.episode_metrics)
+        self.run_metrics = {
+            "fault_count": count,
+            "reward_sum": reward_sum,
+            "mean_reward": reward_sum / count if count else 0.0,
+            "detected": int(summary["detected"]),
+            "aborted": int(summary["aborted"]),
+            "redundant": int(summary["redundant"]),
+            "decisions": int(summary["decisions"]),
+            "backtracks": int(summary["backtracks"]),
+            "backtrace_steps": int(summary["backtrace_steps"]),
+        }
+        if not all(
+            math.isfinite(value)
+            for value in self.run_metrics.values()
+            if isinstance(value, (int, float))
+        ):
+            raise ValueError("Non-finite curriculum evaluation summary.")
+        return summary
 
 
 def collect_teacher_samples(

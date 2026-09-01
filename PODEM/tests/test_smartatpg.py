@@ -10,7 +10,7 @@ import torch
 
 from rl_podem.smartatpg_features import load_circuit_graph, FEATURE_DIM
 from rl_podem.smartatpg import SmartATPGPPOAgent, SmartATPGPolicy, GraphGate
-from rl_podem.curriculum import pretrain_actor
+from rl_podem.curriculum import CppPodemCurriculumEvaluator, pretrain_actor
 from rl_podem.cpp_bridge import _load_cpp_embedding_artifact, export_actor_v2_state_dict
 from rl_podem.smartatpg_artifacts import export_actor, export_descriptors, snapshot_id, policy_from_state
 from rl_podem.artifact_paths import training_output_paths
@@ -161,6 +161,39 @@ class SmartATPGTests(unittest.TestCase):
         agent.select_backtrace_action(gates["y"], 0, [gates["n"], gates["b"]], mask)
         mask.fill_(False)
         self.assertEqual(agent.buffer.steps[0].action_mask.tolist(), [True, True])
+
+    def test_curriculum_evaluator_is_deterministic_and_read_only(self):
+        agent = self.agent()
+        evaluator = CppPodemCurriculumEvaluator(
+            self.graph,
+            {"fault": {"backtracks": 10, "backtrace_steps": 100}},
+            agent,
+        )
+        before = {key: value.detach().clone() for key, value in agent.policy_old.state_dict().items()}
+        request = {
+            "mode": "backtrace",
+            "objective_name": "y",
+            "objective_value": 1,
+            "candidate_names": ["n", "b"],
+        }
+        first = evaluator.decision_callback(request)
+        second = evaluator.decision_callback(request)
+        self.assertEqual(first, second)
+        self.assertFalse(agent.buffer.steps)
+
+        evaluator.event_callback({"event": "episode_start", "fault_id": "fault"})
+        evaluator.event_callback({
+            "event": "episode_end",
+            "fault_id": "fault",
+            "outcome": 1,
+            "backtracks": 5,
+            "backtrace_steps": 50,
+        })
+        self.assertAlmostEqual(evaluator.episode_metrics[0]["extrinsic_reward"], 115.0)
+        self.assertEqual(agent.update_count, 0)
+        self.assertFalse(agent.buffer.steps)
+        for key, value in before.items():
+            torch.testing.assert_close(value, agent.policy_old.state_dict()[key], rtol=0, atol=0)
 
     def test_prepare_resume_preserves_legacy_manifest(self):
         scripts = str(Path(__file__).resolve().parents[1] / "scripts")

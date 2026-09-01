@@ -15,6 +15,7 @@ from rl_podem.curriculum import (
     DIFFICULTIES,
     REWARD_CONFIG,
     REWARD_DISTRIBUTION,
+    CppPodemCurriculumEvaluator,
     CppPodemCurriculumTrainer,
     filter_unseen_teacher_samples,
     load_embedding_tables,
@@ -26,6 +27,7 @@ from rl_podem.artifact_paths import training_output_paths
 
 
 CHECKPOINT_FORMAT = "RL_PODEM_CURRICULUM_TRAINING_V4"
+ROUND_CHECKPOINT_FORMAT = "RL_PODEM_CURRICULUM_ROUNDS_V1"
 MANIFEST_FORMAT = "RL_PODEM_CURRICULUM_V4"
 RND_SCHEDULE = (0.05, 0.02, 0.0)
 ENTROPY_SCHEDULE = (0.01, 0.005, 0.001)
@@ -52,12 +54,21 @@ def _atomic_torch_save(path, value):
     temporary.replace(path)
 
 
+def _atomic_json_save(path, value):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    temporary.replace(path)
+
+
 def _manifest_hash(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _validate_checkpoint_metadata(state, manifest_digest, config):
-    expected_format = CHECKPOINT_V5 if config.get("embedding_backend") == "smartatpg" else CHECKPOINT_FORMAT
+    expected_format = _checkpoint_format(config)
     if state.get("format") != expected_format:
         raise ValueError("Unsupported curriculum checkpoint format.")
     if state.get("manifest_hash") != manifest_digest or state.get("config") != config:
@@ -66,6 +77,12 @@ def _validate_checkpoint_metadata(state, manifest_digest, config):
             "Use a new checkpoint path for MC/GAE comparisons; legacy training "
             "states cannot be silently resumed with different optimization semantics."
         )
+
+
+def _checkpoint_format(config):
+    if config.get("curriculum_rounds") is not None:
+        return ROUND_CHECKPOINT_FORMAT
+    return CHECKPOINT_V5 if config.get("embedding_backend") == "smartatpg" else CHECKPOINT_FORMAT
 
 
 def _load_json(path):
@@ -123,6 +140,10 @@ def _baseline_map(faults):
 
 
 def _validation_score(circuits, results):
+    return _split_score(circuits, results, "validation")
+
+
+def _split_score(circuits, results, split):
     detected = 0
     aborted = 0
     decisions = 0
@@ -130,7 +151,7 @@ def _validation_score(circuits, results):
     backtrace_ratios = []
     for item in circuits:
         summary = results[item["name"]]
-        baselines = list(item["validation_faults"])
+        baselines = list(item[f"{split}_faults"])
         baseline_backtracks = sum(int(fault["backtracks"]) for fault in baselines)
         baseline_backtrace = sum(int(fault["backtrace_steps"]) for fault in baselines)
         detected += int(summary["detected"])
@@ -141,11 +162,11 @@ def _validation_score(circuits, results):
                 f"Validation backtrace baseline must be positive for {item['name']}."
             )
         rl_backtracks = int(summary["backtracks"])
-        backtrack_ratios.append(
-            rl_backtracks / baseline_backtracks
-            if baseline_backtracks > 0
-            else (1.0 if rl_backtracks == 0 else float("inf"))
-        )
+        if baseline_backtracks > 0:
+            backtrack_ratio = rl_backtracks / baseline_backtracks
+        else:
+            backtrack_ratio = 1.0 if rl_backtracks == 0 else float("inf")
+        backtrack_ratios.append(backtrack_ratio)
         backtrace_ratios.append(int(summary["backtrace_steps"]) / baseline_backtrace)
     mean_backtrack_ratio = sum(backtrack_ratios) / len(backtrack_ratios)
     mean_backtrace_ratio = sum(backtrace_ratios) / len(backtrace_ratios)
@@ -186,6 +207,53 @@ def _run_validation(circuits, evaluators, label, seed):
     }, score
 
 
+def _run_reward_split(circuits, evaluators, split, seed):
+    results = {}
+    per_circuit = {}
+    for item in circuits:
+        summary = evaluators[item["name"]].run(
+            item["circuit"],
+            backtrack_limit=500,
+            seed=seed,
+            fault_ids=[str(fault["fault_id"]) for fault in item[f"{split}_faults"]],
+            quiet=True,
+            fault_map_path=item["fault_map"],
+        )
+        results[item["name"]] = {key: int(value) for key, value in summary.items()}
+        per_circuit[item["name"]] = dict(evaluators[item["name"]].run_metrics)
+    score, aggregate = _split_score(circuits, results, split)
+    for key in ("mean_backtrack_ratio", "mean_backtrace_ratio"):
+        if not math.isfinite(aggregate[key]):
+            aggregate[key] = None
+    aggregate["score"] = [
+        value if math.isfinite(value) else None for value in score
+    ]
+    fault_count = sum(item["fault_count"] for item in per_circuit.values())
+    reward_sum = sum(item["reward_sum"] for item in per_circuit.values())
+    aggregate.update({
+        "fault_count": fault_count,
+        "reward_sum": reward_sum,
+        "mean_reward": reward_sum / fault_count if fault_count else 0.0,
+    })
+    if not all(
+        math.isfinite(value)
+        for value in aggregate.values()
+        if isinstance(value, (int, float))
+    ):
+        raise ValueError(f"Non-finite {split} evaluation summary.")
+    return {"aggregate": aggregate, "circuits": per_circuit}, score
+
+
+def _run_round_evaluation(circuits, evaluators, round_number, seed):
+    training, _ = _run_reward_split(circuits, evaluators, "training", seed)
+    test, score = _run_reward_split(circuits, evaluators, "validation", seed)
+    return {
+        "round": int(round_number),
+        "training": training,
+        "test": test,
+    }, score
+
+
 def _stage_fault_ids(item, stage_index, sweep, seed):
     allowed = DIFFICULTIES[: stage_index + 1]
     groups = {
@@ -208,6 +276,16 @@ def _stage_fault_ids(item, stage_index, sweep, seed):
     return selected
 
 
+def _round_stage_plan(rounds):
+    if int(rounds) <= 0:
+        raise ValueError("Curriculum rounds must be positive.")
+    return [
+        (round_number, stage_index, stage_name)
+        for round_number in range(1, int(rounds) + 1)
+        for stage_index, stage_name in enumerate(DIFFICULTIES)
+    ]
+
+
 def _checkpoint_state(
     agent,
     manifest_digest,
@@ -218,9 +296,10 @@ def _checkpoint_state(
     best_policy_state,
     best_score,
     best_label,
+    round_evaluations=None,
 ):
-    return {
-        "format": CHECKPOINT_V5 if config.get("embedding_backend") == "smartatpg" else CHECKPOINT_FORMAT,
+    state = {
+        "format": _checkpoint_format(config),
         "manifest_hash": manifest_digest,
         "config": config,
         "agent": agent.training_state_dict(),
@@ -235,6 +314,9 @@ def _checkpoint_state(
             torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
         ),
     }
+    if config.get("curriculum_rounds") is not None:
+        state["round_evaluations"] = list(round_evaluations or [])
+    return state
 
 
 def _agent_from_hyperparameters(embedding_dim, hyperparameters, graphs=None):
@@ -260,6 +342,16 @@ def _parse_args(argv=None):
     parser.add_argument("--bc-epochs", type=int, default=20)
     parser.add_argument("--bc-batch-size", type=int, default=256)
     parser.add_argument("--stage-sweeps", type=int, nargs=3, default=(2, 2, 3))
+    parser.add_argument(
+        "--curriculum-rounds",
+        type=int,
+        help="Repeat one Easy, Medium, Hard curriculum cycle this many times.",
+    )
+    parser.add_argument(
+        "--round-metrics-output",
+        type=Path,
+        help="JSON output for deterministic train/test reward after each round.",
+    )
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--advantage-method", choices=("mc", "gae"), default="gae")
     parser.add_argument("--gae-lambda", type=float, default=0.97)
@@ -275,6 +367,8 @@ def _parse_args(argv=None):
         raise ValueError("Behavior-cloning settings must be positive.")
     if any(value <= 0 for value in args.stage_sweeps):
         raise ValueError("Every curriculum stage must have at least one sweep.")
+    if args.curriculum_rounds is not None and args.curriculum_rounds <= 0:
+        raise ValueError("Curriculum rounds must be positive.")
     for name in ("gamma", "gae_lambda"):
         value = getattr(args, name)
         if not math.isfinite(value) or not 0.0 <= value <= 1.0:
@@ -289,6 +383,8 @@ def main(argv=None):
 
     manifest = _load_json(args.manifest)
     backend = resolve_backend(manifest, args.embedding_backend)
+    if args.curriculum_rounds is not None and backend != "smartatpg":
+        raise ValueError("Curriculum round mode requires the SmartATPG backend.")
     circuits = _validate_manifest(manifest)
     graphs = None
     if backend == "smartatpg":
@@ -317,24 +413,43 @@ def main(argv=None):
         args.best_actor_output.stem.replace("_best", "_latest")
         + args.best_actor_output.suffix
     )
+    round_metrics_output = None
+    if args.curriculum_rounds is not None:
+        round_metrics_output = args.round_metrics_output or args.checkpoint.with_name(
+            "round_metrics.json"
+        )
     output_paths = {
         args.checkpoint.resolve(),
         args.best_actor_output.resolve(),
         latest_actor_output.resolve(),
     }
-    if len(output_paths) != 3:
-        raise ValueError("Checkpoint, best actor, and latest actor paths must differ.")
+    if round_metrics_output is not None:
+        output_paths.add(round_metrics_output.resolve())
+    expected_output_count = 4 if round_metrics_output is not None else 3
+    if len(output_paths) != expected_output_count:
+        raise ValueError("Training output paths must all differ.")
     protected_inputs = [args.manifest, manifest["teacher_training"], manifest["teacher_validation"]]
     protected_inputs.extend(item[key] for item in circuits for key in item["artifact_sha256"])
+    protected_paths = {Path(path).resolve() for path in protected_inputs}
+    if output_paths & protected_paths:
+        raise ValueError("Training outputs cannot overwrite manifest inputs.")
     training_output_paths(args.checkpoint, args.best_actor_output, latest_actor_output,
                           backend, protected_inputs)
+    if (
+        round_metrics_output is not None
+        and round_metrics_output.exists()
+        and not args.checkpoint.exists()
+    ):
+        raise ValueError(
+            "Round metrics already exist without a resumable checkpoint. "
+            "Use a new output directory."
+        )
     bc_checkpoint = args.checkpoint.with_suffix(args.checkpoint.suffix + ".bc")
 
     config = {
         "seed": args.seed,
         "bc_epochs": args.bc_epochs,
         "bc_batch_size": args.bc_batch_size,
-        "stage_sweeps": list(args.stage_sweeps),
         "rnd_schedule": list(RND_SCHEDULE),
         "entropy_schedule": list(ENTROPY_SCHEDULE),
         "reward": dict(REWARD_CONFIG),
@@ -349,9 +464,16 @@ def main(argv=None):
         "critic_initial_value": 1.0,
         "critic_initialization": "zero_output_only_v1",
     }
+    if args.curriculum_rounds is None:
+        config["stage_sweeps"] = list(args.stage_sweeps)
+    else:
+        config.update({
+            "curriculum_rounds": args.curriculum_rounds,
+            "round_stage_order": list(DIFFICULTIES),
+        })
     if backend == "smartatpg":
         config.update(smartatpg_metadata())
-    checkpoint_format = CHECKPOINT_V5 if backend == "smartatpg" else CHECKPOINT_FORMAT
+    checkpoint_format = _checkpoint_format(config)
     manifest_digest = _manifest_hash(args.manifest)
     torch.manual_seed(args.seed)
 
@@ -368,6 +490,7 @@ def main(argv=None):
         pretraining = state["pretraining"]
         progress = list(state["progress"])
         validation_history = list(state["validation_history"])
+        round_evaluations = list(state.get("round_evaluations", []))
         best_policy_state = state["best_policy_state"]
         best_score = tuple(state["best_score"])
         best_label = str(state["best_label"])
@@ -428,6 +551,7 @@ def main(argv=None):
         )
         progress = []
         validation_history = []
+        round_evaluations = []
         best_policy_state = _clone_policy_state(agent.policy_old.state_dict())
         best_score = (float("inf"),) * 5
         best_label = "none"
@@ -435,6 +559,9 @@ def main(argv=None):
             f"BC_RESULT best_accuracy={pretraining['best_validation_accuracy']:.6f}",
             flush=True,
         )
+
+    if round_metrics_output is not None:
+        _atomic_json_save(round_metrics_output, round_evaluations)
 
     print(
         f"PPO_CONFIG backend={backend} method={agent.advantage_method} gamma={agent.gamma} "
@@ -450,23 +577,25 @@ def main(argv=None):
         )
         for item in circuits
     }
-    evaluators = {
-        item["name"]: CppPodemBacktraceV2Evaluator(
-            graphs[item["name"]] if graphs is not None else item["embeddings"], agent=agent)
-        for item in circuits
-    }
+    if args.curriculum_rounds is None:
+        evaluators = {
+            item["name"]: CppPodemBacktraceV2Evaluator(
+                graphs[item["name"]] if graphs is not None else item["embeddings"],
+                agent=agent,
+            )
+            for item in circuits
+        }
+    else:
+        evaluators = {
+            item["name"]: CppPodemCurriculumEvaluator(
+                graphs[item["name"]],
+                _baseline_map(item["training_faults"] + item["validation_faults"]),
+                agent=agent,
+            )
+            for item in circuits
+        }
 
-    validated_labels = {record["label"] for record in validation_history}
-    if "behavior_cloning" not in validated_labels:
-        validation, score = _run_validation(
-            circuits, evaluators, "behavior_cloning", args.seed
-        )
-        validation_history.append(validation)
-        if score < best_score:
-            best_score = score
-            best_label = "behavior_cloning"
-            best_policy_state = _clone_policy_state(agent.policy_old.state_dict())
-            export_policy(best_policy_state, args.best_actor_output)
+    def save_training_state():
         _atomic_torch_save(
             args.checkpoint,
             _checkpoint_state(
@@ -479,123 +608,174 @@ def main(argv=None):
                 best_policy_state,
                 best_score,
                 best_label,
+                round_evaluations,
             ),
         )
+
+    def consider_policy(label, validation, score):
+        nonlocal best_policy_state, best_score, best_label
+        validation_history.append(validation)
+        if score < best_score:
+            best_score = score
+            best_label = label
+            best_policy_state = _clone_policy_state(agent.policy_old.state_dict())
+            export_policy(best_policy_state, args.best_actor_output)
+            return "best"
+        return "kept"
+
+    validated_labels = {record["label"] for record in validation_history}
+    if "behavior_cloning" not in validated_labels:
+        validation, score = _run_validation(
+            circuits, evaluators, "behavior_cloning", args.seed
+        )
+        consider_policy("behavior_cloning", validation, score)
+        save_training_state()
         if bc_checkpoint.exists():
             bc_checkpoint.unlink()
         print(f"VALIDATION {json.dumps(validation, sort_keys=True)}", flush=True)
 
-    completed = {
-        (int(item["stage"]), int(item["sweep"]), item["circuit"], item["difficulty"])
-        for item in progress
-    }
-    validated_labels = {record["label"] for record in validation_history}
-    for stage_index, stage_name in enumerate(DIFFICULTIES):
+    if args.curriculum_rounds is None:
+        completed = {
+            (int(item["stage"]), int(item["sweep"]), item["circuit"], item["difficulty"])
+            for item in progress
+        }
+    else:
+        completed = {
+            (int(item["round"]), int(item["stage"]), item["circuit"], item["difficulty"])
+            for item in progress
+        }
+
+    def train_stage(stage_index, stage_name, sweep, round_number=None):
         agent.rnd_beta = RND_SCHEDULE[stage_index]
         agent.entropy_coef = ENTROPY_SCHEDULE[stage_index]
-        for sweep in range(1, args.stage_sweeps[stage_index] + 1):
-            units = []
-            for item in circuits:
-                selected = _stage_fault_ids(item, stage_index, sweep, args.seed)
-                for difficulty, fault_ids in selected.items():
-                    units.append((item, difficulty, fault_ids))
-            random.Random(f"{args.seed}:{stage_index}:{sweep}").shuffle(units)
-            for item, difficulty, fault_ids in units:
-                key = (stage_index, sweep, item["name"], difficulty)
-                if key in completed:
-                    continue
-                trainer = trainers[item["name"]]
-                trainer.set_exploration(
-                    RND_SCHEDULE[stage_index], ENTROPY_SCHEDULE[stage_index]
+        units = []
+        for item in circuits:
+            selected = _stage_fault_ids(item, stage_index, sweep, args.seed)
+            for difficulty, fault_ids in selected.items():
+                units.append((item, difficulty, fault_ids))
+        shuffle_key = (
+            f"{args.seed}:{stage_index}:{sweep}"
+            if round_number is None
+            else f"{args.seed}:round:{round_number}:{stage_index}"
+        )
+        random.Random(shuffle_key).shuffle(units)
+        for item, difficulty, fault_ids in units:
+            key = (
+                (stage_index, sweep, item["name"], difficulty)
+                if round_number is None
+                else (round_number, stage_index, item["name"], difficulty)
+            )
+            if key in completed:
+                continue
+            trainer = trainers[item["name"]]
+            trainer.set_exploration(
+                RND_SCHEDULE[stage_index], ENTROPY_SCHEDULE[stage_index]
+            )
+            if round_number is None:
+                progress_text = (
+                    f"stage={stage_name} sweep={sweep}/"
+                    f"{args.stage_sweeps[stage_index]}"
                 )
-                print(
-                    f"TRAIN_START stage={stage_name} sweep={sweep}/"
-                    f"{args.stage_sweeps[stage_index]} circuit={item['name']} "
-                    f"difficulty={difficulty} faults={len(fault_ids)}",
-                    flush=True,
+                run_seed = args.seed + stage_index * 100 + sweep
+            else:
+                progress_text = (
+                    f"round={round_number}/{args.curriculum_rounds} "
+                    f"stage={stage_name}"
                 )
-                summary = trainer.run(
-                    item["circuit"],
-                    backtrack_limit=500,
-                    seed=args.seed + stage_index * 100 + sweep,
-                    fault_ids=fault_ids,
-                    quiet=True,
-                    fault_map_path=item["fault_map"],
-                )
-                if args.log_rollouts:
-                    for metrics in trainer.episode_metrics:
-                        print("ROLLOUT_RESULT " + json.dumps({
-                            "circuit": item["name"], "stage": stage_name,
-                            "sweep": sweep, **metrics,
-                        }, sort_keys=True), flush=True)
-                record = {
-                    "stage": stage_index,
-                    "stage_name": stage_name,
-                    "sweep": sweep,
-                    "circuit": item["name"],
-                    "difficulty": difficulty,
-                    "summary": {key: int(value) for key, value in summary.items()},
-                    "learning": trainer.run_metrics,
-                }
-                progress.append(record)
-                completed.add(key)
-                export_policy(
-                    agent.policy_old.state_dict(), latest_actor_output
-                )
-                _atomic_torch_save(
-                    args.checkpoint,
-                    _checkpoint_state(
-                        agent,
-                        manifest_digest,
-                        config,
-                        pretraining,
-                        progress,
-                        validation_history,
-                        best_policy_state,
-                        best_score,
-                        best_label,
-                    ),
-                )
-                print(f"TRAIN_RESULT {json.dumps(record, sort_keys=True)}", flush=True)
+                run_seed = args.seed + round_number * 1000 + stage_index * 100
+            print(
+                f"TRAIN_START {progress_text} circuit={item['name']} "
+                f"difficulty={difficulty} faults={len(fault_ids)}",
+                flush=True,
+            )
+            summary = trainer.run(
+                item["circuit"],
+                backtrack_limit=500,
+                seed=run_seed,
+                fault_ids=fault_ids,
+                quiet=True,
+                fault_map_path=item["fault_map"],
+            )
+            if args.log_rollouts:
+                for metrics in trainer.episode_metrics:
+                    rollout = {
+                        "circuit": item["name"],
+                        "stage": stage_name,
+                        "sweep": sweep,
+                        **metrics,
+                    }
+                    if round_number is not None:
+                        rollout["round"] = round_number
+                    print(
+                        "ROLLOUT_RESULT " + json.dumps(rollout, sort_keys=True),
+                        flush=True,
+                    )
+            record = {
+                "stage": stage_index,
+                "stage_name": stage_name,
+                "sweep": sweep,
+                "circuit": item["name"],
+                "difficulty": difficulty,
+                "summary": {name: int(value) for name, value in summary.items()},
+                "learning": trainer.run_metrics,
+            }
+            if round_number is not None:
+                record["round"] = round_number
+            progress.append(record)
+            completed.add(key)
+            export_policy(agent.policy_old.state_dict(), latest_actor_output)
+            save_training_state()
+            print(f"TRAIN_RESULT {json.dumps(record, sort_keys=True)}", flush=True)
 
-            label = f"{stage_name}_sweep_{sweep}"
-            if label not in validated_labels:
+    validated_labels = {record["label"] for record in validation_history}
+    if args.curriculum_rounds is None:
+        for stage_index, stage_name in enumerate(DIFFICULTIES):
+            for sweep in range(1, args.stage_sweeps[stage_index] + 1):
+                train_stage(stage_index, stage_name, sweep)
+                label = f"{stage_name}_sweep_{sweep}"
+                if label in validated_labels:
+                    continue
                 validation, score = _run_validation(
                     circuits, evaluators, label, args.seed
                 )
-                validation_history.append(validation)
                 validated_labels.add(label)
-                if score < best_score:
-                    best_score = score
-                    best_label = label
-                    best_policy_state = _clone_policy_state(
-                        agent.policy_old.state_dict()
-                    )
-                    export_policy(
-                        best_policy_state, args.best_actor_output
-                    )
-                    selection = "best"
-                else:
-                    selection = "kept"
-                _atomic_torch_save(
-                    args.checkpoint,
-                    _checkpoint_state(
-                        agent,
-                        manifest_digest,
-                        config,
-                        pretraining,
-                        progress,
-                        validation_history,
-                        best_policy_state,
-                        best_score,
-                        best_label,
-                    ),
-                )
+                selection = consider_policy(label, validation, score)
+                save_training_state()
                 print(
                     f"VALIDATION selection={selection} "
                     f"{json.dumps(validation, sort_keys=True)}",
                     flush=True,
                 )
+    else:
+        evaluated_rounds = {int(item["round"]) for item in round_evaluations}
+        for round_number, stage_index, stage_name in _round_stage_plan(
+            args.curriculum_rounds
+        ):
+            train_stage(stage_index, stage_name, round_number, round_number)
+            if stage_index != len(DIFFICULTIES) - 1:
+                continue
+            if round_number in evaluated_rounds:
+                continue
+            evaluation, score = _run_round_evaluation(
+                circuits, evaluators, round_number, args.seed
+            )
+            label = f"round_{round_number}"
+            validation = {"label": label, **evaluation["test"]}
+            selection = consider_policy(label, validation, score)
+            round_evaluations.append(evaluation)
+            evaluated_rounds.add(round_number)
+            export_policy(agent.policy_old.state_dict(), latest_actor_output)
+            save_training_state()
+            _atomic_json_save(round_metrics_output, round_evaluations)
+            train_mean = evaluation["training"]["aggregate"]["mean_reward"]
+            test_mean = evaluation["test"]["aggregate"]["mean_reward"]
+            print(
+                f"ROUND_EVAL round={round_number} "
+                f"train_mean_reward={train_mean:.6f} "
+                f"test_mean_reward={test_mean:.6f} selection={selection}",
+                flush=True,
+            )
+            print("ROUND_EVAL_JSON " + json.dumps(evaluation, sort_keys=True), flush=True)
 
     export_policy(best_policy_state, args.best_actor_output, complete=True)
     export_policy(agent.policy_old.state_dict(), latest_actor_output, complete=True)
