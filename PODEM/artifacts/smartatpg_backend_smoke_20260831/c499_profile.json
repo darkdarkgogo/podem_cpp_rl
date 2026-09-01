@@ -1,0 +1,3213 @@
+{
+  "format": "RL_PODEM_CURRICULUM_PROFILE_V4",
+  "circuit_sha256": "08a5ef784ebc21bf45ca663b2a4342d85dc0e69e6eb74486553b881d31932de2",
+  "fault_map_sha256": "49c2dc45cdb00470e39dd1a2d461fd23f6f2714bcdf3c6fdb6247589a5d7a3f4",
+  "backtrack_limit": 500,
+  "seed": 14,
+  "profiles": [
+    {
+      "fault_id": "dummy_gate1:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 420
+    },
+    {
+      "fault_id": "dummy_gate1:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 420
+    },
+    {
+      "fault_id": "dummy_gate2:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 421
+    },
+    {
+      "fault_id": "dummy_gate2:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 421
+    },
+    {
+      "fault_id": "dummy_gate3:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 421
+    },
+    {
+      "fault_id": "dummy_gate3:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 421
+    },
+    {
+      "fault_id": "dummy_gate4:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 422
+    },
+    {
+      "fault_id": "dummy_gate4:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 422
+    },
+    {
+      "fault_id": "dummy_gate5:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 427
+    },
+    {
+      "fault_id": "dummy_gate5:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 427
+    },
+    {
+      "fault_id": "dummy_gate6:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 428
+    },
+    {
+      "fault_id": "dummy_gate6:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 428
+    },
+    {
+      "fault_id": "dummy_gate7:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 428
+    },
+    {
+      "fault_id": "dummy_gate7:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 428
+    },
+    {
+      "fault_id": "dummy_gate8:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 429
+    },
+    {
+      "fault_id": "dummy_gate8:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 429
+    },
+    {
+      "fault_id": "dummy_gate9:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 424
+    },
+    {
+      "fault_id": "dummy_gate9:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 424
+    },
+    {
+      "fault_id": "dummy_gate10:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 425
+    },
+    {
+      "fault_id": "dummy_gate10:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 425
+    },
+    {
+      "fault_id": "dummy_gate11:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 425
+    },
+    {
+      "fault_id": "dummy_gate11:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 425
+    },
+    {
+      "fault_id": "dummy_gate12:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 426
+    },
+    {
+      "fault_id": "dummy_gate12:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 426
+    },
+    {
+      "fault_id": "dummy_gate13:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 431
+    },
+    {
+      "fault_id": "dummy_gate13:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 431
+    },
+    {
+      "fault_id": "dummy_gate14:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 432
+    },
+    {
+      "fault_id": "dummy_gate14:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 432
+    },
+    {
+      "fault_id": "dummy_gate15:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 432
+    },
+    {
+      "fault_id": "dummy_gate15:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 432
+    },
+    {
+      "fault_id": "dummy_gate16:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 433
+    },
+    {
+      "fault_id": "dummy_gate16:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 433
+    },
+    {
+      "fault_id": "dummy_gate17:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 420
+    },
+    {
+      "fault_id": "dummy_gate17:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 420
+    },
+    {
+      "fault_id": "dummy_gate18:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 421
+    },
+    {
+      "fault_id": "dummy_gate18:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 421
+    },
+    {
+      "fault_id": "dummy_gate19:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 421
+    },
+    {
+      "fault_id": "dummy_gate19:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 421
+    },
+    {
+      "fault_id": "dummy_gate20:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 422
+    },
+    {
+      "fault_id": "dummy_gate20:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 422
+    },
+    {
+      "fault_id": "dummy_gate21:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 427
+    },
+    {
+      "fault_id": "dummy_gate21:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 427
+    },
+    {
+      "fault_id": "dummy_gate22:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 428
+    },
+    {
+      "fault_id": "dummy_gate22:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 428
+    },
+    {
+      "fault_id": "dummy_gate23:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 428
+    },
+    {
+      "fault_id": "dummy_gate23:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 428
+    },
+    {
+      "fault_id": "dummy_gate24:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 429
+    },
+    {
+      "fault_id": "dummy_gate24:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 429
+    },
+    {
+      "fault_id": "dummy_gate25:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 424
+    },
+    {
+      "fault_id": "dummy_gate25:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 424
+    },
+    {
+      "fault_id": "dummy_gate26:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 425
+    },
+    {
+      "fault_id": "dummy_gate26:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 425
+    },
+    {
+      "fault_id": "dummy_gate27:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 425
+    },
+    {
+      "fault_id": "dummy_gate27:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 425
+    },
+    {
+      "fault_id": "dummy_gate28:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 426
+    },
+    {
+      "fault_id": "dummy_gate28:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 426
+    },
+    {
+      "fault_id": "dummy_gate29:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 431
+    },
+    {
+      "fault_id": "dummy_gate29:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 431
+    },
+    {
+      "fault_id": "dummy_gate30:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 432
+    },
+    {
+      "fault_id": "dummy_gate30:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 432
+    },
+    {
+      "fault_id": "dummy_gate31:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 432
+    },
+    {
+      "fault_id": "dummy_gate31:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 432
+    },
+    {
+      "fault_id": "dummy_gate32:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 433
+    },
+    {
+      "fault_id": "dummy_gate32:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 433
+    },
+    {
+      "fault_id": "dummy_gate33:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 500
+    },
+    {
+      "fault_id": "dummy_gate34:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 500
+    },
+    {
+      "fault_id": "dummy_gate35:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 500
+    },
+    {
+      "fault_id": "dummy_gate36:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 499
+    },
+    {
+      "fault_id": "dummy_gate37:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 500
+    },
+    {
+      "fault_id": "dummy_gate38:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 500
+    },
+    {
+      "fault_id": "dummy_gate39:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 500
+    },
+    {
+      "fault_id": "dummy_gate40:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 499
+    },
+    {
+      "fault_id": "dummy_gate41:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 500
+    },
+    {
+      "fault_id": "dummy_gate41:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 500
+    },
+    {
+      "fault_id": "G162:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 425
+    },
+    {
+      "fault_id": "G163:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 425
+    },
+    {
+      "fault_id": "G164:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 1,
+      "backtrace_steps": 425
+    },
+    {
+      "fault_id": "G165:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 419
+    },
+    {
+      "fault_id": "G166:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 425
+    },
+    {
+      "fault_id": "G167:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 425
+    },
+    {
+      "fault_id": "G168:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 1,
+      "backtrace_steps": 425
+    },
+    {
+      "fault_id": "G169:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 419
+    },
+    {
+      "fault_id": "G169:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 498
+    },
+    {
+      "fault_id": "G169:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 509
+    },
+    {
+      "fault_id": "G168:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 499
+    },
+    {
+      "fault_id": "G168:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 515
+    },
+    {
+      "fault_id": "G167:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 499
+    },
+    {
+      "fault_id": "G167:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 515
+    },
+    {
+      "fault_id": "G166:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 499
+    },
+    {
+      "fault_id": "G166:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 515
+    },
+    {
+      "fault_id": "G165:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 498
+    },
+    {
+      "fault_id": "G165:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 508
+    },
+    {
+      "fault_id": "G164:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 499
+    },
+    {
+      "fault_id": "G164:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 515
+    },
+    {
+      "fault_id": "G163:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 499
+    },
+    {
+      "fault_id": "G163:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 515
+    },
+    {
+      "fault_id": "G162:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 499
+    },
+    {
+      "fault_id": "G162:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 515
+    },
+    {
+      "fault_id": "G185:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 516
+    },
+    {
+      "fault_id": "G185:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 517
+    },
+    {
+      "fault_id": "G161:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 475
+    },
+    {
+      "fault_id": "G161:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 473
+    },
+    {
+      "fault_id": "G183:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 524
+    },
+    {
+      "fault_id": "G183:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 523
+    },
+    {
+      "fault_id": "G181:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 524
+    },
+    {
+      "fault_id": "G181:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 523
+    },
+    {
+      "fault_id": "G160:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 475
+    },
+    {
+      "fault_id": "G160:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 475
+    },
+    {
+      "fault_id": "G179:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 524
+    },
+    {
+      "fault_id": "G179:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 523
+    },
+    {
+      "fault_id": "G159:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 490
+    },
+    {
+      "fault_id": "G159:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 488
+    },
+    {
+      "fault_id": "G158:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 490
+    },
+    {
+      "fault_id": "G158:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 488
+    },
+    {
+      "fault_id": "G184:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 519
+    },
+    {
+      "fault_id": "G184:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 514
+    },
+    {
+      "fault_id": "G157:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 483
+    },
+    {
+      "fault_id": "G157:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 481
+    },
+    {
+      "fault_id": "G182:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 525
+    },
+    {
+      "fault_id": "G182:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 522
+    },
+    {
+      "fault_id": "G180:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 525
+    },
+    {
+      "fault_id": "G180:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 522
+    },
+    {
+      "fault_id": "G156:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 483
+    },
+    {
+      "fault_id": "G156:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 481
+    },
+    {
+      "fault_id": "G178:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 525
+    },
+    {
+      "fault_id": "G178:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 522
+    },
+    {
+      "fault_id": "G155:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 490
+    },
+    {
+      "fault_id": "G155:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 488
+    },
+    {
+      "fault_id": "G154:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 490
+    },
+    {
+      "fault_id": "G154:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 490
+    },
+    {
+      "fault_id": "G177:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 517
+    },
+    {
+      "fault_id": "G177:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 516
+    },
+    {
+      "fault_id": "G153:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 475
+    },
+    {
+      "fault_id": "G153:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 473
+    },
+    {
+      "fault_id": "G175:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 524
+    },
+    {
+      "fault_id": "G175:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 523
+    },
+    {
+      "fault_id": "G173:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 524
+    },
+    {
+      "fault_id": "G173:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 523
+    },
+    {
+      "fault_id": "G152:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 475
+    },
+    {
+      "fault_id": "G152:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 475
+    },
+    {
+      "fault_id": "G171:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 524
+    },
+    {
+      "fault_id": "G171:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 523
+    },
+    {
+      "fault_id": "G151:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 490
+    },
+    {
+      "fault_id": "G151:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 488
+    },
+    {
+      "fault_id": "G150:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 490
+    },
+    {
+      "fault_id": "G150:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 488
+    },
+    {
+      "fault_id": "G176:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 518
+    },
+    {
+      "fault_id": "G176:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 515
+    },
+    {
+      "fault_id": "G149:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 483
+    },
+    {
+      "fault_id": "G149:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 481
+    },
+    {
+      "fault_id": "G174:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 525
+    },
+    {
+      "fault_id": "G174:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 522
+    },
+    {
+      "fault_id": "G172:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 525
+    },
+    {
+      "fault_id": "G172:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 522
+    },
+    {
+      "fault_id": "G148:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 483
+    },
+    {
+      "fault_id": "G148:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 481
+    },
+    {
+      "fault_id": "G170:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 525
+    },
+    {
+      "fault_id": "G170:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 522
+    },
+    {
+      "fault_id": "G147:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 490
+    },
+    {
+      "fault_id": "G147:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 488
+    },
+    {
+      "fault_id": "G146:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 490
+    },
+    {
+      "fault_id": "G146:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 490
+    },
+    {
+      "fault_id": "G217:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 525
+    },
+    {
+      "fault_id": "G217:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 518
+    },
+    {
+      "fault_id": "G207:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 481
+    },
+    {
+      "fault_id": "G207:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 479
+    },
+    {
+      "fault_id": "G216:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 531
+    },
+    {
+      "fault_id": "G216:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 526
+    },
+    {
+      "fault_id": "G215:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 531
+    },
+    {
+      "fault_id": "G215:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 526
+    },
+    {
+      "fault_id": "G214:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 531
+    },
+    {
+      "fault_id": "G214:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 526
+    },
+    {
+      "fault_id": "G204:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 496
+    },
+    {
+      "fault_id": "G204:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 492
+    },
+    {
+      "fault_id": "G201:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 489
+    },
+    {
+      "fault_id": "G201:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 485
+    },
+    {
+      "fault_id": "G198:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 496
+    },
+    {
+      "fault_id": "G198:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 494
+    },
+    {
+      "fault_id": "G213:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 524
+    },
+    {
+      "fault_id": "G213:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 519
+    },
+    {
+      "fault_id": "G195:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 481
+    },
+    {
+      "fault_id": "G195:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 479
+    },
+    {
+      "fault_id": "G212:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 531
+    },
+    {
+      "fault_id": "G212:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 526
+    },
+    {
+      "fault_id": "G211:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 531
+    },
+    {
+      "fault_id": "G211:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 526
+    },
+    {
+      "fault_id": "G210:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 531
+    },
+    {
+      "fault_id": "G210:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 526
+    },
+    {
+      "fault_id": "G192:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 496
+    },
+    {
+      "fault_id": "G192:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 492
+    },
+    {
+      "fault_id": "G189:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 489
+    },
+    {
+      "fault_id": "G189:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 485
+    },
+    {
+      "fault_id": "G186:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 496
+    },
+    {
+      "fault_id": "G186:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 494
+    },
+    {
+      "fault_id": "G223:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 500
+    },
+    {
+      "fault_id": "G223:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 487
+    },
+    {
+      "fault_id": "G225:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 495
+    },
+    {
+      "fault_id": "G225:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 486
+    },
+    {
+      "fault_id": "G224:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 492
+    },
+    {
+      "fault_id": "G224:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 487
+    },
+    {
+      "fault_id": "G222:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 500
+    },
+    {
+      "fault_id": "G222:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 487
+    },
+    {
+      "fault_id": "G219:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 500
+    },
+    {
+      "fault_id": "G219:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 487
+    },
+    {
+      "fault_id": "G221:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 495
+    },
+    {
+      "fault_id": "G221:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 486
+    },
+    {
+      "fault_id": "G220:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 492
+    },
+    {
+      "fault_id": "G220:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 487
+    },
+    {
+      "fault_id": "G218:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 500
+    },
+    {
+      "fault_id": "G218:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 487
+    },
+    {
+      "fault_id": "G233:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 526
+    },
+    {
+      "fault_id": "G233:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 511
+    },
+    {
+      "fault_id": "G232:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 518
+    },
+    {
+      "fault_id": "G232:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 517
+    },
+    {
+      "fault_id": "G231:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 525
+    },
+    {
+      "fault_id": "G231:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 517
+    },
+    {
+      "fault_id": "G230:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 525
+    },
+    {
+      "fault_id": "G230:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 517
+    },
+    {
+      "fault_id": "G229:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 526
+    },
+    {
+      "fault_id": "G229:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 510
+    },
+    {
+      "fault_id": "G228:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 517
+    },
+    {
+      "fault_id": "G228:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 517
+    },
+    {
+      "fault_id": "G227:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 525
+    },
+    {
+      "fault_id": "G227:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 517
+    },
+    {
+      "fault_id": "G226:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 525
+    },
+    {
+      "fault_id": "G226:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 517
+    },
+    {
+      "fault_id": "G325:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 547
+    },
+    {
+      "fault_id": "G325:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 526
+    },
+    {
+      "fault_id": "G467:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G382:GI0:sa1",
+      "outcome": 2,
+      "backtracks": 500,
+      "backtrace_steps": 4868
+    },
+    {
+      "fault_id": "G401:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 476
+    },
+    {
+      "fault_id": "G411:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 476
+    },
+    {
+      "fault_id": "G455:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G459:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G463:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G312:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 537
+    },
+    {
+      "fault_id": "G312:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G466:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G383:GI0:sa1",
+      "outcome": 2,
+      "backtracks": 500,
+      "backtrace_steps": 4868
+    },
+    {
+      "fault_id": "G396:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 502
+    },
+    {
+      "fault_id": "G406:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 502
+    },
+    {
+      "fault_id": "G454:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G458:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G462:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G299:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 546
+    },
+    {
+      "fault_id": "G299:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G384:GI0:sa1",
+      "outcome": 2,
+      "backtracks": 500,
+      "backtrace_steps": 4868
+    },
+    {
+      "fault_id": "G406:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 471
+    },
+    {
+      "fault_id": "G411:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 471
+    },
+    {
+      "fault_id": "G453:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G457:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G461:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G465:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G286:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 546
+    },
+    {
+      "fault_id": "G286:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G385:GI0:sa1",
+      "outcome": 2,
+      "backtracks": 500,
+      "backtrace_steps": 4868
+    },
+    {
+      "fault_id": "G396:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 471
+    },
+    {
+      "fault_id": "G401:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 471
+    },
+    {
+      "fault_id": "G452:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G456:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G460:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G464:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G273:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 547
+    },
+    {
+      "fault_id": "G273:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 527
+    },
+    {
+      "fault_id": "G378:GI0:sa1",
+      "outcome": 2,
+      "backtracks": 500,
+      "backtrace_steps": 4868
+    },
+    {
+      "fault_id": "G421:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 476
+    },
+    {
+      "fault_id": "G431:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 476
+    },
+    {
+      "fault_id": "G439:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G443:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G447:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G451:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G260:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 538
+    },
+    {
+      "fault_id": "G260:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G379:GI0:sa1",
+      "outcome": 2,
+      "backtracks": 500,
+      "backtrace_steps": 4868
+    },
+    {
+      "fault_id": "G416:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 502
+    },
+    {
+      "fault_id": "G426:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 502
+    },
+    {
+      "fault_id": "G438:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G442:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G446:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G450:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G247:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 546
+    },
+    {
+      "fault_id": "G247:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G380:GI0:sa1",
+      "outcome": 2,
+      "backtracks": 500,
+      "backtrace_steps": 4868
+    },
+    {
+      "fault_id": "G426:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 471
+    },
+    {
+      "fault_id": "G431:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 471
+    },
+    {
+      "fault_id": "G437:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G441:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G445:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G449:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G234:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 546
+    },
+    {
+      "fault_id": "G234:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G381:GI0:sa1",
+      "outcome": 2,
+      "backtracks": 500,
+      "backtrace_steps": 4868
+    },
+    {
+      "fault_id": "G416:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 471
+    },
+    {
+      "fault_id": "G421:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 471
+    },
+    {
+      "fault_id": "G436:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G440:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G444:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G448:GI0:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 534
+    },
+    {
+      "fault_id": "G351:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 502
+    },
+    {
+      "fault_id": "G355:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 502
+    },
+    {
+      "fault_id": "G363:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 390
+    },
+    {
+      "fault_id": "G366:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 395
+    },
+    {
+      "fault_id": "G369:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 392
+    },
+    {
+      "fault_id": "G353:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 528
+    },
+    {
+      "fault_id": "G357:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 528
+    },
+    {
+      "fault_id": "G360:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 390
+    },
+    {
+      "fault_id": "G365:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 395
+    },
+    {
+      "fault_id": "G368:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 392
+    },
+    {
+      "fault_id": "G350:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 495
+    },
+    {
+      "fault_id": "G352:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 495
+    },
+    {
+      "fault_id": "G359:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 395
+    },
+    {
+      "fault_id": "G362:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 392
+    },
+    {
+      "fault_id": "G367:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 390
+    },
+    {
+      "fault_id": "G354:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 495
+    },
+    {
+      "fault_id": "G356:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 495
+    },
+    {
+      "fault_id": "G358:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 395
+    },
+    {
+      "fault_id": "G361:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 392
+    },
+    {
+      "fault_id": "G364:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 390
+    },
+    {
+      "fault_id": "G343:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 390
+    },
+    {
+      "fault_id": "G346:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 395
+    },
+    {
+      "fault_id": "G349:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 392
+    },
+    {
+      "fault_id": "G371:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 502
+    },
+    {
+      "fault_id": "G375:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 502
+    },
+    {
+      "fault_id": "G340:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 390
+    },
+    {
+      "fault_id": "G345:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 395
+    },
+    {
+      "fault_id": "G348:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 392
+    },
+    {
+      "fault_id": "G373:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 528
+    },
+    {
+      "fault_id": "G377:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 528
+    },
+    {
+      "fault_id": "G339:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 395
+    },
+    {
+      "fault_id": "G342:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 392
+    },
+    {
+      "fault_id": "G347:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 390
+    },
+    {
+      "fault_id": "G370:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 495
+    },
+    {
+      "fault_id": "G372:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 495
+    },
+    {
+      "fault_id": "G338:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 395
+    },
+    {
+      "fault_id": "G341:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 392
+    },
+    {
+      "fault_id": "G344:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 390
+    },
+    {
+      "fault_id": "G374:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 495
+    },
+    {
+      "fault_id": "G376:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 495
+    },
+    {
+      "fault_id": "G382:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 422
+    },
+    {
+      "fault_id": "G383:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 422
+    },
+    {
+      "fault_id": "G384:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 418
+    },
+    {
+      "fault_id": "G385:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 418
+    },
+    {
+      "fault_id": "G378:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 422
+    },
+    {
+      "fault_id": "G379:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 422
+    },
+    {
+      "fault_id": "G380:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 418
+    },
+    {
+      "fault_id": "G381:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 418
+    },
+    {
+      "fault_id": "G391:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 496
+    },
+    {
+      "fault_id": "G391:GO:sa1",
+      "outcome": 1,
+      "backtracks": 64,
+      "backtrace_steps": 1096
+    },
+    {
+      "fault_id": "G416:GI4:sa1",
+      "outcome": 1,
+      "backtracks": 72,
+      "backtrace_steps": 1125
+    },
+    {
+      "fault_id": "G421:GI4:sa1",
+      "outcome": 1,
+      "backtracks": 72,
+      "backtrace_steps": 1109
+    },
+    {
+      "fault_id": "G426:GI4:sa1",
+      "outcome": 1,
+      "backtracks": 72,
+      "backtrace_steps": 1131
+    },
+    {
+      "fault_id": "G431:GI4:sa1",
+      "outcome": 1,
+      "backtracks": 72,
+      "backtrace_steps": 1115
+    },
+    {
+      "fault_id": "G386:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 496
+    },
+    {
+      "fault_id": "G386:GO:sa1",
+      "outcome": 1,
+      "backtracks": 64,
+      "backtrace_steps": 1096
+    },
+    {
+      "fault_id": "G396:GI4:sa1",
+      "outcome": 1,
+      "backtracks": 72,
+      "backtrace_steps": 1125
+    },
+    {
+      "fault_id": "G401:GI4:sa1",
+      "outcome": 1,
+      "backtracks": 72,
+      "backtrace_steps": 1109
+    },
+    {
+      "fault_id": "G406:GI4:sa1",
+      "outcome": 1,
+      "backtracks": 72,
+      "backtrace_steps": 1131
+    },
+    {
+      "fault_id": "G411:GI4:sa1",
+      "outcome": 1,
+      "backtracks": 72,
+      "backtrace_steps": 1115
+    },
+    {
+      "fault_id": "G401:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 610
+    },
+    {
+      "fault_id": "G401:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G440:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G441:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G442:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G443:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G411:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 610
+    },
+    {
+      "fault_id": "G411:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G448:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G449:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G450:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G451:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G396:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 610
+    },
+    {
+      "fault_id": "G396:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G436:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G437:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G438:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G439:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G406:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 610
+    },
+    {
+      "fault_id": "G406:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G444:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G445:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G446:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G447:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G421:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 610
+    },
+    {
+      "fault_id": "G421:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G456:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G457:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G458:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G459:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G431:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 610
+    },
+    {
+      "fault_id": "G431:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G466:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G467:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G464:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G465:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G416:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 610
+    },
+    {
+      "fault_id": "G416:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G452:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G453:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G454:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G455:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G426:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 610
+    },
+    {
+      "fault_id": "G426:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G460:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G461:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G462:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G463:GI1:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 229
+    },
+    {
+      "fault_id": "G467:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 651
+    },
+    {
+      "fault_id": "G467:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 122
+    },
+    {
+      "fault_id": "G455:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 651
+    },
+    {
+      "fault_id": "G455:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 122
+    },
+    {
+      "fault_id": "G459:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 651
+    },
+    {
+      "fault_id": "G459:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 122
+    },
+    {
+      "fault_id": "G463:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 651
+    },
+    {
+      "fault_id": "G463:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 122
+    },
+    {
+      "fault_id": "G466:GO:sa0",
+      "outcome": 1,
+      "backtracks": 1,
+      "backtrace_steps": 652
+    },
+    {
+      "fault_id": "G466:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 122
+    },
+    {
+      "fault_id": "G454:GO:sa0",
+      "outcome": 1,
+      "backtracks": 1,
+      "backtrace_steps": 652
+    },
+    {
+      "fault_id": "G454:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 122
+    },
+    {
+      "fault_id": "G458:GO:sa0",
+      "outcome": 1,
+      "backtracks": 1,
+      "backtrace_steps": 652
+    },
+    {
+      "fault_id": "G458:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 122
+    },
+    {
+      "fault_id": "G462:GO:sa0",
+      "outcome": 1,
+      "backtracks": 1,
+      "backtrace_steps": 652
+    },
+    {
+      "fault_id": "G462:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 122
+    },
+    {
+      "fault_id": "G453:GO:sa0",
+      "outcome": 1,
+      "backtracks": 48,
+      "backtrace_steps": 1354
+    },
+    {
+      "fault_id": "G453:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 122
+    },
+    {
+      "fault_id": "G457:GO:sa0",
+      "outcome": 1,
+      "backtracks": 48,
+      "backtrace_steps": 1354
+    },
+    {
+      "fault_id": "G457:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 122
+    },
+    {
+      "fault_id": "G461:GO:sa0",
+      "outcome": 1,
+      "backtracks": 48,
+      "backtrace_steps": 1354
+    },
+    {
+      "fault_id": "G461:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 122
+    },
+    {
+      "fault_id": "G465:GO:sa0",
+      "outcome": 1,
+      "backtracks": 48,
+      "backtrace_steps": 1354
+    },
+    {
+      "fault_id": "G465:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 122
+    },
+    {
+      "fault_id": "G452:GO:sa0",
+      "outcome": 2,
+      "backtracks": 500,
+      "backtrace_steps": 8344
+    },
+    {
+      "fault_id": "G452:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 122
+    },
+    {
+      "fault_id": "G456:GO:sa0",
+      "outcome": 2,
+      "backtracks": 500,
+      "backtrace_steps": 8344
+    },
+    {
+      "fault_id": "G456:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 122
+    },
+    {
+      "fault_id": "G460:GO:sa0",
+      "outcome": 2,
+      "backtracks": 500,
+      "backtrace_steps": 8346
+    },
+    {
+      "fault_id": "G460:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 122
+    },
+    {
+      "fault_id": "G464:GO:sa0",
+      "outcome": 2,
+      "backtracks": 500,
+      "backtrace_steps": 8346
+    },
+    {
+      "fault_id": "G464:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 122
+    },
+    {
+      "fault_id": "G439:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 651
+    },
+    {
+      "fault_id": "G439:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 122
+    },
+    {
+      "fault_id": "G443:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 651
+    },
+    {
+      "fault_id": "G443:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 122
+    },
+    {
+      "fault_id": "G447:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 651
+    },
+    {
+      "fault_id": "G447:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 122
+    },
+    {
+      "fault_id": "G451:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 651
+    },
+    {
+      "fault_id": "G451:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 122
+    },
+    {
+      "fault_id": "G438:GO:sa0",
+      "outcome": 1,
+      "backtracks": 1,
+      "backtrace_steps": 652
+    },
+    {
+      "fault_id": "G438:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 122
+    },
+    {
+      "fault_id": "G442:GO:sa0",
+      "outcome": 1,
+      "backtracks": 1,
+      "backtrace_steps": 652
+    },
+    {
+      "fault_id": "G442:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 122
+    },
+    {
+      "fault_id": "G446:GO:sa0",
+      "outcome": 1,
+      "backtracks": 1,
+      "backtrace_steps": 652
+    },
+    {
+      "fault_id": "G446:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 122
+    },
+    {
+      "fault_id": "G450:GO:sa0",
+      "outcome": 1,
+      "backtracks": 1,
+      "backtrace_steps": 652
+    },
+    {
+      "fault_id": "G450:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 122
+    },
+    {
+      "fault_id": "G437:GO:sa0",
+      "outcome": 1,
+      "backtracks": 48,
+      "backtrace_steps": 1354
+    },
+    {
+      "fault_id": "G437:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 122
+    },
+    {
+      "fault_id": "G441:GO:sa0",
+      "outcome": 1,
+      "backtracks": 48,
+      "backtrace_steps": 1354
+    },
+    {
+      "fault_id": "G441:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 122
+    },
+    {
+      "fault_id": "G445:GO:sa0",
+      "outcome": 1,
+      "backtracks": 48,
+      "backtrace_steps": 1354
+    },
+    {
+      "fault_id": "G445:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 122
+    },
+    {
+      "fault_id": "G449:GO:sa0",
+      "outcome": 1,
+      "backtracks": 48,
+      "backtrace_steps": 1354
+    },
+    {
+      "fault_id": "G449:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 122
+    },
+    {
+      "fault_id": "G436:GO:sa0",
+      "outcome": 2,
+      "backtracks": 500,
+      "backtrace_steps": 8344
+    },
+    {
+      "fault_id": "G436:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 122
+    },
+    {
+      "fault_id": "G440:GO:sa0",
+      "outcome": 2,
+      "backtracks": 500,
+      "backtrace_steps": 8344
+    },
+    {
+      "fault_id": "G440:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 122
+    },
+    {
+      "fault_id": "G444:GO:sa0",
+      "outcome": 2,
+      "backtracks": 500,
+      "backtrace_steps": 8346
+    },
+    {
+      "fault_id": "G444:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 122
+    },
+    {
+      "fault_id": "G448:GO:sa0",
+      "outcome": 2,
+      "backtracks": 500,
+      "backtrace_steps": 8346
+    },
+    {
+      "fault_id": "G448:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 122
+    },
+    {
+      "fault_id": "G499:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 733
+    },
+    {
+      "fault_id": "G499:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 141
+    },
+    {
+      "fault_id": "G498:GO:sa0",
+      "outcome": 1,
+      "backtracks": 1,
+      "backtrace_steps": 734
+    },
+    {
+      "fault_id": "G498:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 141
+    },
+    {
+      "fault_id": "G497:GO:sa0",
+      "outcome": 1,
+      "backtracks": 24,
+      "backtrace_steps": 949
+    },
+    {
+      "fault_id": "G497:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 141
+    },
+    {
+      "fault_id": "G496:GO:sa0",
+      "outcome": 1,
+      "backtracks": 24,
+      "backtrace_steps": 1060
+    },
+    {
+      "fault_id": "G496:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 141
+    },
+    {
+      "fault_id": "G495:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 733
+    },
+    {
+      "fault_id": "G495:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 141
+    },
+    {
+      "fault_id": "G494:GO:sa0",
+      "outcome": 1,
+      "backtracks": 1,
+      "backtrace_steps": 734
+    },
+    {
+      "fault_id": "G494:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 141
+    },
+    {
+      "fault_id": "G493:GO:sa0",
+      "outcome": 1,
+      "backtracks": 12,
+      "backtrace_steps": 753
+    },
+    {
+      "fault_id": "G493:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 141
+    },
+    {
+      "fault_id": "G492:GO:sa0",
+      "outcome": 1,
+      "backtracks": 12,
+      "backtrace_steps": 856
+    },
+    {
+      "fault_id": "G492:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 141
+    },
+    {
+      "fault_id": "G491:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 733
+    },
+    {
+      "fault_id": "G491:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 141
+    },
+    {
+      "fault_id": "G490:GO:sa0",
+      "outcome": 1,
+      "backtracks": 1,
+      "backtrace_steps": 734
+    },
+    {
+      "fault_id": "G490:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 141
+    },
+    {
+      "fault_id": "G489:GO:sa0",
+      "outcome": 1,
+      "backtracks": 6,
+      "backtrace_steps": 657
+    },
+    {
+      "fault_id": "G489:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 141
+    },
+    {
+      "fault_id": "G488:GO:sa0",
+      "outcome": 1,
+      "backtracks": 6,
+      "backtrace_steps": 756
+    },
+    {
+      "fault_id": "G488:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 141
+    },
+    {
+      "fault_id": "G487:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 733
+    },
+    {
+      "fault_id": "G487:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 141
+    },
+    {
+      "fault_id": "G486:GO:sa0",
+      "outcome": 1,
+      "backtracks": 1,
+      "backtrace_steps": 734
+    },
+    {
+      "fault_id": "G486:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 141
+    },
+    {
+      "fault_id": "G485:GO:sa0",
+      "outcome": 1,
+      "backtracks": 3,
+      "backtrace_steps": 623
+    },
+    {
+      "fault_id": "G485:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 141
+    },
+    {
+      "fault_id": "G484:GO:sa0",
+      "outcome": 1,
+      "backtracks": 3,
+      "backtrace_steps": 700
+    },
+    {
+      "fault_id": "G484:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 141
+    },
+    {
+      "fault_id": "G483:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 733
+    },
+    {
+      "fault_id": "G483:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 141
+    },
+    {
+      "fault_id": "G482:GO:sa0",
+      "outcome": 1,
+      "backtracks": 1,
+      "backtrace_steps": 734
+    },
+    {
+      "fault_id": "G482:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 141
+    },
+    {
+      "fault_id": "G481:GO:sa0",
+      "outcome": 1,
+      "backtracks": 24,
+      "backtrace_steps": 949
+    },
+    {
+      "fault_id": "G481:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 141
+    },
+    {
+      "fault_id": "G480:GO:sa0",
+      "outcome": 1,
+      "backtracks": 24,
+      "backtrace_steps": 1060
+    },
+    {
+      "fault_id": "G480:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 141
+    },
+    {
+      "fault_id": "G479:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 733
+    },
+    {
+      "fault_id": "G479:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 141
+    },
+    {
+      "fault_id": "G478:GO:sa0",
+      "outcome": 1,
+      "backtracks": 1,
+      "backtrace_steps": 734
+    },
+    {
+      "fault_id": "G478:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 141
+    },
+    {
+      "fault_id": "G477:GO:sa0",
+      "outcome": 1,
+      "backtracks": 12,
+      "backtrace_steps": 753
+    },
+    {
+      "fault_id": "G477:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 141
+    },
+    {
+      "fault_id": "G476:GO:sa0",
+      "outcome": 1,
+      "backtracks": 12,
+      "backtrace_steps": 856
+    },
+    {
+      "fault_id": "G476:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 141
+    },
+    {
+      "fault_id": "G475:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 733
+    },
+    {
+      "fault_id": "G475:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 141
+    },
+    {
+      "fault_id": "G474:GO:sa0",
+      "outcome": 1,
+      "backtracks": 1,
+      "backtrace_steps": 734
+    },
+    {
+      "fault_id": "G474:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 141
+    },
+    {
+      "fault_id": "G473:GO:sa0",
+      "outcome": 1,
+      "backtracks": 6,
+      "backtrace_steps": 657
+    },
+    {
+      "fault_id": "G473:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 141
+    },
+    {
+      "fault_id": "G472:GO:sa0",
+      "outcome": 1,
+      "backtracks": 6,
+      "backtrace_steps": 756
+    },
+    {
+      "fault_id": "G472:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 141
+    },
+    {
+      "fault_id": "G471:GO:sa0",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 733
+    },
+    {
+      "fault_id": "G471:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 141
+    },
+    {
+      "fault_id": "G470:GO:sa0",
+      "outcome": 1,
+      "backtracks": 1,
+      "backtrace_steps": 734
+    },
+    {
+      "fault_id": "G470:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 141
+    },
+    {
+      "fault_id": "G469:GO:sa0",
+      "outcome": 1,
+      "backtracks": 3,
+      "backtrace_steps": 623
+    },
+    {
+      "fault_id": "G469:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 141
+    },
+    {
+      "fault_id": "G468:GO:sa0",
+      "outcome": 1,
+      "backtracks": 3,
+      "backtrace_steps": 700
+    },
+    {
+      "fault_id": "G468:GO:sa1",
+      "outcome": 1,
+      "backtracks": 0,
+      "backtrace_steps": 141
+    }
+  ]
+}

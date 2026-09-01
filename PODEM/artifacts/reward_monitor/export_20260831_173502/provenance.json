@@ -1,0 +1,21 @@
+{
+  "source_sha256": {
+    "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v7_gae_20260831\\training_manifest.json": "21ce9bb12830c8f670182816d0dc2a7f9dbe205ce36e8f93b629c9e0b54e227a",
+    "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v7_gae_20260831\\training_state.pth": "a1c8c822a3718e38c63f356dc266fd25b34ddd8d0ff7a46667d97e7b083a4881",
+    "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v7_gae_20260831\\train.log": "cd74f6796d3458ecff56fe7cb7bc4400cca29ea37e5338b4e1b79700232851de",
+    "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v8_smartatpg\\experiment_manifest.json": "f22059e43905bb21a2e89398a1beeb825ef897111605461baef4b2546627ba0f",
+    "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v8_smartatpg\\training_state.pth": "cc90ba8c62ed0b0c3c3fe01891f47f1c6294c7526550460e9d8004c601997d21",
+    "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v8_smartatpg\\train.log": "c423c45b8321838c4ffa950702a961390cc5df2cb2dd1d565ff4b77c7bf29582"
+  },
+  "sources_unchanged": true,
+  "event_wall_time_is_export_time": true,
+  "episode_axis": "one complete fault; includes 199 zero-decision episodes per run",
+  "validation_reward_available": false,
+  "tensorboard_url": "http://127.0.0.1:6006",
+  "window_definitions": {
+    "mixed_reward": 100,
+    "per_circuit_difficulty": 20,
+    "diagnostic_updates": 100
+  },
+  "same_hard_cohort": "identical 200 training faults across hard sweeps, not fixed-policy validation"
+}

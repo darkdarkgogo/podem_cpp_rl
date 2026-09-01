@@ -236,6 +236,7 @@ circuit runs the trained encoder without gradient updates or fault labels.
 
 ## Review Status
 
-The high-level approach is approved. The written specification requires user
-review before implementation planning. No implementation or performance result
-is implied by this document.
+The user approved both the high-level approach and this written specification.
+Implementation is covered by the adjacent implementation plan and the checks in
+`PODEM/artifacts/smartatpg_backend_smoke_20260831/VERIFICATION.md` at repository
+root. Correctness checks do not imply improved training or inference performance.

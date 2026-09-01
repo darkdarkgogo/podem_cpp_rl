@@ -8,6 +8,14 @@
 #include <limits>
 #include <sstream>
 #include <stdexcept>
+#include <unordered_set>
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 namespace smartatpg {
 namespace {
@@ -22,8 +30,23 @@ void require_finite(float value, const std::string &context) {
   require(std::isfinite(value), "Non-finite value in " + context);
 }
 
+std::ifstream open_artifact(const std::string &path, std::ios::openmode mode = std::ios::in) {
+#ifdef _WIN32
+  const UINT codepage = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
+      path.c_str(), -1, nullptr, 0) > 0 ? CP_UTF8 : CP_ACP;
+  const int count = MultiByteToWideChar(codepage, 0, path.c_str(), -1, nullptr, 0);
+  require(count > 0, "Invalid artifact path encoding");
+  std::vector<wchar_t> wide(static_cast<std::size_t>(count));
+  require(MultiByteToWideChar(codepage, 0, path.c_str(), -1, wide.data(), count) > 0,
+          "Cannot decode artifact path");
+  return std::ifstream(wide.data(), mode);
+#else
+  return std::ifstream(path.c_str(), mode);
+#endif
+}
+
 std::vector<std::string> required_tensor_names(int version) {
-  if (version == 2) {
+  if (version >= 2) {
     return {
         "gate_encoder.0.weight",
         "gate_encoder.0.bias",
@@ -49,17 +72,36 @@ std::vector<std::string> required_tensor_names(int version) {
   };
 }
 
+void read_backend_metadata(std::istream &input, std::string &backend,
+                           std::string &schema, std::string &snapshot) {
+  std::string key;
+  require(static_cast<bool>(input >> key >> backend) && key == "backend" &&
+              backend == "smartatpg", "Invalid artifact backend");
+  require(static_cast<bool>(input >> key >> schema) && key == "feature_schema" &&
+              schema == "SMARTATPG_FEATURES_V1", "Invalid artifact feature schema");
+  require(static_cast<bool>(input >> key >> snapshot) && key == "snapshot" &&
+              snapshot.size() == 64 &&
+              snapshot.find_first_not_of("0123456789abcdef") == std::string::npos,
+          "Invalid artifact snapshot identifier");
+}
+
 } // namespace
 
 void EmbeddingTable::load(const std::string &path,
                           const std::string &expected_circuit_hash) {
-  std::ifstream input(path.c_str());
+  std::ifstream input = open_artifact(path);
   require(input.good(), "Cannot open embedding file: " + path);
 
   std::string header;
   std::getline(input, header);
-  require(header == "SMARTATPG_EMBEDDINGS_V1",
+  require(header == "SMARTATPG_EMBEDDINGS_V1" || header == "SMARTATPG_EMBEDDINGS_V2",
           "Unsupported embedding format in: " + path);
+  backend_ = "deepgate";
+  schema_.clear();
+  snapshot_.clear();
+  if (header == "SMARTATPG_EMBEDDINGS_V2") {
+    read_backend_metadata(input, backend_, schema_, snapshot_);
+  }
 
   std::string key;
   std::string circuit_hash;
@@ -72,6 +114,8 @@ void EmbeddingTable::load(const std::string &path,
   require(static_cast<bool>(input >> key >> dimension_) && key == "dimension" &&
               dimension_ > 0,
           "Invalid embedding dimension in: " + path);
+  require(backend_ != "smartatpg" || dimension_ == 80,
+          "SmartATPG descriptor dimension must be 80");
   require(static_cast<bool>(input >> key >> expected_count) && key == "count",
           "Invalid embedding count in: " + path);
 
@@ -86,6 +130,8 @@ void EmbeddingTable::load(const std::string &path,
               "Truncated embedding for gate: " + name);
       require_finite(values[col], "embedding for gate " + name);
     }
+    require(backend_ != "smartatpg" || (values[78] == 1.0f && values[79] == 1.0f),
+            "SmartATPG native descriptors require mask [1,1]");
     require(embeddings_.insert(std::make_pair(name, values)).second,
             "Duplicate embedding name: " + name);
   }
@@ -98,7 +144,7 @@ void EmbeddingTable::load(const std::string &path,
 const std::vector<float> &EmbeddingTable::at(const std::string &name) const {
   const auto found = embeddings_.find(name);
   if (found == embeddings_.end()) {
-    throw std::runtime_error("Missing DeepGate embedding for wire: " + name);
+    throw std::runtime_error("Missing policy descriptor for wire: " + name);
   }
   return found->second;
 }
@@ -110,16 +156,23 @@ void EmbeddingTable::clear() {
 }
 
 void ActorModel::load(const std::string &path) {
-  std::ifstream input(path.c_str());
+  std::ifstream input = open_artifact(path);
   require(input.good(), "Cannot open actor file: " + path);
 
   std::string header;
   std::getline(input, header);
   version_ = header == "SMARTATPG_ACTOR_V1"
                  ? 1
-                 : (header == "SMARTATPG_ACTOR_V2" ? 2 : 0);
+                 : (header == "SMARTATPG_ACTOR_V2" ? 2 :
+                    (header == "SMARTATPG_ACTOR_V3" ? 3 : 0));
   require(version_ != 0,
           "Unsupported actor format in: " + path);
+  backend_ = "deepgate";
+  schema_.clear();
+  snapshot_.clear();
+  if (version_ == 3) {
+    read_backend_metadata(input, backend_, schema_, snapshot_);
+  }
 
   std::string key;
   require(static_cast<bool>(input >> key >> embedding_dim_) &&
@@ -128,6 +181,8 @@ void ActorModel::load(const std::string &path) {
   require(static_cast<bool>(input >> key >> hidden_dim_) && key == "hidden_dim" &&
               hidden_dim_ > 0,
           "Invalid actor hidden dimension in: " + path);
+  require(version_ != 3 || embedding_dim_ == 80,
+          "SmartATPG actor descriptor dimension must be 80");
 
   tensors_.clear();
   bool found_end = false;
@@ -152,8 +207,10 @@ void ActorModel::load(const std::string &path) {
             "Duplicate actor tensor: " + name);
   }
   require(found_end, "Actor file is missing the end marker: " + path);
+  require(!(input >> key), "Unexpected trailing data in actor file: " + path);
 
   const std::vector<std::string> names = required_tensor_names(version_);
+  require(tensors_.size() == names.size(), "Unexpected actor tensor count");
   for (const std::string &name : names) {
     tensor(name);
   }
@@ -185,7 +242,7 @@ void ActorModel::load(const std::string &path) {
   gate_bias_ = &tensor("gate_encoder.0.bias");
   mode_embedding_ = nullptr;
   objective_value_embedding_ = nullptr;
-  if (version_ == 2) {
+  if (is_v2()) {
     const Tensor &value_embedding = tensor("objective_value_embedding.weight");
     require(value_embedding.rows == 2 && value_embedding.cols == hidden_dim_,
             "objective_value_embedding dimensions must be [2, hidden_dim]");
@@ -411,7 +468,7 @@ std::vector<float> ActorModel::backtrace_action_logits(
 void ActorModel::backtrace_action_logits_into(
     const float *objective, int objective_value, float *state, float *hidden,
     float *logits) const {
-  require(version_ == 2,
+  require(is_v2(),
           "Object-only backtrace logits require a V2 actor");
   require(objective_value == 0 || objective_value == 1,
           "Backtrace objective value must be 0 or 1");
@@ -459,13 +516,25 @@ void ActorModel::backtrace_action_logits_into(
 NativeActorPolicy::NativeActorPolicy(
     const std::string &embedding_path, const std::string &actor_path,
     const std::string &expected_circuit_hash,
-    const std::vector<std::string> &gate_names_by_id) {
+    const std::vector<std::string> &gate_names_by_id,
+    const std::string &expected_backend) {
   EmbeddingTable embeddings;
   embeddings.load(embedding_path, expected_circuit_hash);
   actor_.load(actor_path);
+  require(expected_backend.empty() || expected_backend == "smartatpg" ||
+              expected_backend == "deepgate", "Unknown embedding backend");
+  require(expected_backend.empty() || expected_backend == actor_.backend(),
+          "Requested embedding backend conflicts with actor backend");
+  require(embeddings.backend() == actor_.backend(), "Embedding and actor backend mismatch");
+  require(embeddings.schema() == actor_.schema(), "Embedding and actor schema mismatch");
+  require(embeddings.snapshot() == actor_.snapshot(), "Embedding and actor snapshot mismatch");
   require(embeddings.dimension() == actor_.embedding_dimension(),
           "Embedding and actor dimensions do not match");
   require(!gate_names_by_id.empty(), "Circuit gate table must not be empty");
+  require(std::unordered_set<std::string>(gate_names_by_id.begin(), gate_names_by_id.end()).size() == gate_names_by_id.size(),
+          "Circuit gate table contains duplicate wire names");
+  require(actor_.backend() != "smartatpg" || embeddings.size() == gate_names_by_id.size(),
+          "SmartATPG descriptor count does not match circuit wires");
 
   gate_count_ = gate_names_by_id.size();
   if (actor_.is_v2()) {
@@ -573,7 +642,7 @@ int NativeActorPolicy::select(const DecisionRequest &request) {
 }
 
 std::string fnv1a_file_hash(const std::string &path) {
-  std::ifstream input(path.c_str(), std::ios::binary);
+  std::ifstream input = open_artifact(path, std::ios::in | std::ios::binary);
   require(input.good(), "Cannot hash circuit file: " + path);
   std::uint64_t hash = UINT64_C(14695981039346656037);
   char buffer[8192];

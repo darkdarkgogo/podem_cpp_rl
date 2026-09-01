@@ -10,11 +10,11 @@ void ATPG::set_decision_policy(
 }
 
 void ATPG::enable_rl_inference(const string &embedding_path,
-                               const string &actor_path) {
+                               const string &actor_path, const string &backend) {
   shared_ptr<smartatpg::DecisionPolicy> policy =
       make_shared<smartatpg::NativeActorPolicy>(
       embedding_path, actor_path, smartatpg::fnv1a_file_hash(filename),
-      rl_gate_names_by_id);
+      rl_gate_names_by_id, backend);
   if ((smartatpg::rl_mode_enables(rl_mode,
                                   smartatpg::DecisionMode::BACKTRACE) &&
        !policy->supports(smartatpg::DecisionMode::BACKTRACE)) ||

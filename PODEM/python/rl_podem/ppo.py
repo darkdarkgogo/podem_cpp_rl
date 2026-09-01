@@ -1,9 +1,12 @@
+import math
 from dataclasses import dataclass
 from typing import Optional
 
 import torch
 import torch.nn as nn
 from torch.distributions import Categorical
+
+from .advantages import full_fault_targets, stable_population_std
 
 
 device = torch.device("cpu")
@@ -453,6 +456,8 @@ class BacktraceDecisionStepV2:
     intrinsic_reward: float = 0.0
     reward: float = 0.0
     is_terminal: bool = False
+    circuit_hash: Optional[str] = None
+    objective_name: Optional[str] = None
 
 
 class BacktraceActorCriticV2(nn.Module):
@@ -476,11 +481,12 @@ class BacktraceActorCriticV2(nn.Module):
         )
 
     def backtrace_logits(self, objective_embedding, objective_value):
+        model_device = self.gate_encoder[0].weight.device
         gate_tensor = objective_embedding.to(
-            device=device, dtype=torch.float32
+            device=model_device, dtype=torch.float32
         ).unsqueeze(0)
         value_tensor = torch.tensor(
-            [objective_value], dtype=torch.long, device=device
+            [objective_value], dtype=torch.long, device=model_device
         )
         state = (
             self.gate_encoder(gate_tensor)
@@ -492,9 +498,9 @@ class BacktraceActorCriticV2(nn.Module):
         logits, state_value = self.backtrace_logits(
             step.objective_embedding, step.objective_value
         )
-        mask = step.action_mask.to(device=device, dtype=torch.bool)
+        mask = step.action_mask.to(device=logits.device, dtype=torch.bool)
         dist = Categorical(logits=logits.masked_fill(~mask, -1e9))
-        action = torch.tensor(step.action, dtype=torch.long, device=device)
+        action = torch.tensor(step.action, dtype=torch.long, device=logits.device)
         return dist.log_prob(action), state_value, dist.entropy()
 
 
@@ -515,6 +521,9 @@ class BacktracePPOAgentV2:
         entropy_coef=0.01,
         return_scale=1.0,
         max_grad_norm=0.0,
+        advantage_method="mc",
+        gae_lambda=0.97,
+        normalize_advantages=False,
     ):
         self.lr_actor = float(lr_actor)
         self.lr_critic = float(lr_critic)
@@ -530,8 +539,20 @@ class BacktracePPOAgentV2:
         self.entropy_coef = float(entropy_coef)
         self.return_scale = float(return_scale)
         self.max_grad_norm = float(max_grad_norm)
-        if self.return_scale <= 0.0 or self.max_grad_norm < 0.0:
+        self.advantage_method = str(advantage_method)
+        self.gae_lambda = float(gae_lambda)
+        self.normalize_advantages = bool(normalize_advantages)
+        if (not math.isfinite(self.return_scale) or self.return_scale <= 0.0
+                or not math.isfinite(self.max_grad_norm) or self.max_grad_norm < 0.0):
             raise ValueError("Return scale must be positive and gradient norm non-negative.")
+        if not math.isfinite(self.gamma) or not 0.0 <= self.gamma <= 1.0:
+            raise ValueError("gamma must be finite and in [0, 1].")
+        if not math.isfinite(self.gae_lambda) or not 0.0 <= self.gae_lambda <= 1.0:
+            raise ValueError("gae_lambda must be finite and in [0, 1].")
+        if self.advantage_method not in ("mc", "gae"):
+            raise ValueError("advantage_method must be 'mc' or 'gae'.")
+        if self.advantage_method == "gae" and self.normalize_returns:
+            raise ValueError("GAE requires normalize_returns=False.")
         self.buffer = RolloutBuffer()
         self.last_selected_step_idx = None
         self.last_selected_mode = None
@@ -663,34 +684,33 @@ class BacktracePPOAgentV2:
             self.buffer.steps[-1].reward += final_reward
             self.buffer.steps[-1].is_terminal = True
 
+    def _evaluate_rollout(self):
+        return [self.policy.evaluate_step(step) for step in self.buffer.steps]
+
     def update(self):
         if not self.buffer.steps:
             return None
 
         step_rewards = [step.reward for step in self.buffer.steps]
-        returns = []
-        discounted_reward = 0.0
-        for step in reversed(self.buffer.steps):
-            if step.is_terminal:
-                discounted_reward = 0.0
-            discounted_reward = step.reward + self.gamma * discounted_reward
-            returns.insert(0, discounted_reward)
-        returns = torch.tensor(returns, dtype=torch.float64, device=device)
-        returns = returns / self.return_scale
-        if self.normalize_returns:
-            if returns.numel() > 1:
-                returns = (returns - returns.mean()) / (returns.std() + 1e-12)
-            elif returns.abs().item() > 1.0:
-                returns = returns / returns.abs()
-        returns = returns.to(dtype=torch.float32)
-
         old_logprobs = torch.stack(
             [step.logprob for step in self.buffer.steps]
         ).to(device)
         old_values = torch.stack(
             [step.state_value for step in self.buffer.steps]
-        ).to(device).squeeze(-1)
-        advantages = returns.detach() - old_values.detach()
+        ).to(device).reshape(-1)
+        targets = full_fault_targets(
+            step_rewards,
+            old_values,
+            [step.is_terminal for step in self.buffer.steps],
+            gamma=self.gamma,
+            advantage_method=self.advantage_method,
+            gae_lambda=self.gae_lambda,
+            return_scale=self.return_scale,
+            normalize_advantages=self.normalize_advantages,
+            normalize_returns=self.normalize_returns,
+        )
+        returns = targets.value_targets
+        advantages = targets.actor_advantages
         rnd_observations = torch.stack(
             [step.rnd_observation for step in self.buffer.steps]
         ).to(device)
@@ -702,8 +722,7 @@ class BacktracePPOAgentV2:
             value_losses = []
             entropies = []
             ratios = []
-            for index, step in enumerate(self.buffer.steps):
-                logprob, state_value, entropy = self.policy.evaluate_step(step)
+            for index, (logprob, state_value, entropy) in enumerate(self._evaluate_rollout()):
                 ratio = torch.exp(logprob - old_logprobs[index].detach())
                 surrogate1 = ratio * advantages[index]
                 surrogate2 = torch.clamp(
@@ -755,6 +774,16 @@ class BacktracePPOAgentV2:
             ),
             "rnd_loss": float(rnd_loss.detach().item()),
             "reward_last": float(step_rewards[-1]),
+            "advantage_method": self.advantage_method,
+            "scaled_reward_mean": float(targets.scaled_rewards.mean().item()),
+            "scaled_reward_std": float(stable_population_std(targets.scaled_rewards).item()),
+            "scaled_reward_sum": float(targets.scaled_rewards.sum().item()),
+            "raw_adv_mean": float(targets.raw_advantages.mean().item()),
+            "raw_adv_std": float(targets.raw_advantages.std(unbiased=False).item()),
+            "value_target_mean": float(returns.mean().item()),
+            "value_target_std": float(returns.std(unbiased=False).item()),
+            "actor_adv_mean": float(advantages.mean().item()),
+            "actor_adv_std": float(advantages.std(unbiased=False).item()),
             "return_mean": float(returns.mean().detach().item()),
             "return_std": float(returns.std().detach().item())
             if returns.numel() > 1
@@ -799,7 +828,22 @@ class BacktracePPOAgentV2:
             "entropy_coef": self.entropy_coef,
             "return_scale": self.return_scale,
             "max_grad_norm": self.max_grad_norm,
+            "advantage_method": self.advantage_method,
+            "gae_lambda": self.gae_lambda,
+            "normalize_advantages": self.normalize_advantages,
         }
+
+    def load_actor_state_dict(self, state_dict):
+        """Warm-start a fresh agent without importing an old Critic or optimizer."""
+        if self.update_count or self.buffer.steps or self.optimizer.state:
+            raise ValueError("Actor weights-only warm start requires a fresh agent.")
+        current = self.policy.state_dict()
+        actor_keys = {key for key in current if not key.startswith("critic.")}
+        if not actor_keys.issubset(state_dict) or set(state_dict) - set(current):
+            raise ValueError("Invalid V2 Actor state dictionary.")
+        current.update({key: state_dict[key] for key in actor_keys})
+        self.policy.load_state_dict(current)
+        self.policy_old.load_state_dict(self.policy.state_dict())
 
     def load_training_state_dict(self, state):
         if state.get("format") != "RL_PODEM_PPO_RND_V2":
@@ -813,6 +857,14 @@ class BacktracePPOAgentV2:
         saved_hyperparameters.setdefault("entropy_coef", 0.01)
         saved_hyperparameters.setdefault("return_scale", 1.0)
         saved_hyperparameters.setdefault("max_grad_norm", 0.0)
+        saved_hyperparameters.setdefault("advantage_method", "mc")
+        saved_hyperparameters.setdefault("gae_lambda", 0.97)
+        saved_hyperparameters.setdefault("normalize_advantages", False)
+        if saved_hyperparameters["normalize_returns"] and not self.normalize_returns:
+            raise ValueError(
+                "Legacy checkpoint uses per-fault return normalization. "
+                "Use a fresh training checkpoint or an explicit weights-only warm start."
+            )
         if saved_hyperparameters != self.hyperparameters():
             raise ValueError("V2 checkpoint PPO/RND hyperparameters changed.")
         self.policy.load_state_dict(state["policy"])

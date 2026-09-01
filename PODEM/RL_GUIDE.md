@@ -107,3 +107,174 @@ checks after rebuilding the pybind extension:
 ```text
 python scripts/verify_paper_v3.py
 ```
+
+## Full-fault curriculum MC / GAE
+
+The curriculum workflow first behavior-clones the heuristic teacher, then
+updates PPO once per completed fault. There is no fixed-length rollout or
+mid-fault update: one rollout contains that fault's Actor decisions. An aborted
+fault is terminal for this training task, just like a detected fault.
+
+Use an existing, hash-valid curriculum manifest and NEW output paths:
+
+```text
+python scripts/train_curriculum.py artifacts/paper_v6_xor_filtered/training_manifest.json artifacts/paper_v7_gae/training_state.pth artifacts/paper_v7_gae/actor_v2_best.txt --advantage-method gae --gamma 0.99 --gae-lambda 0.97 --return-scale 100 --log-rollouts
+```
+
+For an MC comparison with the same scaling and normalization settings:
+
+```text
+python scripts/train_curriculum.py artifacts/paper_v6_xor_filtered/training_manifest.json artifacts/paper_v7_mc/training_state.pth artifacts/paper_v7_mc/actor_v2_best.txt --advantage-method mc --gamma 0.99 --return-scale 100 --log-rollouts
+```
+
+Defaults are `--advantage-method gae`, `--gamma 0.99`, `--gae-lambda 0.97`,
+`--return-scale 100`, and `--normalize-advantages`. Both curriculum methods
+disable per-fault return standardization. All step rewards, including the RND
+bonus, are divided by the same fixed scale; the relative reward weights remain
+unchanged. MC fits discounted returns. GAE fits `raw_advantage + old_value`,
+using zero continuation value at terminal transitions. With lambda equal to
+one, full-fault GAE targets match MC targets.
+
+Only the Actor's copy of Advantage is standardized using the population standard
+deviation. The Critic target is not standardized. Single-decision rollouts skip
+Advantage standardization; zero-decision faults are logged without a PPO update.
+Use `--no-normalize-advantages` to disable Actor normalization for an ablation.
+For the previous curriculum optimization settings, use
+`--advantage-method mc --gamma 1 --no-normalize-advantages`.
+The older paper-reward V3 entry point retains its legacy agent defaults.
+The curriculum Critic now initializes only its output head to zero weight and
+bias 1, preserving trainable hidden features. The previous all-zero initialization
+could only learn a constant bias. Both new comparison modes share this fix, so
+the legacy optimization flags alone do not reproduce the old initialization bug.
+
+### Inspect rollout length
+
+At startup, `PPO_CONFIG` prints the effective options and `rollout=full_fault`.
+With `--log-rollouts`, each `ROLLOUT_RESULT` includes the circuit, fault ID,
+`steps`, outcome, update status, and PPO metrics. `steps` counts Actor decisions,
+not internal PODEM `backtrace_steps` or `backtracks`. Per-fault records are printed
+after their curriculum work unit completes.
+
+Every `TRAIN_RESULT.learning.rollout_steps` reports `count`, `min`, `mean`,
+`median`, `p90`, `max`, and `zero_decision_faults`. These lengths include all
+faults; p90 is the nearest-rank percentile. `learning.steps` remains the SUM
+over the work unit, not the length of a single rollout. `raw_adv_*`,
+`actor_adv_*`, and `value_target_*` distinguish the three learning signals;
+summary `*_std_mean` fields are averages of within-rollout standard deviations.
+
+### Checkpoints and verification
+
+Resuming requires identical method, lambda, gamma, scale, normalization, reward
+configuration, and manifest. Do not reuse a legacy training checkpoint path
+when changing these settings. Existing inference actor exports are unchanged.
+For an explicit weights-only warm start in Python, a fresh agent exposes
+`load_actor_state_dict(state_dict)`: it imports the encoder and Actor weights,
+leaves the new Critic intact, and does not restore old optimizer/RND state.
+
+Run the mathematical/compatibility tests and the native integration smoke:
+
+```text
+python -m unittest discover -s tests -p test_full_fault_gae.py -v
+python scripts/verify_full_fault_gae.py
+```
+
+The smoke uses the existing c432 curriculum data in an isolated temporary
+directory. It exercises behavior cloning, both MC and GAE, checkpoint resume
+(including bitwise comparison after a simulated mid-curriculum interruption),
+rollout metrics, actor export, and deterministic evaluation. It does not
+overwrite the original circuit outputs, training artifacts, or checkpoints.
+
+## Switchable SmartATPG / DeepGate encoding
+
+The current curriculum path supports `--embedding-backend smartatpg|deepgate`.
+New preparation defaults to SmartATPG. Training/export infer the backend from
+the manifest/checkpoint; legacy metadata means DeepGate. An explicit conflicting
+flag fails. Changing the backend requires a fresh model, not reuse of the same
+checkpoint. Existing V1/V2 actors and the earlier standalone training scripts
+remain DeepGate-only; `train_curriculum.py` is the switchable training entry.
+
+SmartATPG uses 14 static node features: nine gate-type one-hot entries, level,
+fanout, and structural SCOAP CC0/CC1/CO. Two trainable 64-unit mean-GraphSAGE
+layers aggregate incoming circuit edges, then mean-pool a 64-dimensional circuit
+context. The policy receives `[graph_context, current_gate_features, mask]`,
+80 values, projected to 32 dimensions and combined with the objective-value
+embedding. The graph encoder learns during both BC and PPO. No DeepGate model,
+DeepGate embeddings, PyG, or extra compiled graph library is needed.
+
+This follows the paper's graph-context/state design, with documented project
+defaults rather than an exact reproduction claim. The binary solver only calls
+the policy when both inputs are available, so its mask is `[1,1]`; forced moves
+remain solver-controlled. SmartATPG RND uses stable raw gate features plus the
+objective one-hot, not the changing learned graph embedding. MC/GAE, full-fault
+rollouts and potential reward semantics are unchanged.
+
+### Prepare and train
+
+Reuse the exact previous fault splits and teacher samples without reading any
+DeepGate `.emb` files. This creates a new manifest, not a new random split:
+
+```text
+python scripts/prepare_curriculum_training.py artifacts/paper_v8_smartatpg --source-manifest artifacts/paper_v6_xor_filtered/training_manifest.json --embedding-backend smartatpg
+python scripts/train_curriculum.py artifacts/paper_v8_smartatpg/training_manifest.json artifacts/paper_v8_smartatpg/training_state.pth artifacts/paper_v8_smartatpg/actor_best.txt --embedding-backend smartatpg --advantage-method gae --log-rollouts
+```
+
+For a DeepGate run, use the old DeepGate manifest and fresh output paths:
+
+```text
+python scripts/train_curriculum.py artifacts/paper_v6_xor_filtered/training_manifest.json artifacts/deepgate_comparison/training_state.pth artifacts/deepgate_comparison/actor_best.txt --embedding-backend deepgate --advantage-method gae
+```
+
+Completed preparation directories are protected. `--resume` checks their
+original backend/configuration and reuses a valid manifest without rewriting
+teacher data. A conflicting backend requires a new output directory.
+
+### Export and native inference
+
+At training completion, `actor_best.txt.json` and `actor_latest.txt.json` locate
+complete snapshot-specific actor/descriptor pairs for each curriculum circuit.
+Use the `actor` and `circuits.<name>.embeddings` paths from the SAME JSON.
+Intermediate work-unit exports contain actor weights only; use explicit export
+commands below to evaluate an interrupted checkpoint. Best may be the BC
+fallback and must never be paired with latest-PPO descriptors.
+
+To export a different circuit with no fine-tuning, choose the same checkpoint
+and `--snapshot` for both files:
+
+```text
+python scripts/export_cpp_actor.py artifacts/paper_v8_smartatpg/training_state.pth artifacts/paper_v8_smartatpg/best_actor.txt --embedding-backend smartatpg --snapshot best
+python scripts/export_cpp_embeddings.py sample_circuits/c432_binary.bench artifacts/paper_v8_smartatpg/training_state.pth artifacts/paper_v8_smartatpg/c432_best.emb --embedding-backend smartatpg --snapshot best
+python scripts/build_native.py
+build/atpg_rl_smartatpg.exe -bt 500 -seed 14 -fault-map sample_circuits/c432_binary.faultmap -rl-emb artifacts/paper_v8_smartatpg/c432_best.emb -rl-actor artifacts/paper_v8_smartatpg/best_actor.txt -rl-embedding-backend smartatpg sample_circuits/c432_binary.bench
+```
+
+Native SmartATPG inference uses exported static 80-value descriptors and the
+existing lazy binary Actor cache, not a graph network on every decision. Backend,
+schema, circuit, snapshot identity and dimensions are checked before inference.
+Generated checkpoint, temporary, JSON and snapshot-directory paths are checked
+for collisions before training writes. Native artifact readers support UTF-8
+Windows paths and reject duplicate wire-name tables.
+Legacy DeepGate inference still accepts its original files; optionally pass
+`-rl-embedding-backend deepgate` to validate the selection. Report graph encoding
+and export time separately from ATPG time when comparing performance.
+
+For DeepGate **embedding** export, the checkpoint must be the original DeepGate
+encoder checkpoint, such as `artifacts/formal/deepgate_best.pth`, not a PPO
+checkpoint. The exporter now strictly checks the encoder weights and refuses
+incompatible or partial state instead of silently using random initialization.
+
+### Verification
+
+```text
+python setup.py build_ext --inplace
+python -m unittest discover -s tests -v
+python scripts/verify_curriculum_v4.py
+python scripts/verify_full_fault_gae.py
+python scripts/verify_smartatpg.py --output-dir artifacts/smartatpg_smoke_new
+```
+
+The SmartATPG smoke forces CPU and uses isolated copies of c432/c499 with one
+fault per difficulty per split. It runs two BC epochs, short MC/GAE curricula,
+exact interrupted-resume checks, live-graph/exported/native logit and fault-run
+parity, and standalone backend rejection tests. It does not import DeepGate or
+perform a full training campaign. Passing these checks does not establish better
+coverage, wall time, or generalization.

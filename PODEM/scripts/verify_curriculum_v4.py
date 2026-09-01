@@ -469,7 +469,11 @@ def _verify_scaled_ppo_and_parity():
     agent.finish_episode(100.0)
     metrics = agent.update()
     _check(math.isclose(metrics["return_mean"], 1.0), "V4 return scaling failed.")
-    _check(all(math.isfinite(float(value)) for value in metrics.values()), "Non-finite PPO metric.")
+    _check(
+        all(math.isfinite(value) for value in metrics.values()
+            if isinstance(value, (int, float))),
+        "Non-finite PPO metric.",
+    )
     _check(metrics["rnd_loss"] == 0.0, "Final-stage RND should be disabled.")
 
     with tempfile.TemporaryDirectory(prefix="podem_v4_actor_") as directory:

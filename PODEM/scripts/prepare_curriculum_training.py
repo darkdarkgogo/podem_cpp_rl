@@ -1,7 +1,9 @@
 import argparse
+import copy
 import hashlib
 import json
 from pathlib import Path
+from rl_podem.backends import MANIFEST_V5, resolve_backend, smartatpg_metadata
 
 from rl_podem.cpp_bridge import profile_cpp_podem
 from rl_podem.curriculum import (
@@ -64,11 +66,40 @@ def _combine_teacher_samples(per_circuit_samples):
     )
 
 
+def _from_source_manifest(source, output_dir, backend):
+    from train_curriculum import _validate_manifest
+    source = Path(source).resolve()
+    output_dir = Path(output_dir).resolve()
+    if source.parent == output_dir:
+        raise ValueError("Use a new output directory; never replace the source manifest")
+    manifest = copy.deepcopy(json.loads(source.read_text(encoding="utf-8")))
+    if manifest.get("format") not in (MANIFEST_FORMAT, MANIFEST_V5):
+        raise ValueError("Unsupported source manifest format")
+    if backend == "smartatpg":
+        manifest.update(format=MANIFEST_V5, **smartatpg_metadata())
+        for item in manifest["circuits"]:
+            item.pop("embeddings", None)
+            item["artifact_sha256"].pop("embeddings", None)
+    elif manifest.get("embedding_backend", "deepgate") != "deepgate":
+        raise ValueError("Switching to DeepGate requires a manifest with DeepGate artifacts")
+    _validate_manifest(manifest)
+    manifest["source_manifest_sha256"] = _sha256_file(source)
+    path = output_dir / "training_manifest.json"
+    if path.exists():
+        raise FileExistsError(f"Refusing to replace existing manifest: {path}")
+    _write_json(path, manifest)
+    return path
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Prepare multi-circuit V4 curriculum and teacher data."
     )
     parser.add_argument("output_dir", type=Path)
+    parser.add_argument("--embedding-backend", choices=("smartatpg", "deepgate"),
+                        help="New datasets default to smartatpg; resume uses the existing manifest backend.")
+    parser.add_argument("--source-manifest", type=Path,
+                        help="Reuse exact fault splits and teachers in a new directory, without loading DeepGate embeddings.")
     parser.add_argument("--backtrack-limit", type=int, default=500)
     parser.add_argument("--seed", type=int, default=14)
     parser.add_argument("--split-seed", type=int, default=2026)
@@ -83,6 +114,27 @@ def main():
         help="Reuse complete per-circuit profile JSON files after an interrupted run.",
     )
     args = parser.parse_args()
+    if args.source_manifest:
+        if args.smoke or args.resume:
+            parser.error("--source-manifest reuses exact splits; do not combine it with --smoke/--resume")
+        path = _from_source_manifest(args.source_manifest, args.output_dir, args.embedding_backend or "smartatpg")
+        print(f"MANIFEST {path}", flush=True)
+        return
+    existing_path = args.output_dir / "training_manifest.json"
+    if existing_path.exists():
+        if not args.resume:
+            raise FileExistsError(f"Existing manifest is protected; use --resume or a new directory: {existing_path}")
+        from train_curriculum import _validate_manifest
+        existing = json.loads(existing_path.read_text(encoding="utf-8"))
+        resolve_backend(existing, args.embedding_backend)
+        expected = {"backtrack_limit": args.backtrack_limit, "profile_seed": args.seed,
+                    "split_seed": args.split_seed, "smoke": args.smoke}
+        if any(existing.get(key) != value for key, value in expected.items()):
+            raise ValueError("Preparation resume configuration differs from existing manifest")
+        _validate_manifest(existing)
+        print(f"MANIFEST_REUSED {existing_path.resolve()}", flush=True)
+        return
+    args.embedding_backend = args.embedding_backend or "smartatpg"
     if args.backtrack_limit != 500:
         raise ValueError("V4 uses a fixed backtrack limit of 500.")
 
@@ -105,7 +157,7 @@ def main():
     for name, embeddings in _default_circuits(root):
         circuit = root / "sample_circuits" / f"{name}_binary.bench"
         fault_map = circuit.with_suffix(".faultmap")
-        for artifact in (circuit, fault_map, embeddings):
+        for artifact in ((circuit, fault_map, embeddings) if args.embedding_backend == "deepgate" else (circuit, fault_map)):
             if not artifact.is_file():
                 raise FileNotFoundError(f"Missing V4 input artifact: {artifact}")
 
@@ -182,12 +234,12 @@ def main():
                 "name": name,
                 "circuit": str(circuit.resolve()),
                 "fault_map": str(fault_map.resolve()),
-                "embeddings": str(embeddings.resolve()),
+                **({"embeddings": str(embeddings.resolve())} if args.embedding_backend == "deepgate" else {}),
                 "profile": str(profile_path.resolve()),
                 "artifact_sha256": {
                     "circuit": _sha256_file(circuit),
                     "fault_map": _sha256_file(fault_map),
-                    "embeddings": _sha256_file(embeddings),
+                    **({"embeddings": _sha256_file(embeddings)} if args.embedding_backend == "deepgate" else {}),
                     "profile": _sha256_file(profile_path),
                 },
                 "available_by_difficulty": available,
@@ -210,7 +262,8 @@ def main():
     _write_json(training_teacher_path, _combine_teacher_samples(training_teacher))
     _write_json(validation_teacher_path, _combine_teacher_samples(validation_teacher))
     manifest = {
-        "format": MANIFEST_FORMAT,
+        "format": MANIFEST_FORMAT if args.embedding_backend == "deepgate" else MANIFEST_V5,
+        **(smartatpg_metadata() if args.embedding_backend == "smartatpg" else {}),
         "backtrack_limit": args.backtrack_limit,
         "profile_seed": args.seed,
         "split_seed": args.split_seed,

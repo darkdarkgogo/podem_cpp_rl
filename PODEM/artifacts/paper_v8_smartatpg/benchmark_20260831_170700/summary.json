@@ -1,0 +1,1852 @@
+[
+  {
+    "circuit": "c432",
+    "model": "heuristic",
+    "detected": 782,
+    "total_faults": 792,
+    "equivalent_detected": 457,
+    "equivalent_faults": 461,
+    "aborted": 4,
+    "redundant": 0,
+    "backtracks": 2036,
+    "backtrace_steps": 32292,
+    "test_vectors": 88,
+    "atpg_seconds": 0.009,
+    "atpg_seconds_samples": [
+      0.009,
+      0.01,
+      0.009,
+      0.009,
+      0.009
+    ],
+    "native_total_seconds": 0.011,
+    "native_total_seconds_samples": [
+      0.011,
+      0.012,
+      0.011,
+      0.011,
+      0.012
+    ],
+    "wall_seconds": 0.01933629999999198,
+    "wall_seconds_samples": [
+      0.01860739999999339,
+      0.01933629999999198,
+      0.01935940000004166,
+      0.01870170000000826,
+      0.021744699999999284
+    ]
+  },
+  {
+    "circuit": "c432",
+    "model": "deepgate_gae_best",
+    "detected": 782,
+    "total_faults": 792,
+    "equivalent_detected": 457,
+    "equivalent_faults": 461,
+    "aborted": 4,
+    "redundant": 0,
+    "backtracks": 2036,
+    "backtrace_steps": 32292,
+    "test_vectors": 88,
+    "atpg_seconds": 0.012,
+    "atpg_seconds_samples": [
+      0.012,
+      0.012,
+      0.012,
+      0.012,
+      0.013
+    ],
+    "native_total_seconds": 0.037,
+    "native_total_seconds_samples": [
+      0.04,
+      0.036,
+      0.034,
+      0.037,
+      0.042
+    ],
+    "wall_seconds": 0.04501840000000357,
+    "wall_seconds_samples": [
+      0.04889130000000819,
+      0.04501840000000357,
+      0.0423556000000076,
+      0.044966600000009294,
+      0.051495999999986
+    ]
+  },
+  {
+    "circuit": "c432",
+    "model": "deepgate_gae_final",
+    "detected": 781,
+    "total_faults": 792,
+    "equivalent_detected": 456,
+    "equivalent_faults": 461,
+    "aborted": 6,
+    "redundant": 0,
+    "backtracks": 3253,
+    "backtrace_steps": 50464,
+    "test_vectors": 65,
+    "atpg_seconds": 0.016,
+    "atpg_seconds_samples": [
+      0.016,
+      0.016,
+      0.017,
+      0.016,
+      0.018
+    ],
+    "native_total_seconds": 0.044,
+    "native_total_seconds_samples": [
+      0.038,
+      0.044,
+      0.044,
+      0.038,
+      0.045
+    ],
+    "wall_seconds": 0.05202000000002727,
+    "wall_seconds_samples": [
+      0.045356599999990976,
+      0.0527362999999923,
+      0.05202000000002727,
+      0.04596950000001243,
+      0.053972500000043055
+    ]
+  },
+  {
+    "circuit": "c432",
+    "model": "smartatpg_best",
+    "detected": 782,
+    "total_faults": 792,
+    "equivalent_detected": 457,
+    "equivalent_faults": 461,
+    "aborted": 5,
+    "redundant": 0,
+    "backtracks": 2512,
+    "backtrace_steps": 37574,
+    "test_vectors": 83,
+    "atpg_seconds": 0.016,
+    "atpg_seconds_samples": [
+      0.017,
+      0.016,
+      0.016,
+      0.015,
+      0.016
+    ],
+    "native_total_seconds": 0.043,
+    "native_total_seconds_samples": [
+      0.045,
+      0.038,
+      0.043,
+      0.038,
+      0.044
+    ],
+    "wall_seconds": 0.053464500000018234,
+    "wall_seconds_samples": [
+      0.05492519999999956,
+      0.04682050000002391,
+      0.053464500000018234,
+      0.04743830000001026,
+      0.053700800000001436
+    ]
+  },
+  {
+    "circuit": "c432",
+    "model": "smartatpg_final",
+    "detected": 781,
+    "total_faults": 792,
+    "equivalent_detected": 456,
+    "equivalent_faults": 461,
+    "aborted": 7,
+    "redundant": 0,
+    "backtracks": 3865,
+    "backtrace_steps": 65278,
+    "test_vectors": 72,
+    "atpg_seconds": 0.019,
+    "atpg_seconds_samples": [
+      0.019,
+      0.019,
+      0.019,
+      0.018,
+      0.02
+    ],
+    "native_total_seconds": 0.046,
+    "native_total_seconds_samples": [
+      0.047,
+      0.047,
+      0.042,
+      0.04,
+      0.046
+    ],
+    "wall_seconds": 0.0549225999999976,
+    "wall_seconds_samples": [
+      0.055373299999999404,
+      0.0549225999999976,
+      0.050501999999994496,
+      0.04883420000004435,
+      0.05511819999998124
+    ]
+  },
+  {
+    "circuit": "c499",
+    "model": "heuristic",
+    "detected": 751,
+    "total_faults": 774,
+    "equivalent_detected": 521,
+    "equivalent_faults": 534,
+    "aborted": 13,
+    "redundant": 0,
+    "backtracks": 6793,
+    "backtrace_steps": 117762,
+    "test_vectors": 68,
+    "atpg_seconds": 0.042,
+    "atpg_seconds_samples": [
+      0.043,
+      0.041,
+      0.042,
+      0.042,
+      0.043
+    ],
+    "native_total_seconds": 0.046,
+    "native_total_seconds_samples": [
+      0.046,
+      0.045,
+      0.045,
+      0.046,
+      0.047
+    ],
+    "wall_seconds": 0.054088199999966946,
+    "wall_seconds_samples": [
+      0.054375699999994254,
+      0.053224700000015446,
+      0.0534591999999634,
+      0.054088199999966946,
+      0.05581519999998363
+    ]
+  },
+  {
+    "circuit": "c499",
+    "model": "deepgate_gae_best",
+    "detected": 751,
+    "total_faults": 774,
+    "equivalent_detected": 521,
+    "equivalent_faults": 534,
+    "aborted": 13,
+    "redundant": 0,
+    "backtracks": 6793,
+    "backtrace_steps": 117762,
+    "test_vectors": 68,
+    "atpg_seconds": 0.052,
+    "atpg_seconds_samples": [
+      0.052,
+      0.05,
+      0.052,
+      0.052,
+      0.053
+    ],
+    "native_total_seconds": 0.102,
+    "native_total_seconds_samples": [
+      0.1,
+      0.1,
+      0.104,
+      0.107,
+      0.102
+    ],
+    "wall_seconds": 0.11271460000000388,
+    "wall_seconds_samples": [
+      0.10797970000000134,
+      0.10963129999998955,
+      0.11271460000000388,
+      0.11466139999998859,
+      0.1129376000000093
+    ]
+  },
+  {
+    "circuit": "c499",
+    "model": "deepgate_gae_final",
+    "detected": 766,
+    "total_faults": 774,
+    "equivalent_detected": 526,
+    "equivalent_faults": 534,
+    "aborted": 8,
+    "redundant": 0,
+    "backtracks": 4013,
+    "backtrace_steps": 81827,
+    "test_vectors": 70,
+    "atpg_seconds": 0.037,
+    "atpg_seconds_samples": [
+      0.035,
+      0.036,
+      0.058,
+      0.037,
+      0.037
+    ],
+    "native_total_seconds": 0.089,
+    "native_total_seconds_samples": [
+      0.085,
+      0.091,
+      0.106,
+      0.089,
+      0.088
+    ],
+    "wall_seconds": 0.09750969999998915,
+    "wall_seconds_samples": [
+      0.09367310000000373,
+      0.09957059999999274,
+      0.11424690000001192,
+      0.09696839999998019,
+      0.09750969999998915
+    ]
+  },
+  {
+    "circuit": "c499",
+    "model": "smartatpg_best",
+    "detected": 748,
+    "total_faults": 774,
+    "equivalent_detected": 520,
+    "equivalent_faults": 534,
+    "aborted": 14,
+    "redundant": 0,
+    "backtracks": 7492,
+    "backtrace_steps": 132658,
+    "test_vectors": 67,
+    "atpg_seconds": 0.059,
+    "atpg_seconds_samples": [
+      0.059,
+      0.058,
+      0.06,
+      0.056,
+      0.061
+    ],
+    "native_total_seconds": 0.106,
+    "native_total_seconds_samples": [
+      0.106,
+      0.106,
+      0.111,
+      0.099,
+      0.113
+    ],
+    "wall_seconds": 0.11399620000000255,
+    "wall_seconds_samples": [
+      0.11383600000000627,
+      0.11399620000000255,
+      0.11986120000000255,
+      0.10745689999998831,
+      0.12238300000001345
+    ]
+  },
+  {
+    "circuit": "c499",
+    "model": "smartatpg_final",
+    "detected": 766,
+    "total_faults": 774,
+    "equivalent_detected": 526,
+    "equivalent_faults": 534,
+    "aborted": 8,
+    "redundant": 0,
+    "backtracks": 4012,
+    "backtrace_steps": 92002,
+    "test_vectors": 75,
+    "atpg_seconds": 0.036,
+    "atpg_seconds_samples": [
+      0.035,
+      0.036,
+      0.036,
+      0.036,
+      0.039
+    ],
+    "native_total_seconds": 0.079,
+    "native_total_seconds_samples": [
+      0.083,
+      0.083,
+      0.078,
+      0.076,
+      0.079
+    ],
+    "wall_seconds": 0.09104139999999461,
+    "wall_seconds_samples": [
+      0.09162929999999392,
+      0.09104139999999461,
+      0.08636450000000195,
+      0.08474109999997381,
+      0.09111950000004754
+    ]
+  },
+  {
+    "circuit": "c1355",
+    "model": "heuristic",
+    "detected": 2702,
+    "total_faults": 2710,
+    "equivalent_detected": 1566,
+    "equivalent_faults": 1574,
+    "aborted": 8,
+    "redundant": 0,
+    "backtracks": 9497,
+    "backtrace_steps": 229939,
+    "test_vectors": 171,
+    "atpg_seconds": 0.071,
+    "atpg_seconds_samples": [
+      0.071,
+      0.07,
+      0.069,
+      0.071,
+      0.073
+    ],
+    "native_total_seconds": 0.077,
+    "native_total_seconds_samples": [
+      0.078,
+      0.077,
+      0.075,
+      0.077,
+      0.079
+    ],
+    "wall_seconds": 0.08503210000003492,
+    "wall_seconds_samples": [
+      0.08574459999999817,
+      0.08435479999999984,
+      0.08314490000003616,
+      0.08503210000003492,
+      0.08791009999998778
+    ]
+  },
+  {
+    "circuit": "c1355",
+    "model": "deepgate_gae_best",
+    "detected": 2702,
+    "total_faults": 2710,
+    "equivalent_detected": 1566,
+    "equivalent_faults": 1574,
+    "aborted": 8,
+    "redundant": 0,
+    "backtracks": 9497,
+    "backtrace_steps": 229939,
+    "test_vectors": 171,
+    "atpg_seconds": 0.092,
+    "atpg_seconds_samples": [
+      0.093,
+      0.089,
+      0.092,
+      0.09,
+      0.094
+    ],
+    "native_total_seconds": 0.136,
+    "native_total_seconds_samples": [
+      0.136,
+      0.133,
+      0.141,
+      0.136,
+      0.151
+    ],
+    "wall_seconds": 0.14442960000000937,
+    "wall_seconds_samples": [
+      0.14442960000000937,
+      0.14253060000001483,
+      0.14922300000000632,
+      0.14415889999997944,
+      0.15994599999999082
+    ]
+  },
+  {
+    "circuit": "c1355",
+    "model": "deepgate_gae_final",
+    "detected": 2702,
+    "total_faults": 2710,
+    "equivalent_detected": 1566,
+    "equivalent_faults": 1574,
+    "aborted": 8,
+    "redundant": 0,
+    "backtracks": 4104,
+    "backtrace_steps": 121172,
+    "test_vectors": 122,
+    "atpg_seconds": 0.045,
+    "atpg_seconds_samples": [
+      0.045,
+      0.044,
+      0.043,
+      0.075,
+      0.077
+    ],
+    "native_total_seconds": 0.092,
+    "native_total_seconds_samples": [
+      0.088,
+      0.092,
+      0.09,
+      0.121,
+      0.131
+    ],
+    "wall_seconds": 0.09976629999999886,
+    "wall_seconds_samples": [
+      0.09626980000000174,
+      0.09976629999999886,
+      0.09830909999999449,
+      0.12947090000000117,
+      0.14077759999997852
+    ]
+  },
+  {
+    "circuit": "c1355",
+    "model": "smartatpg_best",
+    "detected": 2702,
+    "total_faults": 2710,
+    "equivalent_detected": 1566,
+    "equivalent_faults": 1574,
+    "aborted": 8,
+    "redundant": 0,
+    "backtracks": 9568,
+    "backtrace_steps": 214112,
+    "test_vectors": 166,
+    "atpg_seconds": 0.083,
+    "atpg_seconds_samples": [
+      0.084,
+      0.081,
+      0.083,
+      0.082,
+      0.084
+    ],
+    "native_total_seconds": 0.13,
+    "native_total_seconds_samples": [
+      0.129,
+      0.133,
+      0.133,
+      0.128,
+      0.13
+    ],
+    "wall_seconds": 0.13934280000000854,
+    "wall_seconds_samples": [
+      0.13780850000000555,
+      0.1417763999999977,
+      0.14154020000000855,
+      0.13733239999999114,
+      0.13934280000000854
+    ]
+  },
+  {
+    "circuit": "c1355",
+    "model": "smartatpg_final",
+    "detected": 2702,
+    "total_faults": 2710,
+    "equivalent_detected": 1566,
+    "equivalent_faults": 1574,
+    "aborted": 17,
+    "redundant": 0,
+    "backtracks": 8569,
+    "backtrace_steps": 206334,
+    "test_vectors": 119,
+    "atpg_seconds": 0.086,
+    "atpg_seconds_samples": [
+      0.084,
+      0.086,
+      0.085,
+      0.087,
+      0.094
+    ],
+    "native_total_seconds": 0.131,
+    "native_total_seconds_samples": [
+      0.128,
+      0.131,
+      0.122,
+      0.135,
+      0.142
+    ],
+    "wall_seconds": 0.1394027000000051,
+    "wall_seconds_samples": [
+      0.13601200000000802,
+      0.1394027000000051,
+      0.130083500000012,
+      0.14348569999998517,
+      0.1512779999999907
+    ]
+  },
+  {
+    "circuit": "c1908",
+    "model": "heuristic",
+    "detected": 3560,
+    "total_faults": 3812,
+    "equivalent_detected": 1764,
+    "equivalent_faults": 1876,
+    "aborted": 76,
+    "redundant": 36,
+    "backtracks": 38229,
+    "backtrace_steps": 526148,
+    "test_vectors": 77,
+    "atpg_seconds": 0.373,
+    "atpg_seconds_samples": [
+      0.373,
+      0.364,
+      0.38,
+      0.362,
+      0.385
+    ],
+    "native_total_seconds": 0.381,
+    "native_total_seconds_samples": [
+      0.381,
+      0.373,
+      0.388,
+      0.37,
+      0.396
+    ],
+    "wall_seconds": 0.389565300000001,
+    "wall_seconds_samples": [
+      0.389565300000001,
+      0.38186730000001035,
+      0.3962810999999533,
+      0.3784716000000117,
+      0.40615399999995816
+    ]
+  },
+  {
+    "circuit": "c1908",
+    "model": "deepgate_gae_best",
+    "detected": 3560,
+    "total_faults": 3812,
+    "equivalent_detected": 1764,
+    "equivalent_faults": 1876,
+    "aborted": 76,
+    "redundant": 36,
+    "backtracks": 38229,
+    "backtrace_steps": 526148,
+    "test_vectors": 77,
+    "atpg_seconds": 0.395,
+    "atpg_seconds_samples": [
+      0.395,
+      0.394,
+      0.399,
+      0.395,
+      0.417
+    ],
+    "native_total_seconds": 0.478,
+    "native_total_seconds_samples": [
+      0.475,
+      0.475,
+      0.478,
+      0.481,
+      0.499
+    ],
+    "wall_seconds": 0.4858973999999989,
+    "wall_seconds_samples": [
+      0.4833396999999877,
+      0.4827534000000071,
+      0.4858973999999989,
+      0.488784800000019,
+      0.5091772999999762
+    ]
+  },
+  {
+    "circuit": "c1908",
+    "model": "deepgate_gae_final",
+    "detected": 3560,
+    "total_faults": 3812,
+    "equivalent_detected": 1764,
+    "equivalent_faults": 1876,
+    "aborted": 77,
+    "redundant": 36,
+    "backtracks": 38706,
+    "backtrace_steps": 509628,
+    "test_vectors": 79,
+    "atpg_seconds": 0.42,
+    "atpg_seconds_samples": [
+      0.399,
+      0.42,
+      0.409,
+      0.42,
+      0.435
+    ],
+    "native_total_seconds": 0.494,
+    "native_total_seconds_samples": [
+      0.479,
+      0.494,
+      0.482,
+      0.504,
+      0.517
+    ],
+    "wall_seconds": 0.5025470000000212,
+    "wall_seconds_samples": [
+      0.4874942999999945,
+      0.5025470000000212,
+      0.4911943999999835,
+      0.5139517000000069,
+      0.5294386000000486
+    ]
+  },
+  {
+    "circuit": "c1908",
+    "model": "smartatpg_best",
+    "detected": 3552,
+    "total_faults": 3812,
+    "equivalent_detected": 1756,
+    "equivalent_faults": 1876,
+    "aborted": 84,
+    "redundant": 36,
+    "backtracks": 42055,
+    "backtrace_steps": 659732,
+    "test_vectors": 76,
+    "atpg_seconds": 0.482,
+    "atpg_seconds_samples": [
+      0.471,
+      0.463,
+      0.484,
+      0.482,
+      0.493
+    ],
+    "native_total_seconds": 0.562,
+    "native_total_seconds_samples": [
+      0.553,
+      0.544,
+      0.562,
+      0.565,
+      0.569
+    ],
+    "wall_seconds": 0.5717089999999985,
+    "wall_seconds_samples": [
+      0.5620065000000096,
+      0.5525882000000024,
+      0.5717089999999985,
+      0.5736028000000033,
+      0.5780391000000122
+    ]
+  },
+  {
+    "circuit": "c1908",
+    "model": "smartatpg_final",
+    "detected": 3560,
+    "total_faults": 3812,
+    "equivalent_detected": 1764,
+    "equivalent_faults": 1876,
+    "aborted": 76,
+    "redundant": 36,
+    "backtracks": 38246,
+    "backtrace_steps": 475654,
+    "test_vectors": 76,
+    "atpg_seconds": 0.358,
+    "atpg_seconds_samples": [
+      0.35,
+      0.36,
+      0.358,
+      0.353,
+      0.374
+    ],
+    "native_total_seconds": 0.425,
+    "native_total_seconds_samples": [
+      0.414,
+      0.425,
+      0.43,
+      0.42,
+      0.447
+    ],
+    "wall_seconds": 0.43317149999998605,
+    "wall_seconds_samples": [
+      0.42316000000001,
+      0.43317149999998605,
+      0.4385565999999699,
+      0.42856610000001183,
+      0.45630520000003116
+    ]
+  },
+  {
+    "circuit": "c2670",
+    "model": "heuristic",
+    "detected": 5010,
+    "total_faults": 5188,
+    "equivalent_detected": 2466,
+    "equivalent_faults": 2595,
+    "aborted": 41,
+    "redundant": 88,
+    "backtracks": 29167,
+    "backtrace_steps": 358282,
+    "test_vectors": 167,
+    "atpg_seconds": 0.293,
+    "atpg_seconds_samples": [
+      0.293,
+      0.287,
+      0.287,
+      0.304,
+      0.302
+    ],
+    "native_total_seconds": 0.304,
+    "native_total_seconds_samples": [
+      0.304,
+      0.3,
+      0.303,
+      0.316,
+      0.314
+    ],
+    "wall_seconds": 0.3123078999999933,
+    "wall_seconds_samples": [
+      0.3123078999999933,
+      0.3085554999999829,
+      0.3112719000000084,
+      0.32373939999996537,
+      0.3231134000000111
+    ]
+  },
+  {
+    "circuit": "c2670",
+    "model": "deepgate_gae_best",
+    "detected": 5010,
+    "total_faults": 5188,
+    "equivalent_detected": 2466,
+    "equivalent_faults": 2595,
+    "aborted": 41,
+    "redundant": 88,
+    "backtracks": 29167,
+    "backtrace_steps": 358282,
+    "test_vectors": 167,
+    "atpg_seconds": 0.311,
+    "atpg_seconds_samples": [
+      0.311,
+      0.299,
+      0.308,
+      0.316,
+      0.322
+    ],
+    "native_total_seconds": 0.423,
+    "native_total_seconds_samples": [
+      0.412,
+      0.406,
+      0.423,
+      0.424,
+      0.434
+    ],
+    "wall_seconds": 0.43154590000000326,
+    "wall_seconds_samples": [
+      0.4201048000000043,
+      0.41446070000000645,
+      0.43154590000000326,
+      0.4320280000000025,
+      0.44276160000003983
+    ]
+  },
+  {
+    "circuit": "c2670",
+    "model": "deepgate_gae_final",
+    "detected": 5010,
+    "total_faults": 5188,
+    "equivalent_detected": 2466,
+    "equivalent_faults": 2595,
+    "aborted": 41,
+    "redundant": 88,
+    "backtracks": 28271,
+    "backtrace_steps": 347797,
+    "test_vectors": 151,
+    "atpg_seconds": 0.291,
+    "atpg_seconds_samples": [
+      0.286,
+      0.293,
+      0.291,
+      0.289,
+      0.312
+    ],
+    "native_total_seconds": 0.401,
+    "native_total_seconds_samples": [
+      0.397,
+      0.409,
+      0.401,
+      0.391,
+      0.434
+    ],
+    "wall_seconds": 0.41147519999998394,
+    "wall_seconds_samples": [
+      0.40519229999999595,
+      0.4175557000000083,
+      0.41147519999998394,
+      0.3996484000000464,
+      0.4437601999999856
+    ]
+  },
+  {
+    "circuit": "c2670",
+    "model": "smartatpg_best",
+    "detected": 5006,
+    "total_faults": 5188,
+    "equivalent_detected": 2462,
+    "equivalent_faults": 2595,
+    "aborted": 45,
+    "redundant": 88,
+    "backtracks": 32339,
+    "backtrace_steps": 387551,
+    "test_vectors": 158,
+    "atpg_seconds": 0.335,
+    "atpg_seconds_samples": [
+      0.341,
+      0.335,
+      0.33,
+      0.327,
+      0.352
+    ],
+    "native_total_seconds": 0.45,
+    "native_total_seconds_samples": [
+      0.46,
+      0.448,
+      0.45,
+      0.44,
+      0.468
+    ],
+    "wall_seconds": 0.45805510000002414,
+    "wall_seconds_samples": [
+      0.4685934999999972,
+      0.4571217999999817,
+      0.45805510000002414,
+      0.4485609999999838,
+      0.4781651999999781
+    ]
+  },
+  {
+    "circuit": "c2670",
+    "model": "smartatpg_final",
+    "detected": 5010,
+    "total_faults": 5188,
+    "equivalent_detected": 2466,
+    "equivalent_faults": 2595,
+    "aborted": 41,
+    "redundant": 88,
+    "backtracks": 24190,
+    "backtrace_steps": 323683,
+    "test_vectors": 150,
+    "atpg_seconds": 0.262,
+    "atpg_seconds_samples": [
+      0.265,
+      0.259,
+      0.26,
+      0.262,
+      0.271
+    ],
+    "native_total_seconds": 0.367,
+    "native_total_seconds_samples": [
+      0.367,
+      0.359,
+      0.371,
+      0.364,
+      0.408
+    ],
+    "wall_seconds": 0.37636739999999236,
+    "wall_seconds_samples": [
+      0.37636739999999236,
+      0.367563199999978,
+      0.37960440000000517,
+      0.373672699999986,
+      0.4220070000000078
+    ]
+  },
+  {
+    "circuit": "c3540",
+    "model": "heuristic",
+    "detected": 6201,
+    "total_faults": 7080,
+    "equivalent_detected": 2989,
+    "equivalent_faults": 3428,
+    "aborted": 66,
+    "redundant": 373,
+    "backtracks": 45253,
+    "backtrace_steps": 823819,
+    "test_vectors": 195,
+    "atpg_seconds": 0.923,
+    "atpg_seconds_samples": [
+      0.893,
+      0.947,
+      0.923,
+      0.917,
+      0.943
+    ],
+    "native_total_seconds": 0.939,
+    "native_total_seconds_samples": [
+      0.909,
+      0.965,
+      0.939,
+      0.937,
+      0.962
+    ],
+    "wall_seconds": 0.9470827000000099,
+    "wall_seconds_samples": [
+      0.9164402000000109,
+      0.9733717999999953,
+      0.9470827000000099,
+      0.9463187999999718,
+      0.971710900000005
+    ]
+  },
+  {
+    "circuit": "c3540",
+    "model": "deepgate_gae_best",
+    "detected": 6201,
+    "total_faults": 7080,
+    "equivalent_detected": 2989,
+    "equivalent_faults": 3428,
+    "aborted": 66,
+    "redundant": 373,
+    "backtracks": 45253,
+    "backtrace_steps": 823819,
+    "test_vectors": 195,
+    "atpg_seconds": 0.984,
+    "atpg_seconds_samples": [
+      0.984,
+      0.99,
+      0.983,
+      0.957,
+      1.017
+    ],
+    "native_total_seconds": 1.132,
+    "native_total_seconds_samples": [
+      1.132,
+      1.134,
+      1.118,
+      1.098,
+      1.163
+    ],
+    "wall_seconds": 1.1407425999999958,
+    "wall_seconds_samples": [
+      1.1407425999999958,
+      1.142776199999986,
+      1.1260232999999857,
+      1.1064996000000065,
+      1.1722546999999963
+    ]
+  },
+  {
+    "circuit": "c3540",
+    "model": "deepgate_gae_final",
+    "detected": 6194,
+    "total_faults": 7080,
+    "equivalent_detected": 2989,
+    "equivalent_faults": 3428,
+    "aborted": 65,
+    "redundant": 374,
+    "backtracks": 42640,
+    "backtrace_steps": 877192,
+    "test_vectors": 202,
+    "atpg_seconds": 0.909,
+    "atpg_seconds_samples": [
+      0.925,
+      0.909,
+      0.88,
+      0.89,
+      0.928
+    ],
+    "native_total_seconds": 1.046,
+    "native_total_seconds_samples": [
+      1.068,
+      1.046,
+      1.026,
+      1.032,
+      1.076
+    ],
+    "wall_seconds": 1.0547243999999978,
+    "wall_seconds_samples": [
+      1.0772561999999937,
+      1.0547243999999978,
+      1.0344617999999741,
+      1.0402809999999931,
+      1.0859662999999955
+    ]
+  },
+  {
+    "circuit": "c3540",
+    "model": "smartatpg_best",
+    "detected": 6156,
+    "total_faults": 7080,
+    "equivalent_detected": 2980,
+    "equivalent_faults": 3428,
+    "aborted": 79,
+    "redundant": 370,
+    "backtracks": 50008,
+    "backtrace_steps": 957997,
+    "test_vectors": 211,
+    "atpg_seconds": 1.029,
+    "atpg_seconds_samples": [
+      1.07,
+      1.028,
+      1.029,
+      1.016,
+      1.135
+    ],
+    "native_total_seconds": 1.176,
+    "native_total_seconds_samples": [
+      1.214,
+      1.175,
+      1.176,
+      1.171,
+      1.285
+    ],
+    "wall_seconds": 1.1851115999999706,
+    "wall_seconds_samples": [
+      1.2222740999999928,
+      1.1829666000000145,
+      1.1851115999999706,
+      1.1789600000000178,
+      1.2943860000000313
+    ]
+  },
+  {
+    "circuit": "c3540",
+    "model": "smartatpg_final",
+    "detected": 6201,
+    "total_faults": 7080,
+    "equivalent_detected": 2990,
+    "equivalent_faults": 3428,
+    "aborted": 62,
+    "redundant": 377,
+    "backtracks": 42087,
+    "backtrace_steps": 802188,
+    "test_vectors": 201,
+    "atpg_seconds": 0.88,
+    "atpg_seconds_samples": [
+      0.903,
+      0.88,
+      0.869,
+      0.864,
+      0.908
+    ],
+    "native_total_seconds": 1.005,
+    "native_total_seconds_samples": [
+      1.023,
+      1.005,
+      0.993,
+      0.99,
+      1.044
+    ],
+    "wall_seconds": 1.0135903999999982,
+    "wall_seconds_samples": [
+      1.031342500000008,
+      1.0135903999999982,
+      1.0009991000000014,
+      0.9998219999999947,
+      1.053977599999996
+    ]
+  },
+  {
+    "circuit": "c5315",
+    "model": "heuristic",
+    "detected": 10454,
+    "total_faults": 10630,
+    "equivalent_detected": 5254,
+    "equivalent_faults": 5350,
+    "aborted": 13,
+    "redundant": 84,
+    "backtracks": 9870,
+    "backtrace_steps": 119325,
+    "test_vectors": 174,
+    "atpg_seconds": 0.273,
+    "atpg_seconds_samples": [
+      0.276,
+      0.272,
+      0.263,
+      0.273,
+      0.284
+    ],
+    "native_total_seconds": 0.313,
+    "native_total_seconds_samples": [
+      0.31,
+      0.313,
+      0.302,
+      0.316,
+      0.325
+    ],
+    "wall_seconds": 0.3210713999999939,
+    "wall_seconds_samples": [
+      0.31805509999999515,
+      0.3210713999999939,
+      0.3100248999999735,
+      0.3245754000000147,
+      0.3343891000000099
+    ]
+  },
+  {
+    "circuit": "c5315",
+    "model": "deepgate_gae_best",
+    "detected": 10454,
+    "total_faults": 10630,
+    "equivalent_detected": 5254,
+    "equivalent_faults": 5350,
+    "aborted": 13,
+    "redundant": 84,
+    "backtracks": 9870,
+    "backtrace_steps": 119325,
+    "test_vectors": 174,
+    "atpg_seconds": 0.287,
+    "atpg_seconds_samples": [
+      0.287,
+      0.283,
+      0.286,
+      0.287,
+      0.312
+    ],
+    "native_total_seconds": 0.522,
+    "native_total_seconds_samples": [
+      0.522,
+      0.503,
+      0.527,
+      0.51,
+      0.555
+    ],
+    "wall_seconds": 0.5306754000000069,
+    "wall_seconds_samples": [
+      0.5306754000000069,
+      0.5114797999999894,
+      0.5372460000000387,
+      0.5182191999999759,
+      0.5656527000000438
+    ]
+  },
+  {
+    "circuit": "c5315",
+    "model": "deepgate_gae_final",
+    "detected": 10451,
+    "total_faults": 10630,
+    "equivalent_detected": 5252,
+    "equivalent_faults": 5350,
+    "aborted": 14,
+    "redundant": 84,
+    "backtracks": 10305,
+    "backtrace_steps": 135350,
+    "test_vectors": 164,
+    "atpg_seconds": 0.291,
+    "atpg_seconds_samples": [
+      0.291,
+      0.299,
+      0.291,
+      0.29,
+      0.306
+    ],
+    "native_total_seconds": 0.53,
+    "native_total_seconds_samples": [
+      0.519,
+      0.532,
+      0.52,
+      0.53,
+      0.564
+    ],
+    "wall_seconds": 0.5386106000000268,
+    "wall_seconds_samples": [
+      0.5277655999999951,
+      0.5405686999999944,
+      0.5289351999999781,
+      0.5386106000000268,
+      0.5734677999999462
+    ]
+  },
+  {
+    "circuit": "c5315",
+    "model": "smartatpg_best",
+    "detected": 10454,
+    "total_faults": 10630,
+    "equivalent_detected": 5254,
+    "equivalent_faults": 5350,
+    "aborted": 13,
+    "redundant": 84,
+    "backtracks": 9904,
+    "backtrace_steps": 139170,
+    "test_vectors": 179,
+    "atpg_seconds": 0.296,
+    "atpg_seconds_samples": [
+      0.302,
+      0.296,
+      0.29,
+      0.28,
+      0.296
+    ],
+    "native_total_seconds": 0.538,
+    "native_total_seconds_samples": [
+      0.547,
+      0.538,
+      0.527,
+      0.512,
+      0.558
+    ],
+    "wall_seconds": 0.5472716000000162,
+    "wall_seconds_samples": [
+      0.5555382000000009,
+      0.5472716000000162,
+      0.5355015000000094,
+      0.5211214000000268,
+      0.5681286000000227
+    ]
+  },
+  {
+    "circuit": "c5315",
+    "model": "smartatpg_final",
+    "detected": 10453,
+    "total_faults": 10630,
+    "equivalent_detected": 5253,
+    "equivalent_faults": 5350,
+    "aborted": 14,
+    "redundant": 84,
+    "backtracks": 9186,
+    "backtrace_steps": 133929,
+    "test_vectors": 182,
+    "atpg_seconds": 0.282,
+    "atpg_seconds_samples": [
+      0.285,
+      0.286,
+      0.269,
+      0.268,
+      0.282
+    ],
+    "native_total_seconds": 0.5,
+    "native_total_seconds_samples": [
+      0.491,
+      0.511,
+      0.505,
+      0.489,
+      0.5
+    ],
+    "wall_seconds": 0.5092677999999751,
+    "wall_seconds_samples": [
+      0.49942249999999433,
+      0.5202593000000206,
+      0.5144889000000035,
+      0.49816670000001295,
+      0.5092677999999751
+    ]
+  },
+  {
+    "circuit": "c7552",
+    "model": "heuristic",
+    "detected": 14914,
+    "total_faults": 15104,
+    "equivalent_detected": 7383,
+    "equivalent_faults": 7550,
+    "aborted": 120,
+    "redundant": 59,
+    "backtracks": 65296,
+    "backtrace_steps": 778712,
+    "test_vectors": 292,
+    "atpg_seconds": 2.441,
+    "atpg_seconds_samples": [
+      2.366,
+      2.441,
+      2.325,
+      2.464,
+      2.521
+    ],
+    "native_total_seconds": 2.486,
+    "native_total_seconds_samples": [
+      2.409,
+      2.486,
+      2.368,
+      2.51,
+      2.571
+    ],
+    "wall_seconds": 2.494384999999994,
+    "wall_seconds_samples": [
+      2.4175710000000095,
+      2.494384999999994,
+      2.3764106999999512,
+      2.5190979999999854,
+      2.5803183000000445
+    ]
+  },
+  {
+    "circuit": "c7552",
+    "model": "deepgate_gae_best",
+    "detected": 14914,
+    "total_faults": 15104,
+    "equivalent_detected": 7383,
+    "equivalent_faults": 7550,
+    "aborted": 120,
+    "redundant": 59,
+    "backtracks": 65296,
+    "backtrace_steps": 778712,
+    "test_vectors": 292,
+    "atpg_seconds": 2.41,
+    "atpg_seconds_samples": [
+      2.354,
+      2.487,
+      2.41,
+      2.28,
+      2.537
+    ],
+    "native_total_seconds": 2.7,
+    "native_total_seconds_samples": [
+      2.654,
+      2.809,
+      2.7,
+      2.577,
+      2.836
+    ],
+    "wall_seconds": 2.708890800000006,
+    "wall_seconds_samples": [
+      2.662465400000002,
+      2.818021799999997,
+      2.708890800000006,
+      2.5856436999999914,
+      2.845440300000064
+    ]
+  },
+  {
+    "circuit": "c7552",
+    "model": "deepgate_gae_final",
+    "detected": 14936,
+    "total_faults": 15104,
+    "equivalent_detected": 7405,
+    "equivalent_faults": 7550,
+    "aborted": 112,
+    "redundant": 59,
+    "backtracks": 61840,
+    "backtrace_steps": 830181,
+    "test_vectors": 295,
+    "atpg_seconds": 2.269,
+    "atpg_seconds_samples": [
+      2.269,
+      2.209,
+      2.298,
+      2.171,
+      2.394
+    ],
+    "native_total_seconds": 2.574,
+    "native_total_seconds_samples": [
+      2.574,
+      2.527,
+      2.595,
+      2.469,
+      2.712
+    ],
+    "wall_seconds": 2.5826914999999957,
+    "wall_seconds_samples": [
+      2.5826914999999957,
+      2.536259799999982,
+      2.6048701999999935,
+      2.47813450000001,
+      2.721892099999991
+    ]
+  },
+  {
+    "circuit": "c7552",
+    "model": "smartatpg_best",
+    "detected": 14938,
+    "total_faults": 15104,
+    "equivalent_detected": 7407,
+    "equivalent_faults": 7550,
+    "aborted": 88,
+    "redundant": 59,
+    "backtracks": 46437,
+    "backtrace_steps": 597382,
+    "test_vectors": 305,
+    "atpg_seconds": 1.707,
+    "atpg_seconds_samples": [
+      1.707,
+      1.677,
+      1.707,
+      1.663,
+      1.821
+    ],
+    "native_total_seconds": 2.013,
+    "native_total_seconds_samples": [
+      2.013,
+      1.979,
+      2.026,
+      1.968,
+      2.147
+    ],
+    "wall_seconds": 2.0229858000000007,
+    "wall_seconds_samples": [
+      2.0229858000000007,
+      1.9877644000000032,
+      2.0348119000000224,
+      1.9777495000000158,
+      2.1569044000000304
+    ]
+  },
+  {
+    "circuit": "c7552",
+    "model": "smartatpg_final",
+    "detected": 14944,
+    "total_faults": 15104,
+    "equivalent_detected": 7417,
+    "equivalent_faults": 7550,
+    "aborted": 92,
+    "redundant": 59,
+    "backtracks": 54351,
+    "backtrace_steps": 774316,
+    "test_vectors": 312,
+    "atpg_seconds": 2.003,
+    "atpg_seconds_samples": [
+      1.984,
+      2.073,
+      2.003,
+      1.941,
+      2.15
+    ],
+    "native_total_seconds": 2.282,
+    "native_total_seconds_samples": [
+      2.247,
+      2.354,
+      2.282,
+      2.204,
+      2.459
+    ],
+    "wall_seconds": 2.291319899999962,
+    "wall_seconds_samples": [
+      2.2562394999999924,
+      2.362280599999991,
+      2.291319899999962,
+      2.212245400000029,
+      2.468409500000007
+    ]
+  },
+  {
+    "circuit": "c6288",
+    "model": "heuristic",
+    "detected": 12508,
+    "total_faults": 12576,
+    "equivalent_detected": 7710,
+    "equivalent_faults": 7744,
+    "aborted": 2,
+    "redundant": 32,
+    "backtracks": 1609,
+    "backtrace_steps": 95573,
+    "test_vectors": 42,
+    "atpg_seconds": 0.092,
+    "atpg_seconds_samples": [
+      0.089,
+      0.092,
+      0.09,
+      0.118,
+      0.099
+    ],
+    "native_total_seconds": 0.129,
+    "native_total_seconds_samples": [
+      0.125,
+      0.127,
+      0.129,
+      0.167,
+      0.143
+    ],
+    "wall_seconds": 0.13733739999997852,
+    "wall_seconds_samples": [
+      0.1337712000000124,
+      0.13557839999998578,
+      0.13733739999997852,
+      0.17668849999995473,
+      0.1519109999999273
+    ]
+  },
+  {
+    "circuit": "c6288",
+    "model": "deepgate_gae_best",
+    "detected": 12508,
+    "total_faults": 12576,
+    "equivalent_detected": 7710,
+    "equivalent_faults": 7744,
+    "aborted": 2,
+    "redundant": 32,
+    "backtracks": 1609,
+    "backtrace_steps": 95573,
+    "test_vectors": 42,
+    "atpg_seconds": 0.107,
+    "atpg_seconds_samples": [
+      0.107,
+      0.104,
+      0.105,
+      0.14,
+      0.11
+    ],
+    "native_total_seconds": 0.295,
+    "native_total_seconds_samples": [
+      0.288,
+      0.275,
+      0.295,
+      0.344,
+      0.303
+    ],
+    "wall_seconds": 0.30550909999999476,
+    "wall_seconds_samples": [
+      0.2966128999999995,
+      0.28359599999998863,
+      0.30550909999999476,
+      0.35397910000000365,
+      0.3125875000000633
+    ]
+  },
+  {
+    "circuit": "c6288",
+    "model": "deepgate_gae_final",
+    "detected": 12508,
+    "total_faults": 12576,
+    "equivalent_detected": 7710,
+    "equivalent_faults": 7744,
+    "aborted": 2,
+    "redundant": 32,
+    "backtracks": 1609,
+    "backtrace_steps": 95573,
+    "test_vectors": 42,
+    "atpg_seconds": 0.103,
+    "atpg_seconds_samples": [
+      0.102,
+      0.106,
+      0.103,
+      0.103,
+      0.109
+    ],
+    "native_total_seconds": 0.289,
+    "native_total_seconds_samples": [
+      0.292,
+      0.288,
+      0.274,
+      0.289,
+      0.306
+    ],
+    "wall_seconds": 0.2980169000000501,
+    "wall_seconds_samples": [
+      0.3009299999999939,
+      0.29668000000000916,
+      0.28269679999999653,
+      0.2980169000000501,
+      0.3148810999999796
+    ]
+  },
+  {
+    "circuit": "c6288",
+    "model": "smartatpg_best",
+    "detected": 12508,
+    "total_faults": 12576,
+    "equivalent_detected": 7710,
+    "equivalent_faults": 7744,
+    "aborted": 2,
+    "redundant": 32,
+    "backtracks": 1609,
+    "backtrace_steps": 95573,
+    "test_vectors": 42,
+    "atpg_seconds": 0.109,
+    "atpg_seconds_samples": [
+      0.105,
+      0.104,
+      0.109,
+      0.11,
+      0.111
+    ],
+    "native_total_seconds": 0.301,
+    "native_total_seconds_samples": [
+      0.273,
+      0.293,
+      0.305,
+      0.301,
+      0.303
+    ],
+    "wall_seconds": 0.30915279999999257,
+    "wall_seconds_samples": [
+      0.28148959999998624,
+      0.30167399999999134,
+      0.31441610000001674,
+      0.30915279999999257,
+      0.3131932000000006
+    ]
+  },
+  {
+    "circuit": "c6288",
+    "model": "smartatpg_final",
+    "detected": 12508,
+    "total_faults": 12576,
+    "equivalent_detected": 7710,
+    "equivalent_faults": 7744,
+    "aborted": 2,
+    "redundant": 32,
+    "backtracks": 1036,
+    "backtrace_steps": 38440,
+    "test_vectors": 51,
+    "atpg_seconds": 0.075,
+    "atpg_seconds_samples": [
+      0.075,
+      0.073,
+      0.075,
+      0.139,
+      0.078
+    ],
+    "native_total_seconds": 0.263,
+    "native_total_seconds_samples": [
+      0.249,
+      0.255,
+      0.263,
+      0.547,
+      0.272
+    ],
+    "wall_seconds": 0.27115779999996903,
+    "wall_seconds_samples": [
+      0.2598227999999949,
+      0.26354419999998413,
+      0.27115779999996903,
+      0.5561624999999708,
+      0.28145099999994727
+    ]
+  },
+  {
+    "circuit": "s38417_scan",
+    "model": "heuristic",
+    "detected": 76430,
+    "total_faults": 76678,
+    "equivalent_detected": 31012,
+    "equivalent_faults": 31180,
+    "aborted": 52,
+    "redundant": 117,
+    "backtracks": 31122,
+    "backtrace_steps": 824388,
+    "test_vectors": 1316,
+    "atpg_seconds": 11.853,
+    "atpg_seconds_samples": [
+      11.23,
+      11.082,
+      11.853,
+      14.3,
+      14.751
+    ],
+    "native_total_seconds": 12.889,
+    "native_total_seconds_samples": [
+      12.243,
+      12.037,
+      12.889,
+      15.304,
+      15.873
+    ],
+    "wall_seconds": 12.898597100000018,
+    "wall_seconds_samples": [
+      12.252535899999998,
+      12.073135200000024,
+      12.898597100000018,
+      15.3150665,
+      15.883095699999899
+    ]
+  },
+  {
+    "circuit": "s38417_scan",
+    "model": "deepgate_gae_best",
+    "detected": 76430,
+    "total_faults": 76678,
+    "equivalent_detected": 31012,
+    "equivalent_faults": 31180,
+    "aborted": 52,
+    "redundant": 117,
+    "backtracks": 31122,
+    "backtrace_steps": 824388,
+    "test_vectors": 1316,
+    "atpg_seconds": 11.338,
+    "atpg_seconds_samples": [
+      11.338,
+      10.783,
+      11.047,
+      14.287,
+      14.05
+    ],
+    "native_total_seconds": 14.025,
+    "native_total_seconds_samples": [
+      14.025,
+      13.299,
+      13.634,
+      16.978,
+      16.685
+    ],
+    "wall_seconds": 14.035351600000013,
+    "wall_seconds_samples": [
+      14.035351600000013,
+      13.308887900000002,
+      13.644041600000037,
+      16.990305200000023,
+      16.696979600000077
+    ]
+  },
+  {
+    "circuit": "s38417_scan",
+    "model": "deepgate_gae_final",
+    "detected": 76429,
+    "total_faults": 76678,
+    "equivalent_detected": 31011,
+    "equivalent_faults": 31180,
+    "aborted": 57,
+    "redundant": 112,
+    "backtracks": 33114,
+    "backtrace_steps": 749602,
+    "test_vectors": 1255,
+    "atpg_seconds": 10.415,
+    "atpg_seconds_samples": [
+      10.415,
+      9.955,
+      10.322,
+      13.451,
+      13.07
+    ],
+    "native_total_seconds": 12.915,
+    "native_total_seconds_samples": [
+      12.915,
+      12.519,
+      12.806,
+      16.416,
+      15.863
+    ],
+    "wall_seconds": 12.92502970000001,
+    "wall_seconds_samples": [
+      12.92502970000001,
+      12.52977820000001,
+      12.816445799999997,
+      16.42768749999999,
+      15.882612100000074
+    ]
+  },
+  {
+    "circuit": "s38417_scan",
+    "model": "smartatpg_best",
+    "detected": 76429,
+    "total_faults": 76678,
+    "equivalent_detected": 31011,
+    "equivalent_faults": 31180,
+    "aborted": 56,
+    "redundant": 113,
+    "backtracks": 32679,
+    "backtrace_steps": 879577,
+    "test_vectors": 1303,
+    "atpg_seconds": 12.094,
+    "atpg_seconds_samples": [
+      12.094,
+      11.097,
+      11.541,
+      16.291,
+      14.526
+    ],
+    "native_total_seconds": 14.662,
+    "native_total_seconds_samples": [
+      14.662,
+      13.719,
+      14.148,
+      19.51,
+      17.287
+    ],
+    "wall_seconds": 14.674360000000007,
+    "wall_seconds_samples": [
+      14.674360000000007,
+      13.730349799999999,
+      14.158339699999999,
+      19.525379299999997,
+      17.300016200000073
+    ]
+  },
+  {
+    "circuit": "s38417_scan",
+    "model": "smartatpg_final",
+    "detected": 76424,
+    "total_faults": 76678,
+    "equivalent_detected": 31006,
+    "equivalent_faults": 31180,
+    "aborted": 57,
+    "redundant": 117,
+    "backtracks": 32408,
+    "backtrace_steps": 647106,
+    "test_vectors": 1171,
+    "atpg_seconds": 9.943,
+    "atpg_seconds_samples": [
+      9.943,
+      9.186,
+      9.77,
+      12.142,
+      11.98
+    ],
+    "native_total_seconds": 12.181,
+    "native_total_seconds_samples": [
+      12.181,
+      11.46,
+      12.18,
+      14.626,
+      14.559
+    ],
+    "wall_seconds": 12.191729199999997,
+    "wall_seconds_samples": [
+      12.191729199999997,
+      11.471065100000033,
+      12.190401399999985,
+      14.638496700000019,
+      14.570091100000013
+    ]
+  }
+]

@@ -1,0 +1,1954 @@
+{
+  "episodes": 4200,
+  "decision_steps": 399075,
+  "ppo_updates": 4001,
+  "work_units": 150,
+  "best_label": "medium_sweep_1",
+  "best_score": [
+    -497,
+    3,
+    1.5835198891176328,
+    1.0738545584317474,
+    27535
+  ],
+  "bc_best_accuracy": 1.0,
+  "old_best_label": "behavior_cloning",
+  "old_best_score": [
+    -496,
+    4,
+    1.0,
+    1.0,
+    27474
+  ],
+  "old_bc_best_accuracy": 1.0,
+  "shared_agent_hyperparameters": {
+    "lr_actor": 0.0003,
+    "lr_critic": 0.001,
+    "gamma": 0.99,
+    "k_epochs": 8,
+    "eps_clip": 0.2,
+    "rnd_beta": 0.0,
+    "rnd_lr": 0.0001,
+    "rnd_bonus_clip": 5.0,
+    "normalize_returns": false,
+    "entropy_coef": 0.001,
+    "return_scale": 100.0,
+    "max_grad_norm": 1.0,
+    "advantage_method": "gae",
+    "gae_lambda": 0.97,
+    "normalize_advantages": true
+  },
+  "validation_history": [
+    {
+      "label": "behavior_cloning",
+      "aggregate": {
+        "detected": 496,
+        "aborted": 4,
+        "decisions": 27474,
+        "mean_backtrack_ratio": 1.0,
+        "mean_backtrace_ratio": 1.0,
+        "score": [
+          -496,
+          4,
+          1.0,
+          1.0,
+          27474
+        ]
+      },
+      "circuits": {
+        "c432": {
+          "episodes": 50,
+          "detected": 49,
+          "redundant": 0,
+          "aborted": 1,
+          "decisions": 2009,
+          "backtracks": 507,
+          "backtrace_steps": 9909,
+          "pi_visits": 1617
+        },
+        "c499": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 3796,
+          "backtracks": 146,
+          "backtrace_steps": 25121,
+          "pi_visits": 2069
+        },
+        "c1355": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 4101,
+          "backtracks": 107,
+          "backtrace_steps": 25712,
+          "pi_visits": 2023
+        },
+        "c1908": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1146,
+          "backtracks": 3,
+          "backtrace_steps": 8365,
+          "pi_visits": 769
+        },
+        "c2670": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1411,
+          "backtracks": 529,
+          "backtrace_steps": 11398,
+          "pi_visits": 1780
+        },
+        "c3540": {
+          "episodes": 50,
+          "detected": 49,
+          "redundant": 0,
+          "aborted": 1,
+          "decisions": 2649,
+          "backtracks": 1036,
+          "backtrace_steps": 24236,
+          "pi_visits": 2725
+        },
+        "c5315": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1217,
+          "backtracks": 103,
+          "backtrace_steps": 7412,
+          "pi_visits": 911
+        },
+        "c7552": {
+          "episodes": 50,
+          "detected": 48,
+          "redundant": 0,
+          "aborted": 2,
+          "decisions": 3522,
+          "backtracks": 1111,
+          "backtrace_steps": 25434,
+          "pi_visits": 3365
+        },
+        "c6288": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 6566,
+          "backtracks": 647,
+          "backtrace_steps": 31981,
+          "pi_visits": 2527
+        },
+        "s38417_scan": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1057,
+          "backtracks": 14,
+          "backtrace_steps": 6914,
+          "pi_visits": 692
+        }
+      }
+    },
+    {
+      "label": "easy_sweep_1",
+      "aggregate": {
+        "detected": 481,
+        "aborted": 19,
+        "decisions": 144832,
+        "mean_backtrack_ratio": 4.313880196412436,
+        "mean_backtrace_ratio": 2.040140640377407,
+        "score": [
+          -481,
+          19,
+          4.313880196412436,
+          2.040140640377407,
+          144832
+        ]
+      },
+      "circuits": {
+        "c432": {
+          "episodes": 50,
+          "detected": 49,
+          "redundant": 0,
+          "aborted": 1,
+          "decisions": 1628,
+          "backtracks": 507,
+          "backtrace_steps": 11616,
+          "pi_visits": 1589
+        },
+        "c499": {
+          "episodes": 50,
+          "detected": 45,
+          "redundant": 0,
+          "aborted": 5,
+          "decisions": 6640,
+          "backtracks": 2707,
+          "backtrace_steps": 52947,
+          "pi_visits": 6992
+        },
+        "c1355": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 4155,
+          "backtracks": 259,
+          "backtrace_steps": 22196,
+          "pi_visits": 2108
+        },
+        "c1908": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1582,
+          "backtracks": 2,
+          "backtrace_steps": 13751,
+          "pi_visits": 942
+        },
+        "c2670": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1130,
+          "backtracks": 75,
+          "backtrace_steps": 7805,
+          "pi_visits": 913
+        },
+        "c3540": {
+          "episodes": 50,
+          "detected": 49,
+          "redundant": 0,
+          "aborted": 1,
+          "decisions": 3011,
+          "backtracks": 555,
+          "backtrace_steps": 19178,
+          "pi_visits": 1831
+        },
+        "c5315": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1294,
+          "backtracks": 140,
+          "backtrace_steps": 8131,
+          "pi_visits": 995
+        },
+        "c7552": {
+          "episodes": 50,
+          "detected": 48,
+          "redundant": 0,
+          "aborted": 2,
+          "decisions": 3684,
+          "backtracks": 1146,
+          "backtrace_steps": 25843,
+          "pi_visits": 3602
+        },
+        "c6288": {
+          "episodes": 50,
+          "detected": 40,
+          "redundant": 0,
+          "aborted": 10,
+          "decisions": 120838,
+          "backtracks": 5000,
+          "backtrace_steps": 319579,
+          "pi_visits": 11180
+        },
+        "s38417_scan": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 870,
+          "backtracks": 136,
+          "backtrace_steps": 7138,
+          "pi_visits": 752
+        }
+      }
+    },
+    {
+      "label": "easy_sweep_2",
+      "aggregate": {
+        "detected": 490,
+        "aborted": 10,
+        "decisions": 29434,
+        "mean_backtrack_ratio": 1.1309595291315406,
+        "mean_backtrace_ratio": 1.229058099714113,
+        "score": [
+          -490,
+          10,
+          1.1309595291315406,
+          1.229058099714113,
+          29434
+        ]
+      },
+      "circuits": {
+        "c432": {
+          "episodes": 50,
+          "detected": 49,
+          "redundant": 0,
+          "aborted": 1,
+          "decisions": 1706,
+          "backtracks": 504,
+          "backtrace_steps": 8284,
+          "pi_visits": 1600
+        },
+        "c499": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 3239,
+          "backtracks": 1,
+          "backtrace_steps": 21677,
+          "pi_visits": 1813
+        },
+        "c1355": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 3330,
+          "backtracks": 17,
+          "backtrace_steps": 18806,
+          "pi_visits": 1781
+        },
+        "c1908": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1583,
+          "backtracks": 7,
+          "backtrace_steps": 13781,
+          "pi_visits": 991
+        },
+        "c2670": {
+          "episodes": 50,
+          "detected": 47,
+          "redundant": 0,
+          "aborted": 3,
+          "decisions": 2555,
+          "backtracks": 1514,
+          "backtrace_steps": 21838,
+          "pi_visits": 3759
+        },
+        "c3540": {
+          "episodes": 50,
+          "detected": 47,
+          "redundant": 0,
+          "aborted": 3,
+          "decisions": 4627,
+          "backtracks": 1761,
+          "backtrace_steps": 50408,
+          "pi_visits": 4249
+        },
+        "c5315": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1057,
+          "backtracks": 2,
+          "backtrace_steps": 6536,
+          "pi_visits": 734
+        },
+        "c7552": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1765,
+          "backtracks": 50,
+          "backtrace_steps": 11177,
+          "pi_visits": 1118
+        },
+        "c6288": {
+          "episodes": 50,
+          "detected": 47,
+          "redundant": 0,
+          "aborted": 3,
+          "decisions": 8512,
+          "backtracks": 1833,
+          "backtrace_steps": 59225,
+          "pi_visits": 4879
+        },
+        "s38417_scan": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1060,
+          "backtracks": 5,
+          "backtrace_steps": 7217,
+          "pi_visits": 701
+        }
+      }
+    },
+    {
+      "label": "medium_sweep_1",
+      "aggregate": {
+        "detected": 497,
+        "aborted": 3,
+        "decisions": 27535,
+        "mean_backtrack_ratio": 1.5835198891176328,
+        "mean_backtrace_ratio": 1.0738545584317474,
+        "score": [
+          -497,
+          3,
+          1.5835198891176328,
+          1.0738545584317474,
+          27535
+        ]
+      },
+      "circuits": {
+        "c432": {
+          "episodes": 50,
+          "detected": 49,
+          "redundant": 0,
+          "aborted": 1,
+          "decisions": 1715,
+          "backtracks": 504,
+          "backtrace_steps": 8042,
+          "pi_visits": 1595
+        },
+        "c499": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 5895,
+          "backtracks": 880,
+          "backtrace_steps": 39495,
+          "pi_visits": 3561
+        },
+        "c1355": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 3599,
+          "backtracks": 94,
+          "backtrace_steps": 23285,
+          "pi_visits": 1906
+        },
+        "c1908": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1591,
+          "backtracks": 11,
+          "backtrace_steps": 15188,
+          "pi_visits": 1026
+        },
+        "c2670": {
+          "episodes": 50,
+          "detected": 49,
+          "redundant": 0,
+          "aborted": 1,
+          "decisions": 1685,
+          "backtracks": 729,
+          "backtrace_steps": 13213,
+          "pi_visits": 2153
+        },
+        "c3540": {
+          "episodes": 50,
+          "detected": 49,
+          "redundant": 0,
+          "aborted": 1,
+          "decisions": 2520,
+          "backtracks": 845,
+          "backtrace_steps": 25973,
+          "pi_visits": 2405
+        },
+        "c5315": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1133,
+          "backtracks": 4,
+          "backtrace_steps": 6886,
+          "pi_visits": 760
+        },
+        "c7552": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1766,
+          "backtracks": 40,
+          "backtrace_steps": 11180,
+          "pi_visits": 1105
+        },
+        "c6288": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 6566,
+          "backtracks": 647,
+          "backtrace_steps": 31981,
+          "pi_visits": 2527
+        },
+        "s38417_scan": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1065,
+          "backtracks": 14,
+          "backtrace_steps": 7149,
+          "pi_visits": 710
+        }
+      }
+    },
+    {
+      "label": "medium_sweep_2",
+      "aggregate": {
+        "detected": 495,
+        "aborted": 5,
+        "decisions": 34568,
+        "mean_backtrack_ratio": 2.826157666938383,
+        "mean_backtrace_ratio": 1.3387409239877452,
+        "score": [
+          -495,
+          5,
+          2.826157666938383,
+          1.3387409239877452,
+          34568
+        ]
+      },
+      "circuits": {
+        "c432": {
+          "episodes": 50,
+          "detected": 49,
+          "redundant": 0,
+          "aborted": 1,
+          "decisions": 2896,
+          "backtracks": 537,
+          "backtrace_steps": 16164,
+          "pi_visits": 1862
+        },
+        "c499": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 3368,
+          "backtracks": 3,
+          "backtrace_steps": 29929,
+          "pi_visits": 1828
+        },
+        "c1355": {
+          "episodes": 50,
+          "detected": 48,
+          "redundant": 0,
+          "aborted": 2,
+          "decisions": 9229,
+          "backtracks": 1024,
+          "backtrace_steps": 46224,
+          "pi_visits": 3827
+        },
+        "c1908": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1945,
+          "backtracks": 45,
+          "backtrace_steps": 18496,
+          "pi_visits": 1096
+        },
+        "c2670": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 998,
+          "backtracks": 4,
+          "backtrace_steps": 7274,
+          "pi_visits": 728
+        },
+        "c3540": {
+          "episodes": 50,
+          "detected": 48,
+          "redundant": 0,
+          "aborted": 2,
+          "decisions": 3741,
+          "backtracks": 1159,
+          "backtrace_steps": 32714,
+          "pi_visits": 3031
+        },
+        "c5315": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1385,
+          "backtracks": 1,
+          "backtrace_steps": 9730,
+          "pi_visits": 774
+        },
+        "c7552": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 3957,
+          "backtracks": 598,
+          "backtrace_steps": 26728,
+          "pi_visits": 2578
+        },
+        "c6288": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 5760,
+          "backtracks": 52,
+          "backtrace_steps": 32330,
+          "pi_visits": 1196
+        },
+        "s38417_scan": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1289,
+          "backtracks": 12,
+          "backtrace_steps": 8251,
+          "pi_visits": 609
+        }
+      }
+    },
+    {
+      "label": "hard_sweep_1",
+      "aggregate": {
+        "detected": 495,
+        "aborted": 5,
+        "decisions": 34568,
+        "mean_backtrack_ratio": 2.826157666938383,
+        "mean_backtrace_ratio": 1.3387409239877452,
+        "score": [
+          -495,
+          5,
+          2.826157666938383,
+          1.3387409239877452,
+          34568
+        ]
+      },
+      "circuits": {
+        "c432": {
+          "episodes": 50,
+          "detected": 49,
+          "redundant": 0,
+          "aborted": 1,
+          "decisions": 2896,
+          "backtracks": 537,
+          "backtrace_steps": 16164,
+          "pi_visits": 1862
+        },
+        "c499": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 3368,
+          "backtracks": 3,
+          "backtrace_steps": 29929,
+          "pi_visits": 1828
+        },
+        "c1355": {
+          "episodes": 50,
+          "detected": 48,
+          "redundant": 0,
+          "aborted": 2,
+          "decisions": 9229,
+          "backtracks": 1024,
+          "backtrace_steps": 46224,
+          "pi_visits": 3827
+        },
+        "c1908": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1945,
+          "backtracks": 45,
+          "backtrace_steps": 18496,
+          "pi_visits": 1096
+        },
+        "c2670": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 998,
+          "backtracks": 4,
+          "backtrace_steps": 7274,
+          "pi_visits": 728
+        },
+        "c3540": {
+          "episodes": 50,
+          "detected": 48,
+          "redundant": 0,
+          "aborted": 2,
+          "decisions": 3741,
+          "backtracks": 1159,
+          "backtrace_steps": 32714,
+          "pi_visits": 3031
+        },
+        "c5315": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1385,
+          "backtracks": 1,
+          "backtrace_steps": 9730,
+          "pi_visits": 774
+        },
+        "c7552": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 3957,
+          "backtracks": 598,
+          "backtrace_steps": 26728,
+          "pi_visits": 2578
+        },
+        "c6288": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 5760,
+          "backtracks": 52,
+          "backtrace_steps": 32330,
+          "pi_visits": 1196
+        },
+        "s38417_scan": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1289,
+          "backtracks": 12,
+          "backtrace_steps": 8251,
+          "pi_visits": 609
+        }
+      }
+    },
+    {
+      "label": "hard_sweep_2",
+      "aggregate": {
+        "detected": 494,
+        "aborted": 6,
+        "decisions": 30220,
+        "mean_backtrack_ratio": 2.3106656113343598,
+        "mean_backtrace_ratio": 1.1284845469977935,
+        "score": [
+          -494,
+          6,
+          2.3106656113343598,
+          1.1284845469977935,
+          30220
+        ]
+      },
+      "circuits": {
+        "c432": {
+          "episodes": 50,
+          "detected": 49,
+          "redundant": 0,
+          "aborted": 1,
+          "decisions": 2789,
+          "backtracks": 530,
+          "backtrace_steps": 14379,
+          "pi_visits": 1945
+        },
+        "c499": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 3205,
+          "backtracks": 4,
+          "backtrace_steps": 23658,
+          "pi_visits": 1727
+        },
+        "c1355": {
+          "episodes": 50,
+          "detected": 48,
+          "redundant": 0,
+          "aborted": 2,
+          "decisions": 6285,
+          "backtracks": 1021,
+          "backtrace_steps": 41437,
+          "pi_visits": 3896
+        },
+        "c1908": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1406,
+          "backtracks": 26,
+          "backtrace_steps": 11688,
+          "pi_visits": 935
+        },
+        "c2670": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1066,
+          "backtracks": 11,
+          "backtrace_steps": 7169,
+          "pi_visits": 783
+        },
+        "c3540": {
+          "episodes": 50,
+          "detected": 49,
+          "redundant": 0,
+          "aborted": 1,
+          "decisions": 3000,
+          "backtracks": 881,
+          "backtrace_steps": 26787,
+          "pi_visits": 2520
+        },
+        "c5315": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1230,
+          "backtracks": 39,
+          "backtrace_steps": 8317,
+          "pi_visits": 841
+        },
+        "c7552": {
+          "episodes": 50,
+          "detected": 48,
+          "redundant": 0,
+          "aborted": 2,
+          "decisions": 3697,
+          "backtracks": 1036,
+          "backtrace_steps": 28842,
+          "pi_visits": 3369
+        },
+        "c6288": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 6566,
+          "backtracks": 647,
+          "backtrace_steps": 31981,
+          "pi_visits": 2527
+        },
+        "s38417_scan": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 976,
+          "backtracks": 9,
+          "backtrace_steps": 6173,
+          "pi_visits": 613
+        }
+      }
+    },
+    {
+      "label": "hard_sweep_3",
+      "aggregate": {
+        "detected": 495,
+        "aborted": 5,
+        "decisions": 34568,
+        "mean_backtrack_ratio": 2.826157666938383,
+        "mean_backtrace_ratio": 1.3387409239877452,
+        "score": [
+          -495,
+          5,
+          2.826157666938383,
+          1.3387409239877452,
+          34568
+        ]
+      },
+      "circuits": {
+        "c432": {
+          "episodes": 50,
+          "detected": 49,
+          "redundant": 0,
+          "aborted": 1,
+          "decisions": 2896,
+          "backtracks": 537,
+          "backtrace_steps": 16164,
+          "pi_visits": 1862
+        },
+        "c499": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 3368,
+          "backtracks": 3,
+          "backtrace_steps": 29929,
+          "pi_visits": 1828
+        },
+        "c1355": {
+          "episodes": 50,
+          "detected": 48,
+          "redundant": 0,
+          "aborted": 2,
+          "decisions": 9229,
+          "backtracks": 1024,
+          "backtrace_steps": 46224,
+          "pi_visits": 3827
+        },
+        "c1908": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1945,
+          "backtracks": 45,
+          "backtrace_steps": 18496,
+          "pi_visits": 1096
+        },
+        "c2670": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 998,
+          "backtracks": 4,
+          "backtrace_steps": 7274,
+          "pi_visits": 728
+        },
+        "c3540": {
+          "episodes": 50,
+          "detected": 48,
+          "redundant": 0,
+          "aborted": 2,
+          "decisions": 3741,
+          "backtracks": 1159,
+          "backtrace_steps": 32714,
+          "pi_visits": 3031
+        },
+        "c5315": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1385,
+          "backtracks": 1,
+          "backtrace_steps": 9730,
+          "pi_visits": 774
+        },
+        "c7552": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 3957,
+          "backtracks": 598,
+          "backtrace_steps": 26728,
+          "pi_visits": 2578
+        },
+        "c6288": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 5760,
+          "backtracks": 52,
+          "backtrace_steps": 32330,
+          "pi_visits": 1196
+        },
+        "s38417_scan": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1289,
+          "backtracks": 12,
+          "backtrace_steps": 8251,
+          "pi_visits": 609
+        }
+      }
+    }
+  ],
+  "old_validation_history": [
+    {
+      "label": "behavior_cloning",
+      "aggregate": {
+        "detected": 496,
+        "aborted": 4,
+        "decisions": 27474,
+        "mean_backtrack_ratio": 1.0,
+        "mean_backtrace_ratio": 1.0,
+        "score": [
+          -496,
+          4,
+          1.0,
+          1.0,
+          27474
+        ]
+      },
+      "circuits": {
+        "c432": {
+          "episodes": 50,
+          "detected": 49,
+          "redundant": 0,
+          "aborted": 1,
+          "decisions": 2009,
+          "backtracks": 507,
+          "backtrace_steps": 9909,
+          "pi_visits": 1617
+        },
+        "c499": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 3796,
+          "backtracks": 146,
+          "backtrace_steps": 25121,
+          "pi_visits": 2069
+        },
+        "c1355": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 4101,
+          "backtracks": 107,
+          "backtrace_steps": 25712,
+          "pi_visits": 2023
+        },
+        "c1908": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1146,
+          "backtracks": 3,
+          "backtrace_steps": 8365,
+          "pi_visits": 769
+        },
+        "c2670": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1411,
+          "backtracks": 529,
+          "backtrace_steps": 11398,
+          "pi_visits": 1780
+        },
+        "c3540": {
+          "episodes": 50,
+          "detected": 49,
+          "redundant": 0,
+          "aborted": 1,
+          "decisions": 2649,
+          "backtracks": 1036,
+          "backtrace_steps": 24236,
+          "pi_visits": 2725
+        },
+        "c5315": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1217,
+          "backtracks": 103,
+          "backtrace_steps": 7412,
+          "pi_visits": 911
+        },
+        "c7552": {
+          "episodes": 50,
+          "detected": 48,
+          "redundant": 0,
+          "aborted": 2,
+          "decisions": 3522,
+          "backtracks": 1111,
+          "backtrace_steps": 25434,
+          "pi_visits": 3365
+        },
+        "c6288": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 6566,
+          "backtracks": 647,
+          "backtrace_steps": 31981,
+          "pi_visits": 2527
+        },
+        "s38417_scan": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1057,
+          "backtracks": 14,
+          "backtrace_steps": 6914,
+          "pi_visits": 692
+        }
+      }
+    },
+    {
+      "label": "easy_sweep_1",
+      "aggregate": {
+        "detected": 496,
+        "aborted": 4,
+        "decisions": 29246,
+        "mean_backtrack_ratio": 19.671432263342687,
+        "mean_backtrace_ratio": 1.1523129113634947,
+        "score": [
+          -496,
+          4,
+          19.671432263342687,
+          1.1523129113634947,
+          29246
+        ]
+      },
+      "circuits": {
+        "c432": {
+          "episodes": 50,
+          "detected": 49,
+          "redundant": 0,
+          "aborted": 1,
+          "decisions": 2743,
+          "backtracks": 531,
+          "backtrace_steps": 15345,
+          "pi_visits": 1884
+        },
+        "c499": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 3307,
+          "backtracks": 4,
+          "backtrace_steps": 24715,
+          "pi_visits": 1784
+        },
+        "c1355": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 4776,
+          "backtracks": 11,
+          "backtrace_steps": 27965,
+          "pi_visits": 1854
+        },
+        "c1908": {
+          "episodes": 50,
+          "detected": 49,
+          "redundant": 0,
+          "aborted": 1,
+          "decisions": 2525,
+          "backtracks": 576,
+          "backtrace_steps": 19351,
+          "pi_visits": 2021
+        },
+        "c2670": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1075,
+          "backtracks": 11,
+          "backtrace_steps": 7420,
+          "pi_visits": 800
+        },
+        "c3540": {
+          "episodes": 50,
+          "detected": 49,
+          "redundant": 0,
+          "aborted": 1,
+          "decisions": 3071,
+          "backtracks": 984,
+          "backtrace_steps": 25581,
+          "pi_visits": 2682
+        },
+        "c5315": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1349,
+          "backtracks": 43,
+          "backtrace_steps": 9002,
+          "pi_visits": 842
+        },
+        "c7552": {
+          "episodes": 50,
+          "detected": 49,
+          "redundant": 0,
+          "aborted": 1,
+          "decisions": 2920,
+          "backtracks": 562,
+          "backtrace_steps": 22317,
+          "pi_visits": 2484
+        },
+        "c6288": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 6566,
+          "backtracks": 647,
+          "backtrace_steps": 31981,
+          "pi_visits": 2527
+        },
+        "s38417_scan": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 914,
+          "backtracks": 9,
+          "backtrace_steps": 5471,
+          "pi_visits": 571
+        }
+      }
+    },
+    {
+      "label": "easy_sweep_2",
+      "aggregate": {
+        "detected": 494,
+        "aborted": 6,
+        "decisions": 30220,
+        "mean_backtrack_ratio": 2.3106656113343598,
+        "mean_backtrace_ratio": 1.1284845469977935,
+        "score": [
+          -494,
+          6,
+          2.3106656113343598,
+          1.1284845469977935,
+          30220
+        ]
+      },
+      "circuits": {
+        "c432": {
+          "episodes": 50,
+          "detected": 49,
+          "redundant": 0,
+          "aborted": 1,
+          "decisions": 2789,
+          "backtracks": 530,
+          "backtrace_steps": 14379,
+          "pi_visits": 1945
+        },
+        "c499": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 3205,
+          "backtracks": 4,
+          "backtrace_steps": 23658,
+          "pi_visits": 1727
+        },
+        "c1355": {
+          "episodes": 50,
+          "detected": 48,
+          "redundant": 0,
+          "aborted": 2,
+          "decisions": 6285,
+          "backtracks": 1021,
+          "backtrace_steps": 41437,
+          "pi_visits": 3896
+        },
+        "c1908": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1406,
+          "backtracks": 26,
+          "backtrace_steps": 11688,
+          "pi_visits": 935
+        },
+        "c2670": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1066,
+          "backtracks": 11,
+          "backtrace_steps": 7169,
+          "pi_visits": 783
+        },
+        "c3540": {
+          "episodes": 50,
+          "detected": 49,
+          "redundant": 0,
+          "aborted": 1,
+          "decisions": 3000,
+          "backtracks": 881,
+          "backtrace_steps": 26787,
+          "pi_visits": 2520
+        },
+        "c5315": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1230,
+          "backtracks": 39,
+          "backtrace_steps": 8317,
+          "pi_visits": 841
+        },
+        "c7552": {
+          "episodes": 50,
+          "detected": 48,
+          "redundant": 0,
+          "aborted": 2,
+          "decisions": 3697,
+          "backtracks": 1036,
+          "backtrace_steps": 28842,
+          "pi_visits": 3369
+        },
+        "c6288": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 6566,
+          "backtracks": 647,
+          "backtrace_steps": 31981,
+          "pi_visits": 2527
+        },
+        "s38417_scan": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 976,
+          "backtracks": 9,
+          "backtrace_steps": 6173,
+          "pi_visits": 613
+        }
+      }
+    },
+    {
+      "label": "medium_sweep_1",
+      "aggregate": {
+        "detected": 494,
+        "aborted": 6,
+        "decisions": 30220,
+        "mean_backtrack_ratio": 2.3106656113343598,
+        "mean_backtrace_ratio": 1.1284845469977935,
+        "score": [
+          -494,
+          6,
+          2.3106656113343598,
+          1.1284845469977935,
+          30220
+        ]
+      },
+      "circuits": {
+        "c432": {
+          "episodes": 50,
+          "detected": 49,
+          "redundant": 0,
+          "aborted": 1,
+          "decisions": 2789,
+          "backtracks": 530,
+          "backtrace_steps": 14379,
+          "pi_visits": 1945
+        },
+        "c499": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 3205,
+          "backtracks": 4,
+          "backtrace_steps": 23658,
+          "pi_visits": 1727
+        },
+        "c1355": {
+          "episodes": 50,
+          "detected": 48,
+          "redundant": 0,
+          "aborted": 2,
+          "decisions": 6285,
+          "backtracks": 1021,
+          "backtrace_steps": 41437,
+          "pi_visits": 3896
+        },
+        "c1908": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1406,
+          "backtracks": 26,
+          "backtrace_steps": 11688,
+          "pi_visits": 935
+        },
+        "c2670": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1066,
+          "backtracks": 11,
+          "backtrace_steps": 7169,
+          "pi_visits": 783
+        },
+        "c3540": {
+          "episodes": 50,
+          "detected": 49,
+          "redundant": 0,
+          "aborted": 1,
+          "decisions": 3000,
+          "backtracks": 881,
+          "backtrace_steps": 26787,
+          "pi_visits": 2520
+        },
+        "c5315": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1230,
+          "backtracks": 39,
+          "backtrace_steps": 8317,
+          "pi_visits": 841
+        },
+        "c7552": {
+          "episodes": 50,
+          "detected": 48,
+          "redundant": 0,
+          "aborted": 2,
+          "decisions": 3697,
+          "backtracks": 1036,
+          "backtrace_steps": 28842,
+          "pi_visits": 3369
+        },
+        "c6288": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 6566,
+          "backtracks": 647,
+          "backtrace_steps": 31981,
+          "pi_visits": 2527
+        },
+        "s38417_scan": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 976,
+          "backtracks": 9,
+          "backtrace_steps": 6173,
+          "pi_visits": 613
+        }
+      }
+    },
+    {
+      "label": "medium_sweep_2",
+      "aggregate": {
+        "detected": 494,
+        "aborted": 6,
+        "decisions": 30220,
+        "mean_backtrack_ratio": 2.3106656113343598,
+        "mean_backtrace_ratio": 1.1284845469977935,
+        "score": [
+          -494,
+          6,
+          2.3106656113343598,
+          1.1284845469977935,
+          30220
+        ]
+      },
+      "circuits": {
+        "c432": {
+          "episodes": 50,
+          "detected": 49,
+          "redundant": 0,
+          "aborted": 1,
+          "decisions": 2789,
+          "backtracks": 530,
+          "backtrace_steps": 14379,
+          "pi_visits": 1945
+        },
+        "c499": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 3205,
+          "backtracks": 4,
+          "backtrace_steps": 23658,
+          "pi_visits": 1727
+        },
+        "c1355": {
+          "episodes": 50,
+          "detected": 48,
+          "redundant": 0,
+          "aborted": 2,
+          "decisions": 6285,
+          "backtracks": 1021,
+          "backtrace_steps": 41437,
+          "pi_visits": 3896
+        },
+        "c1908": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1406,
+          "backtracks": 26,
+          "backtrace_steps": 11688,
+          "pi_visits": 935
+        },
+        "c2670": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1066,
+          "backtracks": 11,
+          "backtrace_steps": 7169,
+          "pi_visits": 783
+        },
+        "c3540": {
+          "episodes": 50,
+          "detected": 49,
+          "redundant": 0,
+          "aborted": 1,
+          "decisions": 3000,
+          "backtracks": 881,
+          "backtrace_steps": 26787,
+          "pi_visits": 2520
+        },
+        "c5315": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1230,
+          "backtracks": 39,
+          "backtrace_steps": 8317,
+          "pi_visits": 841
+        },
+        "c7552": {
+          "episodes": 50,
+          "detected": 48,
+          "redundant": 0,
+          "aborted": 2,
+          "decisions": 3697,
+          "backtracks": 1036,
+          "backtrace_steps": 28842,
+          "pi_visits": 3369
+        },
+        "c6288": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 6566,
+          "backtracks": 647,
+          "backtrace_steps": 31981,
+          "pi_visits": 2527
+        },
+        "s38417_scan": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 976,
+          "backtracks": 9,
+          "backtrace_steps": 6173,
+          "pi_visits": 613
+        }
+      }
+    },
+    {
+      "label": "hard_sweep_1",
+      "aggregate": {
+        "detected": 494,
+        "aborted": 6,
+        "decisions": 30220,
+        "mean_backtrack_ratio": 2.3106656113343598,
+        "mean_backtrace_ratio": 1.1284845469977935,
+        "score": [
+          -494,
+          6,
+          2.3106656113343598,
+          1.1284845469977935,
+          30220
+        ]
+      },
+      "circuits": {
+        "c432": {
+          "episodes": 50,
+          "detected": 49,
+          "redundant": 0,
+          "aborted": 1,
+          "decisions": 2789,
+          "backtracks": 530,
+          "backtrace_steps": 14379,
+          "pi_visits": 1945
+        },
+        "c499": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 3205,
+          "backtracks": 4,
+          "backtrace_steps": 23658,
+          "pi_visits": 1727
+        },
+        "c1355": {
+          "episodes": 50,
+          "detected": 48,
+          "redundant": 0,
+          "aborted": 2,
+          "decisions": 6285,
+          "backtracks": 1021,
+          "backtrace_steps": 41437,
+          "pi_visits": 3896
+        },
+        "c1908": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1406,
+          "backtracks": 26,
+          "backtrace_steps": 11688,
+          "pi_visits": 935
+        },
+        "c2670": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1066,
+          "backtracks": 11,
+          "backtrace_steps": 7169,
+          "pi_visits": 783
+        },
+        "c3540": {
+          "episodes": 50,
+          "detected": 49,
+          "redundant": 0,
+          "aborted": 1,
+          "decisions": 3000,
+          "backtracks": 881,
+          "backtrace_steps": 26787,
+          "pi_visits": 2520
+        },
+        "c5315": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1230,
+          "backtracks": 39,
+          "backtrace_steps": 8317,
+          "pi_visits": 841
+        },
+        "c7552": {
+          "episodes": 50,
+          "detected": 48,
+          "redundant": 0,
+          "aborted": 2,
+          "decisions": 3697,
+          "backtracks": 1036,
+          "backtrace_steps": 28842,
+          "pi_visits": 3369
+        },
+        "c6288": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 6566,
+          "backtracks": 647,
+          "backtrace_steps": 31981,
+          "pi_visits": 2527
+        },
+        "s38417_scan": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 976,
+          "backtracks": 9,
+          "backtrace_steps": 6173,
+          "pi_visits": 613
+        }
+      }
+    },
+    {
+      "label": "hard_sweep_2",
+      "aggregate": {
+        "detected": 494,
+        "aborted": 6,
+        "decisions": 30220,
+        "mean_backtrack_ratio": 2.3106656113343598,
+        "mean_backtrace_ratio": 1.1284845469977935,
+        "score": [
+          -494,
+          6,
+          2.3106656113343598,
+          1.1284845469977935,
+          30220
+        ]
+      },
+      "circuits": {
+        "c432": {
+          "episodes": 50,
+          "detected": 49,
+          "redundant": 0,
+          "aborted": 1,
+          "decisions": 2789,
+          "backtracks": 530,
+          "backtrace_steps": 14379,
+          "pi_visits": 1945
+        },
+        "c499": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 3205,
+          "backtracks": 4,
+          "backtrace_steps": 23658,
+          "pi_visits": 1727
+        },
+        "c1355": {
+          "episodes": 50,
+          "detected": 48,
+          "redundant": 0,
+          "aborted": 2,
+          "decisions": 6285,
+          "backtracks": 1021,
+          "backtrace_steps": 41437,
+          "pi_visits": 3896
+        },
+        "c1908": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1406,
+          "backtracks": 26,
+          "backtrace_steps": 11688,
+          "pi_visits": 935
+        },
+        "c2670": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1066,
+          "backtracks": 11,
+          "backtrace_steps": 7169,
+          "pi_visits": 783
+        },
+        "c3540": {
+          "episodes": 50,
+          "detected": 49,
+          "redundant": 0,
+          "aborted": 1,
+          "decisions": 3000,
+          "backtracks": 881,
+          "backtrace_steps": 26787,
+          "pi_visits": 2520
+        },
+        "c5315": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1230,
+          "backtracks": 39,
+          "backtrace_steps": 8317,
+          "pi_visits": 841
+        },
+        "c7552": {
+          "episodes": 50,
+          "detected": 48,
+          "redundant": 0,
+          "aborted": 2,
+          "decisions": 3697,
+          "backtracks": 1036,
+          "backtrace_steps": 28842,
+          "pi_visits": 3369
+        },
+        "c6288": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 6566,
+          "backtracks": 647,
+          "backtrace_steps": 31981,
+          "pi_visits": 2527
+        },
+        "s38417_scan": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 976,
+          "backtracks": 9,
+          "backtrace_steps": 6173,
+          "pi_visits": 613
+        }
+      }
+    },
+    {
+      "label": "hard_sweep_3",
+      "aggregate": {
+        "detected": 494,
+        "aborted": 6,
+        "decisions": 30220,
+        "mean_backtrack_ratio": 2.3106656113343598,
+        "mean_backtrace_ratio": 1.1284845469977935,
+        "score": [
+          -494,
+          6,
+          2.3106656113343598,
+          1.1284845469977935,
+          30220
+        ]
+      },
+      "circuits": {
+        "c432": {
+          "episodes": 50,
+          "detected": 49,
+          "redundant": 0,
+          "aborted": 1,
+          "decisions": 2789,
+          "backtracks": 530,
+          "backtrace_steps": 14379,
+          "pi_visits": 1945
+        },
+        "c499": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 3205,
+          "backtracks": 4,
+          "backtrace_steps": 23658,
+          "pi_visits": 1727
+        },
+        "c1355": {
+          "episodes": 50,
+          "detected": 48,
+          "redundant": 0,
+          "aborted": 2,
+          "decisions": 6285,
+          "backtracks": 1021,
+          "backtrace_steps": 41437,
+          "pi_visits": 3896
+        },
+        "c1908": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1406,
+          "backtracks": 26,
+          "backtrace_steps": 11688,
+          "pi_visits": 935
+        },
+        "c2670": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1066,
+          "backtracks": 11,
+          "backtrace_steps": 7169,
+          "pi_visits": 783
+        },
+        "c3540": {
+          "episodes": 50,
+          "detected": 49,
+          "redundant": 0,
+          "aborted": 1,
+          "decisions": 3000,
+          "backtracks": 881,
+          "backtrace_steps": 26787,
+          "pi_visits": 2520
+        },
+        "c5315": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 1230,
+          "backtracks": 39,
+          "backtrace_steps": 8317,
+          "pi_visits": 841
+        },
+        "c7552": {
+          "episodes": 50,
+          "detected": 48,
+          "redundant": 0,
+          "aborted": 2,
+          "decisions": 3697,
+          "backtracks": 1036,
+          "backtrace_steps": 28842,
+          "pi_visits": 3369
+        },
+        "c6288": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 6566,
+          "backtracks": 647,
+          "backtrace_steps": 31981,
+          "pi_visits": 2527
+        },
+        "s38417_scan": {
+          "episodes": 50,
+          "detected": 50,
+          "redundant": 0,
+          "aborted": 0,
+          "decisions": 976,
+          "backtracks": 9,
+          "backtrace_steps": 6173,
+          "pi_visits": 613
+        }
+      }
+    }
+  ],
+  "raw_rollout_log_records": 4200,
+  "malformed_rollout_log_records": 0,
+  "duplicate_or_uncommitted_log_records": 0,
+  "counter_mismatch_episodes": 0,
+  "numeric_metrics_finite": true
+}

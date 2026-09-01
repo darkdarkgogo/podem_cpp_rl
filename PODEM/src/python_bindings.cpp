@@ -283,6 +283,14 @@ std::vector<float> score_actor_v2(const std::string &actor_path,
   return actor.backtrace_action_logits(objective, objective_value);
 }
 
+void validate_actor_artifacts(const std::string &embedding_path,
+                             const std::string &actor_path,
+                             const std::string &circuit_hash,
+                             const std::vector<std::string> &names,
+                             const std::string &backend) {
+  smartatpg::NativeActorPolicy policy(embedding_path, actor_path, circuit_hash, names, backend);
+}
+
 } // namespace
 
 PYBIND11_MODULE(cpp_podem, module) {
@@ -305,4 +313,7 @@ PYBIND11_MODULE(cpp_podem, module) {
              py::arg("mode"), py::arg("objective"), py::arg("candidates"));
   module.def("score_actor_v2", &score_actor_v2, py::arg("actor_path"),
              py::arg("objective"), py::arg("objective_value"));
+  module.def("validate_actor_artifacts", &validate_actor_artifacts,
+             py::arg("embedding_path"), py::arg("actor_path"), py::arg("circuit_hash"),
+             py::arg("names"), py::arg("backend") = "");
 }

@@ -64,10 +64,14 @@ public:
   const std::vector<float> &at(const std::string &name) const;
   std::size_t dimension() const { return dimension_; }
   std::size_t size() const { return embeddings_.size(); }
+  const std::string &backend() const { return backend_; }
+  const std::string &schema() const { return schema_; }
+  const std::string &snapshot() const { return snapshot_; }
   void clear();
 
 private:
   std::size_t dimension_ = 0;
+  std::string backend_ = "deepgate", schema_, snapshot_;
   std::unordered_map<std::string, std::vector<float> > embeddings_;
 };
 
@@ -90,7 +94,10 @@ public:
       const std::vector<float> &objective, int objective_value) const;
   std::size_t embedding_dimension() const { return embedding_dim_; }
   std::size_t hidden_dimension() const { return hidden_dim_; }
-  bool is_v2() const { return version_ == 2; }
+  bool is_v2() const { return version_ >= 2; }
+  const std::string &backend() const { return backend_; }
+  const std::string &schema() const { return schema_; }
+  const std::string &snapshot() const { return snapshot_; }
 
 private:
   struct Tensor {
@@ -125,6 +132,7 @@ private:
   std::size_t embedding_dim_ = 0;
   std::size_t hidden_dim_ = 0;
   int version_ = 0;
+  std::string backend_ = "deepgate", schema_, snapshot_;
   std::unordered_map<std::string, Tensor> tensors_;
   const Tensor *gate_weight_ = nullptr;
   const Tensor *gate_bias_ = nullptr;
@@ -141,7 +149,8 @@ public:
   NativeActorPolicy(const std::string &embedding_path,
                     const std::string &actor_path,
                     const std::string &expected_circuit_hash,
-                    const std::vector<std::string> &gate_names_by_id);
+                    const std::vector<std::string> &gate_names_by_id,
+                    const std::string &expected_backend = "");
   NativeActorPolicy(const NativeActorPolicy &) = delete;
   NativeActorPolicy &operator=(const NativeActorPolicy &) = delete;
   int select(const DecisionRequest &request) override;

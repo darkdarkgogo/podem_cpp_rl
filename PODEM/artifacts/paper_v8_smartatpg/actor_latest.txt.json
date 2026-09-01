@@ -1,0 +1,54 @@
+{
+  "format": "SMARTATPG_INFERENCE_SNAPSHOT_V1",
+  "embedding_backend": "smartatpg",
+  "feature_schema": "SMARTATPG_FEATURES_V1",
+  "graph_config": {
+    "layers": 2,
+    "hidden_dim": 64,
+    "aggregation": "fanin_mean"
+  },
+  "snapshot": "3938d6e4b7faa76fb525fc7475b41bd22ef9c0663cf259091805d660cc0ddd36",
+  "actor": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v8_smartatpg\\actor_latest_snapshots\\3938d6e4b7faa76fb525fc7475b41bd22ef9c0663cf259091805d660cc0ddd36\\actor.txt",
+  "circuits": {
+    "c432": {
+      "embeddings": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v8_smartatpg\\actor_latest_snapshots\\3938d6e4b7faa76fb525fc7475b41bd22ef9c0663cf259091805d660cc0ddd36\\84fa26f330ee5c63.emb",
+      "circuit_hash": "84fa26f330ee5c63"
+    },
+    "c499": {
+      "embeddings": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v8_smartatpg\\actor_latest_snapshots\\3938d6e4b7faa76fb525fc7475b41bd22ef9c0663cf259091805d660cc0ddd36\\52dc7ba7cbd7320c.emb",
+      "circuit_hash": "52dc7ba7cbd7320c"
+    },
+    "c1355": {
+      "embeddings": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v8_smartatpg\\actor_latest_snapshots\\3938d6e4b7faa76fb525fc7475b41bd22ef9c0663cf259091805d660cc0ddd36\\9af46b20f5700506.emb",
+      "circuit_hash": "9af46b20f5700506"
+    },
+    "c1908": {
+      "embeddings": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v8_smartatpg\\actor_latest_snapshots\\3938d6e4b7faa76fb525fc7475b41bd22ef9c0663cf259091805d660cc0ddd36\\ce4b5c9ef9d9b6d6.emb",
+      "circuit_hash": "ce4b5c9ef9d9b6d6"
+    },
+    "c2670": {
+      "embeddings": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v8_smartatpg\\actor_latest_snapshots\\3938d6e4b7faa76fb525fc7475b41bd22ef9c0663cf259091805d660cc0ddd36\\bf010fcd75887f77.emb",
+      "circuit_hash": "bf010fcd75887f77"
+    },
+    "c3540": {
+      "embeddings": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v8_smartatpg\\actor_latest_snapshots\\3938d6e4b7faa76fb525fc7475b41bd22ef9c0663cf259091805d660cc0ddd36\\ad2b4d354c6e36cd.emb",
+      "circuit_hash": "ad2b4d354c6e36cd"
+    },
+    "c5315": {
+      "embeddings": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v8_smartatpg\\actor_latest_snapshots\\3938d6e4b7faa76fb525fc7475b41bd22ef9c0663cf259091805d660cc0ddd36\\57da8c6aaa46aed2.emb",
+      "circuit_hash": "57da8c6aaa46aed2"
+    },
+    "c7552": {
+      "embeddings": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v8_smartatpg\\actor_latest_snapshots\\3938d6e4b7faa76fb525fc7475b41bd22ef9c0663cf259091805d660cc0ddd36\\a394edac355495ca.emb",
+      "circuit_hash": "a394edac355495ca"
+    },
+    "c6288": {
+      "embeddings": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v8_smartatpg\\actor_latest_snapshots\\3938d6e4b7faa76fb525fc7475b41bd22ef9c0663cf259091805d660cc0ddd36\\ad5701fc19daa9ab.emb",
+      "circuit_hash": "ad5701fc19daa9ab"
+    },
+    "s38417_scan": {
+      "embeddings": "E:\\\u684c\u9762\\cpp podem\\PoDemFan_N-detect_ATPG_Test_Compression\\PODEM\\artifacts\\paper_v8_smartatpg\\actor_latest_snapshots\\3938d6e4b7faa76fb525fc7475b41bd22ef9c0663cf259091805d660cc0ddd36\\3aa683c6041f50c9.emb",
+      "circuit_hash": "3aa683c6041f50c9"
+    }
+  }
+}

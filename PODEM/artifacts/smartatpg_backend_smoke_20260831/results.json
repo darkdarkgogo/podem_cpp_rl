@@ -1,0 +1,20 @@
+[
+  {
+    "method": "mc",
+    "updates": 12,
+    "work_units": 12,
+    "logit_pairs": 100,
+    "native_runs": 2,
+    "interrupted_resume": "exact",
+    "deepgate_imported": false
+  },
+  {
+    "method": "gae",
+    "updates": 12,
+    "work_units": 12,
+    "logit_pairs": 100,
+    "native_runs": 2,
+    "interrupted_resume": "exact",
+    "deepgate_imported": false
+  }
+]

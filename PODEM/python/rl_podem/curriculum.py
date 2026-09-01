@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import random
+import statistics
 from collections import defaultdict
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Optional, Union
@@ -30,6 +31,22 @@ REWARD_CONFIG = {
     "gain_max": 1.0,
 }
 REWARD_DISTRIBUTION = "incremental_potential_v1"
+
+
+def rollout_length_stats(lengths: Iterable[int]) -> dict[str, Any]:
+    """Include zero-decision faults; p90 uses the nearest-rank convention."""
+    ordered = sorted(int(length) for length in lengths)
+    if any(length < 0 for length in ordered):
+        raise ValueError("Rollout lengths cannot be negative.")
+    return {
+        "count": len(ordered),
+        "min": ordered[0] if ordered else 0,
+        "mean": statistics.mean(ordered) if ordered else 0.0,
+        "median": statistics.median(ordered) if ordered else 0.0,
+        "p90": ordered[math.ceil(0.9 * len(ordered)) - 1] if ordered else 0,
+        "max": ordered[-1] if ordered else 0,
+        "zero_decision_faults": ordered.count(0),
+    }
 
 
 def _difficulty(index: int, count: int) -> str:
@@ -224,11 +241,17 @@ def _teacher_tensors(
     targets = []
     weights = []
     circuits = []
+    graph_indices = {name: table.name_to_index for name, table in embedding_tables.items()
+                     if hasattr(table, "name_to_index")}
     for sample in sample_list:
         circuit = str(sample["circuit"])
         gate_name = str(sample["objective_name"])
         try:
-            embeddings.append(embedding_tables[circuit][gate_name].float())
+            table = embedding_tables[circuit]
+            if circuit in graph_indices:
+                embeddings.append(torch.tensor([graph_indices[circuit][gate_name]], dtype=torch.long))
+            else:
+                embeddings.append(table[gate_name].float())
         except KeyError as error:
             raise KeyError(f"Missing teacher embedding for {circuit}:{gate_name}") from error
         values.append(int(sample["objective_value"]))
@@ -281,6 +304,25 @@ def filter_unseen_teacher_samples(
     return filtered
 
 
+def _teacher_logits(policy, embeddings, values, circuits, tables):
+    if not hasattr(policy, "graph_encoder"):
+        states = policy.gate_encoder(embeddings)
+        return policy.backtrace_actor(states + policy.objective_value_embedding(values))
+    grouped = defaultdict(list)
+    for index, circuit in enumerate(circuits):
+        grouped[circuit].append(index)
+    logits, positions = [], []
+    for circuit, indices in grouped.items():
+        selected = torch.tensor(indices, dtype=torch.long, device=embeddings.device)
+        graph = tables[circuit]
+        context = policy.context(graph, cached=not torch.is_grad_enabled())
+        descriptors = policy.descriptors(graph, embeddings[selected, 0].long(), context=context)
+        logits.append(policy.batch_logits(descriptors, values[selected])[0])
+        positions.extend(indices)
+    order = torch.tensor(positions, dtype=torch.long, device=embeddings.device).argsort()
+    return torch.cat(logits)[order]
+
+
 def teacher_accuracy(
     policy,
     samples: Iterable[Mapping[str, Any]],
@@ -291,9 +333,9 @@ def teacher_accuracy(
     )
     policy.eval()
     with torch.no_grad():
-        states = policy.gate_encoder(embeddings.to(device))
-        states = states + policy.objective_value_embedding(values.to(device))
-        predictions = torch.argmax(policy.backtrace_actor(states), dim=-1).cpu()
+        logits = _teacher_logits(policy, embeddings.to(device), values.to(device),
+                                 circuits, embedding_tables)
+        predictions = torch.argmax(logits, dim=-1).cpu()
         labels = torch.argmax(targets, dim=-1)
     correct: dict[str, int] = defaultdict(int)
     totals: dict[str, int] = defaultdict(int)
@@ -321,12 +363,14 @@ def pretrain_actor(
 ) -> dict[str, Any]:
     if epochs <= 0 or batch_size <= 0:
         raise ValueError("Pretraining epochs and batch size must be positive.")
-    embeddings, values, targets, weights, _ = _teacher_tensors(
+    embeddings, values, targets, weights, circuits = _teacher_tensors(
         training_samples, embedding_tables
     )
     actor_parameters = list(agent.policy.gate_encoder.parameters())
     actor_parameters += list(agent.policy.objective_value_embedding.parameters())
     actor_parameters += list(agent.policy.backtrace_actor.parameters())
+    if hasattr(agent.policy, "graph_encoder"):
+        actor_parameters += list(agent.policy.graph_encoder.parameters())
     optimizer = torch.optim.Adam(actor_parameters, lr=learning_rate)
     generator = torch.Generator().manual_seed(seed)
     best_state = None
@@ -357,11 +401,9 @@ def pretrain_actor(
         agent.policy.train()
         for start in range(0, len(permutation), batch_size):
             indices = permutation[start : start + batch_size].to(device)
-            states = agent.policy.gate_encoder(embeddings_device[indices])
-            states = states + agent.policy.objective_value_embedding(
-                values_device[indices]
-            )
-            logits = agent.policy.backtrace_actor(states)
+            batch_circuits = [circuits[index] for index in indices.cpu().tolist()]
+            logits = _teacher_logits(agent.policy, embeddings_device[indices],
+                                     values_device[indices], batch_circuits, embedding_tables)
             loss_tensor = -(
                 targets_device[indices] * F.log_softmax(logits, dim=-1)
             ).sum(dim=-1)
@@ -409,8 +451,9 @@ def pretrain_actor(
         raise RuntimeError("Behavior cloning did not produce a checkpoint.")
     agent.policy.load_state_dict(best_state)
     with torch.no_grad():
-        for parameter in agent.policy.critic.parameters():
-            parameter.zero_()
+        # Zeroing every Tanh layer traps the Critic at a trainable constant bias.
+        # A zero output head keeps V(s)=1 initially while preserving hidden features.
+        agent.policy.critic[-1].weight.zero_()
         agent.policy.critic[-1].bias.fill_(1.0)
     agent.policy_old.load_state_dict(agent.policy.state_dict())
     initialized_best_state = {
@@ -555,6 +598,10 @@ class CppPodemCurriculumTrainer(CppPodemBacktraceV2Trainer):
             item for item in self.episode_metrics if item.get("updated", True)
         ]
         self.run_metrics["episodes_with_updates"] = len(updated_metrics)
+        self.run_metrics["advantage_method"] = self.agent.advantage_method
+        self.run_metrics["rollout_steps"] = rollout_length_stats(
+            item["steps"] for item in self.episode_metrics
+        )
         mean_keys = {
             "total_loss_mean": "total_loss",
             "policy_loss_mean": "policy_loss",
@@ -562,6 +609,14 @@ class CppPodemCurriculumTrainer(CppPodemBacktraceV2Trainer):
             "entropy_mean": "entropy",
             "ratio_mean": "ratio_mean",
             "rnd_loss_mean": "rnd_loss",
+            "scaled_reward_mean": "scaled_reward_mean",
+            "scaled_reward_std_mean": "scaled_reward_std",
+            "raw_adv_mean": "raw_adv_mean",
+            "raw_adv_std_mean": "raw_adv_std",
+            "actor_adv_mean": "actor_adv_mean",
+            "actor_adv_std_mean": "actor_adv_std",
+            "value_target_mean": "value_target_mean",
+            "value_target_std_mean": "value_target_std",
         }
         for output_key, source_key in mean_keys.items():
             self.run_metrics[output_key] = (

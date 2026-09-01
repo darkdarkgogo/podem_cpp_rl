@@ -8,6 +8,8 @@ Add Generalized Advantage Estimation (GAE) to the V2 backtrace PPO agent while p
 
 The behavior-cloning stage remains unchanged. During PPO fine-tuning, `policy_old` collects every Actor decision for one fault. The trainer marks the final step terminal after the fault is detected or aborted, then performs one PPO update and clears the rollout buffer.
 
+Integration correction: Actor behavior-cloning loss and schedule remain unchanged, but post-BC Critic initialization zeros only the output weight and sets output bias to 1. The former all-layer-zero initialization traps the Tanh Critic at a constant bias. Keeping its hidden features preserves the same initial value of 1 while permitting state-dependent learning. This is tested and recorded in curriculum checkpoint configuration for both MC and GAE.
+
 The agent accepts:
 
 - `advantage_method`: `"mc"` or `"gae"`; curriculum training defaults to `"gae"`.
@@ -16,6 +18,8 @@ The agent accepts:
 - `normalize_advantages`: defaults to `True`.
 
 Both methods divide collected rewards by the same fixed `return_scale`. They do not standardize returns within an individual fault. This preserves reward signs and the value relationship between successful and failed faults while keeping numerical magnitudes manageable.
+
+Implementation compatibility note: these defaults apply to the curriculum entry point. The low-level agent retains its legacy MC/return-normalization defaults for the existing paper-reward V3 entry point; curriculum training explicitly supplies the new settings. The existing curriculum already disabled return normalization and used a scale of 100 with gamma 1. The new CLI exposes gamma, defaulting to 0.99 as discussed, and allows the previous gamma 1 setting.
 
 ## MC Path
 
@@ -57,7 +61,7 @@ PPO clipping, entropy regularization, optimizer parameter groups, RND training, 
 
 ## Configuration And Checkpoints
 
-The curriculum CLI exposes the method, lambda, reward scale, and Advantage-normalization switch. These values are recorded in the training configuration and agent checkpoint hyperparameters. Full training-state resume requires matching optimization semantics and fails clearly for a legacy state that used per-fault return standardization. Actor-only V2 checkpoints remain loadable for inference or an explicit weights-only warm start.
+The curriculum CLI exposes the method, gamma, lambda, reward scale, and Advantage-normalization switch. These values are recorded in the training configuration and agent checkpoint hyperparameters. Full training-state resume requires matching optimization semantics and fails clearly when loading a legacy return-normalized state into the new unnormalized mode. Old paper entry points may still resume their own legacy semantics. Actor-only V2 checkpoints remain loadable for inference or an explicit weights-only warm start.
 
 Exported inference actors are unaffected because GAE changes training only.
 
@@ -77,6 +81,7 @@ Tests cover:
 - Correct zero continuation value at the terminal step.
 - Fixed reward scaling without per-fault return standardization.
 - Actor-only Advantage normalization, including one-step rollouts.
+- A post-BC Critic that starts at value 1 and can subsequently learn hidden weights.
 - Checkpoint round trips, incompatible legacy training-state rejection, and actor-only checkpoint loading.
 - Per-fault rollout-length summary statistics.
 

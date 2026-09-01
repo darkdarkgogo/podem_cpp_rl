@@ -1,0 +1,122 @@
+[
+  {
+    "circuit": "c432",
+    "model": "smartatpg_best",
+    "graph_parse_seconds": 0.0071238000000000135,
+    "graph_encode_and_descriptor_export_seconds": 0.013799899999999976
+  },
+  {
+    "circuit": "c432",
+    "model": "smartatpg_final",
+    "graph_parse_seconds": 0.0071238000000000135,
+    "graph_encode_and_descriptor_export_seconds": 0.019932200000000178
+  },
+  {
+    "circuit": "c499",
+    "model": "smartatpg_best",
+    "graph_parse_seconds": 0.014635999999999871,
+    "graph_encode_and_descriptor_export_seconds": 0.023935199999999934
+  },
+  {
+    "circuit": "c499",
+    "model": "smartatpg_final",
+    "graph_parse_seconds": 0.014635999999999871,
+    "graph_encode_and_descriptor_export_seconds": 0.021836499999999814
+  },
+  {
+    "circuit": "c1355",
+    "model": "smartatpg_best",
+    "graph_parse_seconds": 0.014262100000000055,
+    "graph_encode_and_descriptor_export_seconds": 0.03286359999999999
+  },
+  {
+    "circuit": "c1355",
+    "model": "smartatpg_final",
+    "graph_parse_seconds": 0.014262100000000055,
+    "graph_encode_and_descriptor_export_seconds": 0.02083769999999996
+  },
+  {
+    "circuit": "c1908",
+    "model": "smartatpg_best",
+    "graph_parse_seconds": 0.025929900000000172,
+    "graph_encode_and_descriptor_export_seconds": 0.04477969999999987
+  },
+  {
+    "circuit": "c1908",
+    "model": "smartatpg_final",
+    "graph_parse_seconds": 0.025929900000000172,
+    "graph_encode_and_descriptor_export_seconds": 0.037849299999999975
+  },
+  {
+    "circuit": "c2670",
+    "model": "smartatpg_best",
+    "graph_parse_seconds": 0.026795799999999925,
+    "graph_encode_and_descriptor_export_seconds": 0.06301289999999993
+  },
+  {
+    "circuit": "c2670",
+    "model": "smartatpg_final",
+    "graph_parse_seconds": 0.026795799999999925,
+    "graph_encode_and_descriptor_export_seconds": 0.050567599999999935
+  },
+  {
+    "circuit": "c3540",
+    "model": "smartatpg_best",
+    "graph_parse_seconds": 0.02919690000000008,
+    "graph_encode_and_descriptor_export_seconds": 0.07685379999999986
+  },
+  {
+    "circuit": "c3540",
+    "model": "smartatpg_final",
+    "graph_parse_seconds": 0.02919690000000008,
+    "graph_encode_and_descriptor_export_seconds": 0.06716929999999977
+  },
+  {
+    "circuit": "c5315",
+    "model": "smartatpg_best",
+    "graph_parse_seconds": 0.08641879999999968,
+    "graph_encode_and_descriptor_export_seconds": 0.1197651999999998
+  },
+  {
+    "circuit": "c5315",
+    "model": "smartatpg_final",
+    "graph_parse_seconds": 0.08641879999999968,
+    "graph_encode_and_descriptor_export_seconds": 0.09612679999999996
+  },
+  {
+    "circuit": "c7552",
+    "model": "smartatpg_best",
+    "graph_parse_seconds": 0.0916617999999998,
+    "graph_encode_and_descriptor_export_seconds": 0.17097240000000014
+  },
+  {
+    "circuit": "c7552",
+    "model": "smartatpg_final",
+    "graph_parse_seconds": 0.0916617999999998,
+    "graph_encode_and_descriptor_export_seconds": 0.13654240000000062
+  },
+  {
+    "circuit": "c6288",
+    "model": "smartatpg_best",
+    "graph_parse_seconds": 0.05672250000000023,
+    "graph_encode_and_descriptor_export_seconds": 0.08454799999999985
+  },
+  {
+    "circuit": "c6288",
+    "model": "smartatpg_final",
+    "graph_parse_seconds": 0.05672250000000023,
+    "graph_encode_and_descriptor_export_seconds": 0.08636390000000027
+  },
+  {
+    "circuit": "s38417_scan",
+    "model": "smartatpg_best",
+    "graph_parse_seconds": 0.47921259999999943,
+    "graph_encode_and_descriptor_export_seconds": 0.9210463999999998
+  },
+  {
+    "circuit": "s38417_scan",
+    "model": "smartatpg_final",
+    "graph_parse_seconds": 0.47921259999999943,
+    "graph_encode_and_descriptor_export_seconds": 0.7934865999999996
+  }
+]

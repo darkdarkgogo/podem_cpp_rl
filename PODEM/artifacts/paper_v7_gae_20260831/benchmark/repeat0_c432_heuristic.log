@@ -1,0 +1,6 @@
+atpg: unknown option
+usage: atpg [options] infile
+Options
+    -fsim <filename>: fault simulation only; filename provides vectors
+    -anum <num>: <num> specifies number of vectors per fault
+    -bt <num>: <num> specifies number of backtracks

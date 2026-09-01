@@ -13,6 +13,7 @@ int main(int argc, char *argv[])
 {
 	string inpFile, vetFile, rlEmbeddingFile, rlActorFile, faultMapFile;
 	string rlMode = "backtrace_rl";
+	string rlEmbeddingBackend;
 	bool rlModeSpecified = false;
 	int i, j;
 	ATPG atpg; // create an ATPG obj, named atpg
@@ -135,6 +136,16 @@ int main(int argc, char *argv[])
 			rlActorFile = string(argv[i + 1]);
 			i += 2;
 		}
+		else if (strcmp(argv[i], "-rl-embedding-backend") == 0)
+		{
+			if (i + 1 >= argc || (string(argv[i + 1]) != "smartatpg" && string(argv[i + 1]) != "deepgate"))
+			{
+				fprintf(stderr, "-rl-embedding-backend requires smartatpg or deepgate\n");
+				return EXIT_FAILURE;
+			}
+			rlEmbeddingBackend = string(argv[i + 1]);
+			i += 2;
+		}
 		else if (strcmp(argv[i], "-rl-mode") == 0)
 		{
 			if (i + 1 >= argc)
@@ -190,7 +201,7 @@ int main(int argc, char *argv[])
 		fprintf(stderr, "-rl-emb and -rl-actor must be provided together\n");
 		return EXIT_FAILURE;
 	}
-	if (rlModeSpecified && rlEmbeddingFile.empty())
+	if ((rlModeSpecified || !rlEmbeddingBackend.empty()) && rlEmbeddingFile.empty())
 	{
 		fprintf(stderr, "-rl-mode requires -rl-emb and -rl-actor\n");
 		return EXIT_FAILURE;
@@ -212,7 +223,7 @@ int main(int argc, char *argv[])
 	{
 		try
 		{
-			atpg.enable_rl_inference(rlEmbeddingFile, rlActorFile);
+			atpg.enable_rl_inference(rlEmbeddingFile, rlActorFile, rlEmbeddingBackend);
 		}
 		catch (const exception &error)
 		{
@@ -265,7 +276,8 @@ void usage()
 	fprintf(stderr, "    -fsim <filename>: fault simulation only; filename provides vectors\n");
 	fprintf(stderr, "    -anum <num>: <num> specifies number of vectors per fault\n");
 	fprintf(stderr, "    -bt <num>: <num> specifies number of backtracks\n");
-	fprintf(stderr, "    -rl-emb <filename>: precomputed DeepGate embeddings\n");
+	fprintf(stderr, "    -rl-emb <filename>: precomputed DeepGate or SmartATPG descriptors\n");
+	fprintf(stderr, "    -rl-embedding-backend <smartatpg|deepgate>: validate artifact backend\n");
 	fprintf(stderr, "    -rl-actor <filename>: exported PPO actor weights\n");
 	fprintf(stderr, "    -rl-mode <backtrace_rl|propagate_rl|both_rl>: RL decision scope (default: backtrace_rl)\n");
 	fprintf(stderr, "    -fault-map <filename>: preserve source collapsed faults on a transformed netlist\n");

@@ -146,21 +146,36 @@ def export_cpp_embeddings(
     device: Optional[Union[str, torch.device]] = None,
 ) -> Tuple[int, int]:
     """Encode one circuit and write the versioned C++ embedding table."""
+    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+    state = checkpoint.get("state_dict", checkpoint) if isinstance(checkpoint, dict) else checkpoint
+    if not isinstance(state, dict) or not state or not all(torch.is_tensor(value) for value in state.values()):
+        raise ValueError("DeepGate export requires a DeepGate encoder checkpoint, not a PPO training checkpoint.")
     _ensure_deepgate_importable()
     from deepgate_recgnn_extractor import encode_bench
+    from deepgate_recgnn_extractor.api import load_model
 
     bench_path = Path(bench_path).resolve()
     output_path = Path(output_path).resolve()
+    resolved_device = _resolve_device(device)
+    model = load_model(device=resolved_device)
+    try:
+        model.load_state_dict(state, strict=True)
+    except (RuntimeError, TypeError) as error:
+        raise ValueError("Checkpoint is not a complete, compatible DeepGate encoder; refusing random/partial weights.") from error
+    if not all(bool(torch.isfinite(value).all()) for value in state.values()):
+        raise ValueError("DeepGate checkpoint has non-finite encoder weights")
     result = encode_bench(
         str(bench_path),
-        checkpoint_path=str(Path(checkpoint_path).resolve()),
-        device=_resolve_device(device),
+        model=model,
+        device=resolved_device,
         verbose=True,
     )
     embeddings = result["node_embeddings"].detach().cpu().float()
     gate_meta = result["gate_meta"]
     if embeddings.ndim != 2 or embeddings.shape[0] != len(gate_meta):
         raise ValueError("DeepGate node embeddings and gate metadata are not aligned.")
+    if not bool(torch.isfinite(embeddings).all()):
+        raise ValueError("DeepGate returned non-finite embeddings")
 
     names = [meta["name"] for meta in gate_meta]
     if len(names) != len(set(names)):

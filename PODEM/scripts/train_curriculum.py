@@ -1,6 +1,7 @@
 import argparse
 import hashlib
 import json
+import math
 import random
 from pathlib import Path
 
@@ -20,6 +21,8 @@ from rl_podem.curriculum import (
     pretrain_actor,
 )
 from rl_podem.ppo import BacktracePPOAgentV2
+from rl_podem.backends import CHECKPOINT_V5, MANIFEST_V5, resolve_backend, smartatpg_metadata
+from rl_podem.artifact_paths import training_output_paths
 
 
 CHECKPOINT_FORMAT = "RL_PODEM_CURRICULUM_TRAINING_V4"
@@ -54,10 +57,15 @@ def _manifest_hash(path):
 
 
 def _validate_checkpoint_metadata(state, manifest_digest, config):
-    if state.get("format") != CHECKPOINT_FORMAT:
+    expected_format = CHECKPOINT_V5 if config.get("embedding_backend") == "smartatpg" else CHECKPOINT_FORMAT
+    if state.get("format") != expected_format:
         raise ValueError("Unsupported curriculum checkpoint format.")
     if state.get("manifest_hash") != manifest_digest or state.get("config") != config:
-        raise ValueError("Curriculum manifest or training configuration changed.")
+        raise ValueError(
+            "Curriculum manifest or training configuration changed. "
+            "Use a new checkpoint path for MC/GAE comparisons; legacy training "
+            "states cannot be silently resumed with different optimization semantics."
+        )
 
 
 def _load_json(path):
@@ -65,8 +73,9 @@ def _load_json(path):
 
 
 def _validate_manifest(manifest):
-    if manifest.get("format") != MANIFEST_FORMAT:
-        raise ValueError("Curriculum training requires a V4 manifest.")
+    backend = resolve_backend(manifest)
+    if manifest.get("format") != (MANIFEST_V5 if backend == "smartatpg" else MANIFEST_FORMAT):
+        raise ValueError("Curriculum manifest format does not match its backend.")
     if int(manifest.get("backtrack_limit", -1)) != 500:
         raise ValueError("V4 manifest backtrack limit must be 500.")
     circuits = list(manifest.get("circuits", []))
@@ -77,7 +86,10 @@ def _validate_manifest(manifest):
         raise ValueError("V4 circuit names must be non-empty and unique.")
     for item in circuits:
         hashes = item.get("artifact_sha256", {})
-        if set(hashes) != {"circuit", "fault_map", "embeddings", "profile"}:
+        required = {"circuit", "fault_map", "profile"}
+        if backend == "deepgate":
+            required.add("embeddings")
+        if set(hashes) != required:
             raise ValueError(f"Incomplete artifact hashes for {item['name']}.")
         for key, expected in hashes.items():
             path = Path(item[key])
@@ -208,7 +220,7 @@ def _checkpoint_state(
     best_label,
 ):
     return {
-        "format": CHECKPOINT_FORMAT,
+        "format": CHECKPOINT_V5 if config.get("embedding_backend") == "smartatpg" else CHECKPOINT_FORMAT,
         "manifest_hash": manifest_digest,
         "config": config,
         "agent": agent.training_state_dict(),
@@ -225,7 +237,10 @@ def _checkpoint_state(
     }
 
 
-def _agent_from_hyperparameters(embedding_dim, hyperparameters):
+def _agent_from_hyperparameters(embedding_dim, hyperparameters, graphs=None):
+    if graphs is not None:
+        from rl_podem.smartatpg import SmartATPGPPOAgent
+        return SmartATPGPPOAgent(graphs, hidden_dim=32, **dict(hyperparameters))
     return BacktracePPOAgentV2(
         gate_embedding_dim=embedding_dim,
         hidden_dim=32,
@@ -233,28 +248,67 @@ def _agent_from_hyperparameters(embedding_dim, hyperparameters):
     )
 
 
-def main():
+def _parse_args(argv=None):
     parser = argparse.ArgumentParser(
-        description="Behavior-clone and curriculum-train the V4 backtrace actor."
+        description="Behavior-clone and curriculum-train with full-fault MC or GAE."
     )
     parser.add_argument("manifest", type=Path)
     parser.add_argument("checkpoint", type=Path)
     parser.add_argument("best_actor_output", type=Path)
     parser.add_argument("--latest-actor-output", type=Path)
+    parser.add_argument("--embedding-backend", choices=("smartatpg", "deepgate"))
     parser.add_argument("--bc-epochs", type=int, default=20)
     parser.add_argument("--bc-batch-size", type=int, default=256)
     parser.add_argument("--stage-sweeps", type=int, nargs=3, default=(2, 2, 3))
     parser.add_argument("--seed", type=int, default=2026)
-    args = parser.parse_args()
+    parser.add_argument("--advantage-method", choices=("mc", "gae"), default="gae")
+    parser.add_argument("--gae-lambda", type=float, default=0.97)
+    parser.add_argument("--gamma", type=float, default=0.99)
+    parser.add_argument("--return-scale", type=float, default=100.0,
+                        help="Divide all step rewards by this fixed positive scale.")
+    parser.add_argument("--normalize-advantages", action=argparse.BooleanOptionalAction,
+                        default=True, help="Normalize only the Actor Advantage copy.")
+    parser.add_argument("--log-rollouts", action="store_true",
+                        help="Print each fault's PPO metrics and Actor decision count.")
+    args = parser.parse_args(argv)
     if args.bc_epochs <= 0 or args.bc_batch_size <= 0:
         raise ValueError("Behavior-cloning settings must be positive.")
     if any(value <= 0 for value in args.stage_sweeps):
         raise ValueError("Every curriculum stage must have at least one sweep.")
+    for name in ("gamma", "gae_lambda"):
+        value = getattr(args, name)
+        if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+            parser.error(f"--{name.replace('_', '-')} must be finite and in [0, 1].")
+    if not math.isfinite(args.return_scale) or args.return_scale <= 0.0:
+        parser.error("--return-scale must be finite and positive.")
+    return args
+
+
+def main(argv=None):
+    args = _parse_args(argv)
 
     manifest = _load_json(args.manifest)
+    backend = resolve_backend(manifest, args.embedding_backend)
     circuits = _validate_manifest(manifest)
-    embedding_tables = load_embedding_tables(circuits)
-    embedding_dim = next(iter(next(iter(embedding_tables.values())).values())).numel()
+    graphs = None
+    if backend == "smartatpg":
+        from rl_podem.smartatpg_features import load_circuit_graph
+        from rl_podem.smartatpg import DESCRIPTOR_DIM
+        graphs = {item["name"]: load_circuit_graph(item["circuit"]) for item in circuits}
+        embedding_tables, embedding_dim = graphs, DESCRIPTOR_DIM
+    else:
+        embedding_tables = load_embedding_tables(circuits)
+        embedding_dim = next(iter(next(iter(embedding_tables.values())).values())).numel()
+
+    def export_policy(policy_state, output_path, complete=False):
+        if backend == "deepgate":
+            export_actor_v2_state_dict(policy_state, output_path)
+        else:
+            from rl_podem.smartatpg_artifacts import export_actor, export_snapshot
+            if complete:
+                export_snapshot(policy_state, graphs, output_path)
+            else:
+                export_actor(policy_state, output_path)
     training_samples = _load_json(manifest["teacher_training"])
     validation_samples = filter_unseen_teacher_samples(
         training_samples, _load_json(manifest["teacher_validation"])
@@ -270,6 +324,10 @@ def main():
     }
     if len(output_paths) != 3:
         raise ValueError("Checkpoint, best actor, and latest actor paths must differ.")
+    protected_inputs = [args.manifest, manifest["teacher_training"], manifest["teacher_validation"]]
+    protected_inputs.extend(item[key] for item in circuits for key in item["artifact_sha256"])
+    training_output_paths(args.checkpoint, args.best_actor_output, latest_actor_output,
+                          backend, protected_inputs)
     bc_checkpoint = args.checkpoint.with_suffix(args.checkpoint.suffix + ".bc")
 
     config = {
@@ -281,12 +339,19 @@ def main():
         "entropy_schedule": list(ENTROPY_SCHEDULE),
         "reward": dict(REWARD_CONFIG),
         "reward_distribution": REWARD_DISTRIBUTION,
-        "gamma": 1.0,
+        "gamma": args.gamma,
+        "advantage_method": args.advantage_method,
+        "gae_lambda": args.gae_lambda,
+        "normalize_advantages": args.normalize_advantages,
         "normalize_returns": False,
-        "return_scale": 100.0,
+        "return_scale": args.return_scale,
         "max_grad_norm": 1.0,
         "critic_initial_value": 1.0,
+        "critic_initialization": "zero_output_only_v1",
     }
+    if backend == "smartatpg":
+        config.update(smartatpg_metadata())
+    checkpoint_format = CHECKPOINT_V5 if backend == "smartatpg" else CHECKPOINT_FORMAT
     manifest_digest = _manifest_hash(args.manifest)
     torch.manual_seed(args.seed)
 
@@ -295,7 +360,7 @@ def main():
         state = torch.load(args.checkpoint, map_location="cpu")
         _validate_checkpoint_metadata(state, manifest_digest, config)
         saved_hyperparameters = state["agent"]["hyperparameters"]
-        agent = _agent_from_hyperparameters(embedding_dim, saved_hyperparameters)
+        agent = _agent_from_hyperparameters(embedding_dim, saved_hyperparameters, graphs)
         agent.load_training_state_dict(state["agent"])
         torch.set_rng_state(state["torch_random_state"])
         if torch.cuda.is_available() and state["torch_cuda_random_state"] is not None:
@@ -312,21 +377,23 @@ def main():
             flush=True,
         )
     else:
-        agent = BacktracePPOAgentV2(
-            gate_embedding_dim=embedding_dim,
-            hidden_dim=32,
-            gamma=1.0,
+        initial_hyperparameters = dict(
+            gamma=args.gamma,
+            advantage_method=args.advantage_method,
+            gae_lambda=args.gae_lambda,
+            normalize_advantages=args.normalize_advantages,
             rnd_beta=RND_SCHEDULE[0],
             normalize_returns=False,
             entropy_coef=ENTROPY_SCHEDULE[0],
-            return_scale=100.0,
+            return_scale=args.return_scale,
             max_grad_norm=1.0,
         )
+        agent = _agent_from_hyperparameters(embedding_dim, initial_hyperparameters, graphs)
         bc_resume_state = None
         if bc_checkpoint.exists():
             bc_state = torch.load(bc_checkpoint, map_location="cpu")
             if (
-                bc_state.get("format") != CHECKPOINT_FORMAT + "_BC"
+                bc_state.get("format") != checkpoint_format + "_BC"
                 or bc_state.get("manifest_hash") != manifest_digest
                 or bc_state.get("config") != config
             ):
@@ -341,7 +408,7 @@ def main():
             _atomic_torch_save(
                 bc_checkpoint,
                 {
-                    "format": CHECKPOINT_FORMAT + "_BC",
+                    "format": checkpoint_format + "_BC",
                     "manifest_hash": manifest_digest,
                     "config": config,
                     "pretraining_state": pretraining_state,
@@ -369,16 +436,23 @@ def main():
             flush=True,
         )
 
+    print(
+        f"PPO_CONFIG backend={backend} method={agent.advantage_method} gamma={agent.gamma} "
+        f"gae_lambda={agent.gae_lambda} return_scale={agent.return_scale} "
+        f"normalize_advantages={agent.normalize_advantages} rollout=full_fault",
+        flush=True,
+    )
     trainers = {
         item["name"]: CppPodemCurriculumTrainer(
-            item["embeddings"],
+            graphs[item["name"]] if graphs is not None else item["embeddings"],
             _baseline_map(item["training_faults"]),
             agent=agent,
         )
         for item in circuits
     }
     evaluators = {
-        item["name"]: CppPodemBacktraceV2Evaluator(item["embeddings"], agent=agent)
+        item["name"]: CppPodemBacktraceV2Evaluator(
+            graphs[item["name"]] if graphs is not None else item["embeddings"], agent=agent)
         for item in circuits
     }
 
@@ -392,7 +466,7 @@ def main():
             best_score = score
             best_label = "behavior_cloning"
             best_policy_state = _clone_policy_state(agent.policy_old.state_dict())
-            export_actor_v2_state_dict(best_policy_state, args.best_actor_output)
+            export_policy(best_policy_state, args.best_actor_output)
         _atomic_torch_save(
             args.checkpoint,
             _checkpoint_state(
@@ -448,6 +522,12 @@ def main():
                     quiet=True,
                     fault_map_path=item["fault_map"],
                 )
+                if args.log_rollouts:
+                    for metrics in trainer.episode_metrics:
+                        print("ROLLOUT_RESULT " + json.dumps({
+                            "circuit": item["name"], "stage": stage_name,
+                            "sweep": sweep, **metrics,
+                        }, sort_keys=True), flush=True)
                 record = {
                     "stage": stage_index,
                     "stage_name": stage_name,
@@ -459,7 +539,7 @@ def main():
                 }
                 progress.append(record)
                 completed.add(key)
-                export_actor_v2_state_dict(
+                export_policy(
                     agent.policy_old.state_dict(), latest_actor_output
                 )
                 _atomic_torch_save(
@@ -491,7 +571,7 @@ def main():
                     best_policy_state = _clone_policy_state(
                         agent.policy_old.state_dict()
                     )
-                    export_actor_v2_state_dict(
+                    export_policy(
                         best_policy_state, args.best_actor_output
                     )
                     selection = "best"
@@ -517,8 +597,8 @@ def main():
                     flush=True,
                 )
 
-    export_actor_v2_state_dict(best_policy_state, args.best_actor_output)
-    export_actor_v2_state_dict(agent.policy_old.state_dict(), latest_actor_output)
+    export_policy(best_policy_state, args.best_actor_output, complete=True)
+    export_policy(agent.policy_old.state_dict(), latest_actor_output, complete=True)
     print(
         f"TRAINING_COMPLETE best={best_label} score={list(best_score)}",
         flush=True,
