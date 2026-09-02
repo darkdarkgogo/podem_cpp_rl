@@ -1,6 +1,27 @@
 """Validate generated file namespaces before any checkpoint/export writes."""
 
+import hashlib
 from pathlib import Path
+
+
+def matches_artifact_hash(path, expected):
+    """Match exact bytes, allowing only LF/CRLF conversion for JSON files."""
+    path = Path(path)
+    if not path.is_file():
+        return False
+    data = path.read_bytes()
+    expected = str(expected).lower()
+    if hashlib.sha256(data).hexdigest() == expected:
+        return True
+    if path.suffix.lower() != ".json":
+        return False
+
+    lf_data = data.replace(b"\r\n", b"\n")
+    crlf_data = lf_data.replace(b"\n", b"\r\n")
+    return expected in {
+        hashlib.sha256(lf_data).hexdigest(),
+        hashlib.sha256(crlf_data).hexdigest(),
+    }
 
 
 def validate_output_paths(outputs, inputs=(), directories=()):

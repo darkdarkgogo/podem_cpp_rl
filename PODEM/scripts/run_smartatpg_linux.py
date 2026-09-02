@@ -2,7 +2,6 @@
 
 import argparse
 import copy
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -10,25 +9,11 @@ import subprocess
 import sys
 import time
 
+from rl_podem.artifact_paths import matches_artifact_hash
+
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = ROOT / "artifacts/paper_v8_smartatpg/training_manifest.json"
-
-
-def _matches_artifact_hash(path, expected):
-    path = Path(path)
-    data = path.read_bytes()
-    if hashlib.sha256(data).hexdigest() == expected:
-        return True
-    if path.suffix.lower() != ".json":
-        return False
-
-    lf_data = data.replace(b"\r\n", b"\n")
-    crlf_data = lf_data.replace(b"\n", b"\r\n")
-    return expected in {
-        hashlib.sha256(lf_data).hexdigest(),
-        hashlib.sha256(crlf_data).hexdigest(),
-    }
 
 
 def _atomic_json_save(path, value):
@@ -84,7 +69,7 @@ def relocate_manifest(source_path, output_path, repository_root=ROOT):
             relocated[key], repository_root, source_path.parent
         )
         expected = relocated["teacher_sha256"][kind]
-        if not _matches_artifact_hash(path, expected):
+        if not matches_artifact_hash(path, expected):
             raise ValueError(f"Teacher artifact hash changed: {path}")
         relocated[key] = str(path)
     for item in relocated["circuits"]:
@@ -92,7 +77,7 @@ def relocate_manifest(source_path, output_path, repository_root=ROOT):
             path = _resolve_relocated_path(
                 item[key], repository_root, source_path.parent
             )
-            if not _matches_artifact_hash(path, expected):
+            if not matches_artifact_hash(path, expected):
                 raise ValueError(f"Circuit artifact hash changed: {path}")
             item[key] = str(path)
 

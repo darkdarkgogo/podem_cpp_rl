@@ -11,7 +11,10 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from benchmark_smartatpg import _stage_circuit_copy, _summarize, percentage_change
-from run_smartatpg_linux import _matches_artifact_hash, relocate_manifest
+from rl_podem.artifact_paths import matches_artifact_hash
+from rl_podem.backends import MANIFEST_V5, smartatpg_metadata
+from run_smartatpg_linux import relocate_manifest
+from train_curriculum import _validate_manifest
 
 
 def sha256(path):
@@ -26,14 +29,67 @@ class LinuxManifestTests(unittest.TestCase):
             crlf = b'{\r\n  "value": 1\r\n}\r\n'
             expected = hashlib.sha256(crlf).hexdigest()
             json_path.write_bytes(crlf.replace(b"\r\n", b"\n"))
-            self.assertTrue(_matches_artifact_hash(json_path, expected))
+            self.assertTrue(matches_artifact_hash(json_path, expected))
 
             json_path.write_bytes(b'{\n  "value": 2\n}\n')
-            self.assertFalse(_matches_artifact_hash(json_path, expected))
+            self.assertFalse(matches_artifact_hash(json_path, expected))
 
             circuit_path = root / "artifact.bench"
             circuit_path.write_bytes(crlf.replace(b"\r\n", b"\n"))
-            self.assertFalse(_matches_artifact_hash(circuit_path, expected))
+            self.assertFalse(matches_artifact_hash(circuit_path, expected))
+
+    def test_training_validator_accepts_portable_json_newlines(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            circuit = root / "test.bench"
+            fault_map = root / "test.faultmap"
+            profile = root / "profile.json"
+            teacher_training = root / "teacher_training.json"
+            teacher_validation = root / "teacher_validation.json"
+            circuit.write_bytes(b"INPUT(a)\n")
+            fault_map.write_bytes(b"fault map\n")
+
+            json_crlf = b'{\r\n  "value": 1\r\n}\r\n'
+            json_lf = json_crlf.replace(b"\r\n", b"\n")
+            for path in (profile, teacher_training, teacher_validation):
+                path.write_bytes(json_lf)
+            portable_hash = hashlib.sha256(json_crlf).hexdigest()
+
+            manifest = {
+                "format": MANIFEST_V5,
+                "backtrack_limit": 500,
+                **smartatpg_metadata(),
+                "circuits": [{
+                    "name": "test",
+                    "circuit": str(circuit),
+                    "fault_map": str(fault_map),
+                    "profile": str(profile),
+                    "artifact_sha256": {
+                        "circuit": sha256(circuit),
+                        "fault_map": sha256(fault_map),
+                        "profile": portable_hash,
+                    },
+                    "training_faults": [{
+                        "fault_id": "train", "difficulty": "easy",
+                        "outcome": 1, "backtracks": 0, "backtrace_steps": 1,
+                    }],
+                    "validation_faults": [{
+                        "fault_id": "validation", "difficulty": "easy",
+                        "outcome": 1, "backtracks": 0, "backtrace_steps": 1,
+                    }],
+                }],
+                "teacher_training": str(teacher_training),
+                "teacher_validation": str(teacher_validation),
+                "teacher_sha256": {
+                    "training": portable_hash,
+                    "validation": portable_hash,
+                },
+            }
+            self.assertEqual(_validate_manifest(manifest)[0]["name"], "test")
+
+            profile.write_bytes(b'{\n  "value": 2\n}\n')
+            with self.assertRaisesRegex(ValueError, "artifact changed"):
+                _validate_manifest(manifest)
 
     def test_windows_paths_are_relocated_and_hash_checked(self):
         with tempfile.TemporaryDirectory() as directory:

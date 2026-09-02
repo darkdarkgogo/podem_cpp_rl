@@ -9,11 +9,12 @@ semantically unchanged artifacts as modified.
 
 ## Design
 
-Add one hash-validation helper to `scripts/run_smartatpg_linux.py`. Validation
-first compares the exact file SHA256 with the manifest value. If that fails and
-the artifact is JSON, it computes hashes for newline-normalized LF and CRLF
-representations. The file is accepted only when one representation exactly
-matches the recorded SHA256.
+Add one shared hash-validation helper to `rl_podem.artifact_paths`. Both the
+Linux manifest relocator and curriculum trainer validation call this helper.
+Validation first compares the exact file SHA256 with the manifest value. If
+that fails and the artifact is JSON, it computes hashes for newline-normalized
+LF and CRLF representations. The file is accepted only when one representation
+exactly matches the recorded SHA256.
 
 This is byte-preserving except for newline representation: JSON is not parsed,
 reformatted, reordered, or otherwise canonicalized. Consequently, changes to
@@ -39,4 +40,3 @@ Tests will verify that:
 - exact hashes remain accepted;
 - non-newline JSON content changes remain rejected;
 - non-JSON artifacts do not receive newline normalization.
-

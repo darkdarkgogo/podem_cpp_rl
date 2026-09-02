@@ -23,7 +23,7 @@ from rl_podem.curriculum import (
 )
 from rl_podem.ppo import BacktracePPOAgentV2
 from rl_podem.backends import CHECKPOINT_V5, MANIFEST_V5, resolve_backend, smartatpg_metadata
-from rl_podem.artifact_paths import training_output_paths
+from rl_podem.artifact_paths import matches_artifact_hash, training_output_paths
 
 
 CHECKPOINT_FORMAT = "RL_PODEM_CURRICULUM_TRAINING_V4"
@@ -110,7 +110,7 @@ def _validate_manifest(manifest):
             raise ValueError(f"Incomplete artifact hashes for {item['name']}.")
         for key, expected in hashes.items():
             path = Path(item[key])
-            if not path.is_file() or _sha256_file(path) != expected:
+            if not matches_artifact_hash(path, expected):
                 raise ValueError(f"V4 artifact changed or is missing: {path}")
         training = list(item.get("training_faults", []))
         validation = list(item.get("validation_faults", []))
@@ -130,7 +130,7 @@ def _validate_manifest(manifest):
     for kind in ("training", "validation"):
         path = Path(manifest[f"teacher_{kind}"])
         expected = manifest["teacher_sha256"][kind]
-        if not path.is_file() or _sha256_file(path) != expected:
+        if not matches_artifact_hash(path, expected):
             raise ValueError(f"Teacher {kind} artifact changed or is missing.")
     return circuits
 
