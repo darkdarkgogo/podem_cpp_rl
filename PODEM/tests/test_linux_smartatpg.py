@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
@@ -13,7 +14,7 @@ if str(SCRIPTS) not in sys.path:
 from benchmark_smartatpg import _stage_circuit_copy, _summarize, percentage_change
 from rl_podem.artifact_paths import matches_artifact_hash
 from rl_podem.backends import MANIFEST_V5, smartatpg_metadata
-from run_smartatpg_linux import relocate_manifest
+from run_smartatpg_linux import main as run_linux_main, relocate_manifest
 from train_curriculum import _validate_manifest
 
 
@@ -22,6 +23,29 @@ def sha256(path):
 
 
 class LinuxManifestTests(unittest.TestCase):
+    def test_launcher_enables_tensorboard_in_run_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "run"
+            source_manifest = root / "source.json"
+            with (
+                patch("run_smartatpg_linux.sys.platform", "linux"),
+                patch("run_smartatpg_linux._check_cpp_extension"),
+                patch("run_smartatpg_linux.relocate_manifest"),
+                patch("run_smartatpg_linux._tee_command", return_value=0) as tee,
+            ):
+                run_linux_main([
+                    "--source-manifest", str(source_manifest),
+                    "--output-dir", str(output),
+                    "--skip-benchmark",
+                ])
+            command = tee.call_args.args[0]
+            option_index = command.index("--tensorboard-log-dir")
+            self.assertEqual(
+                Path(command[option_index + 1]),
+                (output / "tensorboard").resolve(),
+            )
+
     def test_json_hash_accepts_only_lf_crlf_conversion(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

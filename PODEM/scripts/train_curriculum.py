@@ -63,6 +63,68 @@ def _atomic_json_save(path, value):
     temporary.replace(path)
 
 
+def _write_round_tensorboard_metrics(writer, evaluation):
+    step = int(evaluation["round"])
+    training_split = evaluation["training"]
+    validation_split = evaluation["test"]
+    training = training_split["aggregate"]
+    validation = validation_split["aggregate"]
+
+    def total(split_record, key):
+        aggregate = split_record["aggregate"]
+        if key in aggregate:
+            return aggregate[key]
+        return sum(
+            int(circuit[key]) for circuit in split_record["circuits"].values()
+        )
+
+    scalars = {
+        "return/train_mean": training["mean_reward"],
+        "return/validation_mean": validation["mean_reward"],
+        "backtracks/train_total": total(training_split, "backtracks"),
+        "backtracks/validation_total": total(validation_split, "backtracks"),
+        "backtraces/train_total": total(training_split, "backtrace_steps"),
+        "backtraces/validation_total": total(validation_split, "backtrace_steps"),
+    }
+    for tag, value in scalars.items():
+        writer.add_scalar(tag, value, step)
+    writer.flush()
+
+
+def _create_tensorboard_writer(log_dir, round_evaluations, writer_factory=None):
+    log_dir = Path(log_dir)
+    event_files_exist = log_dir.exists() and any(
+        log_dir.glob("events.out.tfevents.*")
+    )
+    if writer_factory is None:
+        try:
+            from torch.utils.tensorboard import SummaryWriter
+        except ImportError as error:
+            raise RuntimeError(
+                "TensorBoard logging requires the training environment to install "
+                "tensorboard: python -m pip install tensorboard"
+            ) from error
+        writer_factory = SummaryWriter
+
+    options = {"log_dir": str(log_dir)}
+    if event_files_exist:
+        completed_round = max(
+            (int(item["round"]) for item in round_evaluations), default=0
+        )
+        options["purge_step"] = completed_round + 1
+    writer = writer_factory(**options)
+    try:
+        if not event_files_exist:
+            for evaluation in sorted(
+                round_evaluations, key=lambda item: int(item["round"])
+            ):
+                _write_round_tensorboard_metrics(writer, evaluation)
+    except Exception:
+        writer.close()
+        raise
+    return writer
+
+
 def _manifest_hash(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -234,6 +296,10 @@ def _run_reward_split(circuits, evaluators, split, seed):
         "fault_count": fault_count,
         "reward_sum": reward_sum,
         "mean_reward": reward_sum / fault_count if fault_count else 0.0,
+        "backtracks": sum(int(item["backtracks"]) for item in results.values()),
+        "backtrace_steps": sum(
+            int(item["backtrace_steps"]) for item in results.values()
+        ),
     })
     if not all(
         math.isfinite(value)
@@ -352,6 +418,11 @@ def _parse_args(argv=None):
         type=Path,
         help="JSON output for deterministic train/test reward after each round.",
     )
+    parser.add_argument(
+        "--tensorboard-log-dir",
+        type=Path,
+        help="Write deterministic per-round train/validation metrics to TensorBoard.",
+    )
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--advantage-method", choices=("mc", "gae"), default="gae")
     parser.add_argument("--gae-lambda", type=float, default=0.97)
@@ -369,6 +440,8 @@ def _parse_args(argv=None):
         raise ValueError("Every curriculum stage must have at least one sweep.")
     if args.curriculum_rounds is not None and args.curriculum_rounds <= 0:
         raise ValueError("Curriculum rounds must be positive.")
+    if args.tensorboard_log_dir is not None and args.curriculum_rounds is None:
+        raise ValueError("TensorBoard round metrics require --curriculum-rounds.")
     for name in ("gamma", "gae_lambda"):
         value = getattr(args, name)
         if not math.isfinite(value) or not 0.0 <= value <= 1.0:
@@ -378,9 +451,7 @@ def _parse_args(argv=None):
     return args
 
 
-def main(argv=None):
-    args = _parse_args(argv)
-
+def _run_training(args, tensorboard_writers):
     manifest = _load_json(args.manifest)
     backend = resolve_backend(manifest, args.embedding_backend)
     if args.curriculum_rounds is not None and backend != "smartatpg":
@@ -562,6 +633,12 @@ def main(argv=None):
 
     if round_metrics_output is not None:
         _atomic_json_save(round_metrics_output, round_evaluations)
+    tensorboard_writer = None
+    if args.tensorboard_log_dir is not None:
+        tensorboard_writer = _create_tensorboard_writer(
+            args.tensorboard_log_dir, round_evaluations
+        )
+        tensorboard_writers.append(tensorboard_writer)
 
     print(
         f"PPO_CONFIG backend={backend} method={agent.advantage_method} gamma={agent.gamma} "
@@ -765,14 +842,21 @@ def main(argv=None):
             round_evaluations.append(evaluation)
             evaluated_rounds.add(round_number)
             export_policy(agent.policy_old.state_dict(), latest_actor_output)
+            if tensorboard_writer is not None:
+                _write_round_tensorboard_metrics(tensorboard_writer, evaluation)
             save_training_state()
             _atomic_json_save(round_metrics_output, round_evaluations)
-            train_mean = evaluation["training"]["aggregate"]["mean_reward"]
-            test_mean = evaluation["test"]["aggregate"]["mean_reward"]
+            training = evaluation["training"]["aggregate"]
+            validation = evaluation["test"]["aggregate"]
             print(
                 f"ROUND_EVAL round={round_number} "
-                f"train_mean_reward={train_mean:.6f} "
-                f"test_mean_reward={test_mean:.6f} selection={selection}",
+                f"train_mean_return={training['mean_reward']:.6f} "
+                f"validation_mean_return={validation['mean_reward']:.6f} "
+                f"train_total_backtracks={training['backtracks']} "
+                f"validation_total_backtracks={validation['backtracks']} "
+                f"train_total_backtraces={training['backtrace_steps']} "
+                f"validation_total_backtraces={validation['backtrace_steps']} "
+                f"selection={selection}",
                 flush=True,
             )
             print("ROUND_EVAL_JSON " + json.dumps(evaluation, sort_keys=True), flush=True)
@@ -783,6 +867,16 @@ def main(argv=None):
         f"TRAINING_COMPLETE best={best_label} score={list(best_score)}",
         flush=True,
     )
+
+
+def main(argv=None):
+    args = _parse_args(argv)
+    tensorboard_writers = []
+    try:
+        return _run_training(args, tensorboard_writers)
+    finally:
+        for writer in reversed(tensorboard_writers):
+            writer.close()
 
 
 if __name__ == "__main__":

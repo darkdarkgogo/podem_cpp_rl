@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stderr
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import torch
 
@@ -22,10 +22,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from train_curriculum import (
     CHECKPOINT_FORMAT,
     ROUND_CHECKPOINT_FORMAT,
+    _create_tensorboard_writer,
     _parse_args,
     _run_reward_split,
     _round_stage_plan,
     _validate_checkpoint_metadata,
+    _write_round_tensorboard_metrics,
 )
 
 
@@ -267,9 +269,11 @@ class ConfigurationTests(unittest.TestCase):
         self.assertFalse(args.normalize_advantages)
         self.assertTrue(args.log_rollouts)
         rounds = _parse_args([
-            "manifest", "state", "actor", "--curriculum-rounds", "20"
+            "manifest", "state", "actor", "--curriculum-rounds", "20",
+            "--tensorboard-log-dir", "events",
         ])
         self.assertEqual(rounds.curriculum_rounds, 20)
+        self.assertEqual(rounds.tensorboard_log_dir, Path("events"))
 
     def test_cli_rejects_invalid_numbers(self):
         for option, value in (("--gamma", "nan"), ("--gae-lambda", "1.1"),
@@ -315,12 +319,14 @@ class ConfigurationTests(unittest.TestCase):
         ]
 
         class Evaluator:
-            def __init__(self, count, reward_sum):
+            def __init__(self, count, reward_sum, backtracks, backtraces):
                 self.run_metrics = {
                     "fault_count": count,
                     "reward_sum": reward_sum,
                     "mean_reward": reward_sum / count,
                 }
+                self.backtracks = backtracks
+                self.backtraces = backtraces
 
             def run(self, *args, **kwargs):
                 count = self.run_metrics["fault_count"]
@@ -330,19 +336,77 @@ class ConfigurationTests(unittest.TestCase):
                     "aborted": 0,
                     "redundant": 0,
                     "decisions": count,
-                    "backtracks": 0,
-                    "backtrace_steps": 0,
+                    "backtracks": self.backtracks,
+                    "backtrace_steps": self.backtraces,
                 }
 
         result, _ = _run_reward_split(
             circuits,
-            {"a": Evaluator(2, 30.0), "b": Evaluator(1, 60.0)},
+            {
+                "a": Evaluator(2, 30.0, 4, 40),
+                "b": Evaluator(1, 60.0, 7, 70),
+            },
             "training",
             2026,
         )
         self.assertEqual(result["aggregate"]["fault_count"], 3)
         self.assertEqual(result["aggregate"]["reward_sum"], 90.0)
         self.assertEqual(result["aggregate"]["mean_reward"], 30.0)
+        self.assertEqual(result["aggregate"]["backtracks"], 11)
+        self.assertEqual(result["aggregate"]["backtrace_steps"], 110)
+
+    def test_tensorboard_writes_six_round_scalars_and_flushes(self):
+        writer = Mock()
+        evaluation = {
+            "round": 3,
+            "training": {"aggregate": {
+                "mean_reward": 91.25, "backtracks": 12, "backtrace_steps": 120,
+            }},
+            "test": {"aggregate": {
+                "mean_reward": 87.5, "backtracks": 34, "backtrace_steps": 340,
+            }},
+        }
+        _write_round_tensorboard_metrics(writer, evaluation)
+        self.assertEqual(writer.add_scalar.call_count, 6)
+        writer.add_scalar.assert_any_call("return/train_mean", 91.25, 3)
+        writer.add_scalar.assert_any_call("return/validation_mean", 87.5, 3)
+        writer.add_scalar.assert_any_call("backtracks/train_total", 12, 3)
+        writer.add_scalar.assert_any_call("backtracks/validation_total", 34, 3)
+        writer.add_scalar.assert_any_call("backtraces/train_total", 120, 3)
+        writer.add_scalar.assert_any_call("backtraces/validation_total", 340, 3)
+        writer.flush.assert_called_once_with()
+
+    def test_tensorboard_backfills_empty_directory_and_purges_resume(self):
+        evaluation = {
+            "round": 2,
+            "training": {"aggregate": {
+                "mean_reward": 10.0,
+            }, "circuits": {"a": {"backtracks": 2, "backtrace_steps": 20}}},
+            "test": {"aggregate": {
+                "mean_reward": 9.0,
+            }, "circuits": {"a": {"backtracks": 3, "backtrace_steps": 30}}},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            log_dir = Path(directory) / "events"
+            writer_factory = Mock(return_value=Mock())
+            writer = _create_tensorboard_writer(
+                log_dir, [evaluation], writer_factory=writer_factory
+            )
+            writer_factory.assert_called_once_with(log_dir=str(log_dir))
+            self.assertEqual(writer.add_scalar.call_count, 6)
+            writer.add_scalar.assert_any_call("backtracks/train_total", 2, 2)
+            writer.add_scalar.assert_any_call("backtraces/validation_total", 30, 2)
+
+            log_dir.mkdir(parents=True)
+            (log_dir / "events.out.tfevents.test").write_text("event")
+            resumed_factory = Mock(return_value=Mock())
+            resumed_writer = _create_tensorboard_writer(
+                log_dir, [evaluation], writer_factory=resumed_factory
+            )
+            resumed_factory.assert_called_once_with(
+                log_dir=str(log_dir), purge_step=3
+            )
+            resumed_writer.add_scalar.assert_not_called()
 
     def test_zero_baseline_preserves_infinite_selection_penalty(self):
         circuits = [{

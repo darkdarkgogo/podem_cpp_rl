@@ -1,3 +1,4 @@
 pybind11>=2.13.6
 torch
 torch-geometric
+tensorboard>=2.17

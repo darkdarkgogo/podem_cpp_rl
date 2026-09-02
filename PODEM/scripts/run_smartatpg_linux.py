@@ -157,6 +157,7 @@ def main(argv=None):
     actor_best = output_dir / "actor_best.txt"
     actor_latest = output_dir / "actor_latest.txt"
     round_metrics = output_dir / "round_metrics.json"
+    tensorboard_log_dir = output_dir / "tensorboard"
     train_command = [
         sys.executable,
         "-u",
@@ -174,6 +175,7 @@ def main(argv=None):
         "--bc-batch-size", "256",
         "--curriculum-rounds", str(args.rounds),
         "--round-metrics-output", str(round_metrics),
+        "--tensorboard-log-dir", str(tensorboard_log_dir),
         "--seed", str(args.seed),
     ]
     if args.log_rollouts:
