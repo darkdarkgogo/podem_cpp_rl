@@ -151,7 +151,7 @@ c432, c499, c1355, c1908, c2670, c3540, c5315, c6288, c7552,
 s5378, s9234, s13207, s15850, s35932, s38417, s38584
 ```
 
-其中时序电路先采用全扫描方式转换成组合电路，再执行相同的二输入 gate 规范化和 fault map 生成。`PODEM/sample_circuits` 当前缺少 `s13207.bench` 和 `s15850.bench`，但 workspace 中已有原始文件 `smartestATPG-main/test/s13207.bench` 和 `smartestATPG-main/test/s15850.bench`。实现时必须将这两个原始电路正式纳入 PODEM 的基准输入，生成对应的 full-scan BENCH、binary BENCH 和 fault map，使最终 benchmark 实际包含全部16个电路，而不只是目录中现有的14个。
+其中时序电路先采用全扫描方式转换成组合电路，再执行相同的二输入 gate 规范化和 fault map 生成。`s13207.bench` 和 `s15850.bench` 已移动到 `PODEM/sample_circuits`，并与其余 `s` 电路一起生成对应的 full-scan BENCH、binary BENCH 和 fault map。最终 benchmark 必须实际包含全部16个电路。
 
 准备流程必须把16个原始电路、转换后电路、fault map 的来源路径和哈希固定到 benchmark manifest。任何清单文件缺失、转换失败或哈希变化都必须终止并明确报告，不能静默跳过电路。
 

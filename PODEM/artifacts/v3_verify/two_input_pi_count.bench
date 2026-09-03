@@ -1,4 +1,0 @@
-INPUT(a)
-INPUT(b)
-OUTPUT(z)
-z = AND(a, b)

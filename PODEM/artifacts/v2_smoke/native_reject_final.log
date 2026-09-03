@@ -1,8 +1,0 @@
-Cannot enable RL inference: Selected RL mode is not supported by this actor
-
-#Circuit Summary:
-#---------------
-#number of inputs = 36
-#number of outputs = 7
-#number of gates = 288
-#number of wires = 324

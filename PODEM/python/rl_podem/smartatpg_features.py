@@ -10,11 +10,17 @@ from pathlib import Path
 
 import torch
 
-FEATURE_SCHEMA = "SMARTATPG_FEATURES_V1"
-GATE_TYPES = ("PI", "AND", "NAND", "OR", "NOR", "NOT", "BUF", "XOR", "XNOR")
-FEATURE_DIM = len(GATE_TYPES) + 5
+FEATURE_SCHEMA = "SMARTATPG_FEATURES_V2_11D"
+GATE_TYPES = ("PI", "AND", "NAND", "OR", "NOR", "NOT", "BUF")
+FEATURE_DIM = len(GATE_TYPES) + 4
 COST_CAP = 10**9
-GRAPH_CONFIG = {"layers": 2, "hidden_dim": 64, "aggregation": "fanin_mean"}
+GRAPH_CONFIG = {
+    "layers": 1,
+    "input_dim": FEATURE_DIM,
+    "output_dim": FEATURE_DIM,
+    "aggregation": "fanin_mean",
+}
+GRAPH_CONFIG_ID = "fanin_mean_1x22x11"
 PORT_RE = re.compile(r"^(INPUT|OUTPUT)\s*\(\s*([^()\s]+)\s*\)$", re.I)
 GATE_RE = re.compile(r"^([^\s=(),]+)\s*=\s*(\w+)\s*\(([^()]*)\)$")
 
@@ -38,7 +44,6 @@ class CircuitGraph:
     fanouts: tuple[int, ...]
     cc0: tuple[float, ...]
     cc1: tuple[float, ...]
-    co: tuple[float, ...]
 
     @property
     def name_to_index(self):
@@ -70,10 +75,15 @@ def load_circuit_graph(path):
             if gate is None:
                 raise ValueError(f"Malformed BENCH line {line_number}: {line}")
             name, gate_type, input_text = gate.groups()
-            gate_type = {"BUFF": "BUF", "EQV": "XNOR"}.get(gate_type.upper(), gate_type.upper())
+            gate_type = {"BUFF": "BUF", "EQV": "XNOR"}.get(
+                gate_type.upper(), gate_type.upper()
+            )
             inputs = tuple(value.strip() for value in input_text.split(","))
             if gate_type not in GATE_TYPES[1:]:
-                raise ValueError(f"Unsupported gate type {gate_type} at line {line_number}")
+                raise ValueError(
+                    f"Unsupported SmartATPG gate type {gate_type} at line "
+                    f"{line_number}; convert XOR/XNOR before loading the graph"
+                )
             expected = 1 if gate_type in ("NOT", "BUF") else 2
             if len(inputs) != expected or any(not value or re.search(r"\s", value) for value in inputs):
                 raise ValueError(f"Gate {name} requires {expected} input(s); use a binary BENCH")
@@ -119,32 +129,15 @@ def load_circuit_graph(path):
             zero, one = min(a) + 1, sum(b) + 1
         elif kind in ("OR", "NOR"):
             zero, one = sum(a) + 1, min(b) + 1
-        else:
-            zero = 1 + min(a[0] + a[1], b[0] + b[1])
-            one = 1 + min(a[0] + b[1], b[0] + a[1])
-        if kind in ("NOT", "NAND", "NOR", "XNOR"):
+        if kind in ("NOT", "NAND", "NOR"):
             zero, one = one, zero
         cc0.append(_bounded(zero))
         cc1.append(_bounded(one))
-    co = [0 if name in outputs else math.inf for name in names]
-    for output in reversed(range(len(names))):
-        for position, wire in enumerate(fanins[output]):
-            others = [v for j, v in enumerate(fanins[output]) if j != position]
-            kind = types[output]
-            if kind in ("AND", "NAND"):
-                cost = sum(cc1[v] for v in others)
-            elif kind in ("OR", "NOR"):
-                cost = sum(cc0[v] for v in others)
-            elif kind in ("XOR", "XNOR"):
-                cost = sum(min(cc0[v], cc1[v]) for v in others)
-            else:
-                cost = 0
-            co[wire] = min(co[wire], _bounded(co[output] + cost + 1))
     fanouts = tuple(len(children[name]) for name in names)
     features = torch.zeros((len(names), FEATURE_DIM), dtype=torch.float32)
     features[torch.arange(len(names)), torch.tensor([GATE_TYPES.index(kind) for kind in types])] = 1
-    features[:, 9] = torch.tensor(levels, dtype=torch.float32) / max(1, max(levels))
-    for column, values in enumerate((fanouts, cc0, cc1, co), 10):
+    features[:, 7] = torch.tensor(levels, dtype=torch.float32) / max(1, max(levels))
+    for column, values in enumerate((fanouts, cc0, cc1), 8):
         maximum = max((v for v in values if math.isfinite(v)), default=0)
         scale = max(1.0, math.log1p(maximum))
         features[:, column] = torch.tensor([
@@ -152,5 +145,7 @@ def load_circuit_graph(path):
         ])
     edges = [(v, out) for out, inputs in enumerate(fanins) for v in inputs]
     edge_index = torch.tensor(edges, dtype=torch.long).reshape(-1, 2).t().contiguous()
-    return CircuitGraph(circuit_hash(path), tuple(names), types, fanins, features,
-                        edge_index, tuple(levels), fanouts, tuple(cc0), tuple(cc1), tuple(co))
+    return CircuitGraph(
+        circuit_hash(path), tuple(names), types, fanins, features, edge_index,
+        tuple(levels), fanouts, tuple(cc0), tuple(cc1)
+    )

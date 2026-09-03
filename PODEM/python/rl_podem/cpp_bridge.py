@@ -32,15 +32,37 @@ def _load_cpp_embedding_artifact(
     table: dict[str, torch.Tensor] = {}
     with Path(path).open("r", encoding="utf-8") as handle:
         header = handle.readline().strip()
-        if header not in ("SMARTATPG_EMBEDDINGS_V1", "SMARTATPG_EMBEDDINGS_V2"):
+        if header not in (
+            "SMARTATPG_EMBEDDINGS_V1", "SMARTATPG_EMBEDDINGS_V2",
+            "SMARTATPG_EMBEDDINGS_V3",
+        ):
             raise ValueError(f"Unsupported embedding format: {path}")
         metadata = {"backend": "deepgate", "feature_schema": "", "snapshot": ""}
         if header == "SMARTATPG_EMBEDDINGS_V2":
             metadata = {key: read_pair(handle, key) for key in ("backend", "feature_schema", "snapshot")}
-            if (metadata["backend"] != "smartatpg" or metadata["feature_schema"] != "SMARTATPG_FEATURES_V1"
-                    or len(metadata["snapshot"]) != 64
-                    or any(char not in "0123456789abcdef" for char in metadata["snapshot"])):
-                raise ValueError("Invalid SmartATPG descriptor metadata")
+            if metadata["backend"] == "smartatpg":
+                raise ValueError(
+                    "Legacy 80-dimensional SmartATPG descriptors are incompatible "
+                    "with the 11-dimensional GraphSAGE format"
+                )
+        elif header == "SMARTATPG_EMBEDDINGS_V3":
+            metadata = {
+                key: read_pair(handle, key)
+                for key in (
+                    "backend", "feature_schema", "graph_config",
+                    "gate_embedding_dim", "policy_state_dim", "snapshot",
+                )
+            }
+            if (
+                metadata["backend"] != "smartatpg"
+                or metadata["feature_schema"] != "SMARTATPG_FEATURES_V2_11D"
+                or metadata["graph_config"] != "fanin_mean_1x22x11"
+                or metadata["gate_embedding_dim"] != "11"
+                or metadata["policy_state_dim"] != "13"
+                or len(metadata["snapshot"]) != 64
+                or any(char not in "0123456789abcdef" for char in metadata["snapshot"])
+            ):
+                raise ValueError("Invalid SmartATPG 11D embedding metadata")
         if expected_backend is not None and expected_backend != metadata["backend"]:
             raise ValueError(f"Descriptor backend {metadata['backend']} conflicts with {expected_backend}")
         circuit_hash = read_pair(handle, "circuit_hash")
@@ -48,8 +70,8 @@ def _load_cpp_embedding_artifact(
         count = int(read_pair(handle, "count"))
         if dimension <= 0 or count < 0:
             raise ValueError(f"Invalid embedding dimensions in: {path}")
-        if metadata["backend"] == "smartatpg" and dimension != 80:
-            raise ValueError("SmartATPG descriptor dimension must be 80")
+        if metadata["backend"] == "smartatpg" and dimension != 11:
+            raise ValueError("SmartATPG gate embedding dimension must be 11")
 
         for row in range(count):
             line = handle.readline()
@@ -69,8 +91,6 @@ def _load_cpp_embedding_artifact(
             )
             if not bool(torch.isfinite(table[name]).all()):
                 raise ValueError(f"Non-finite embedding for {name}")
-            if metadata["backend"] == "smartatpg" and table[name][-2:].tolist() != [1.0, 1.0]:
-                raise ValueError("Native SmartATPG descriptors require mask [1,1]")
 
         if any(line.strip() for line in handle):
             raise ValueError(f"Unexpected trailing data in embedding file: {path}")
@@ -200,7 +220,7 @@ def export_actor_v2_state_dict(
     state_dict: dict[str, torch.Tensor], path: Union[str, Path], *, metadata=None
 ) -> None:
     if metadata is None and any(name.startswith("graph_encoder.") for name in state_dict):
-        raise ValueError("SmartATPG weights require a snapshot-paired V3 actor export")
+        raise ValueError("SmartATPG weights require a snapshot-paired V5 model export")
     tensor_names = [
         "gate_encoder.0.weight",
         "gate_encoder.0.bias",
@@ -210,21 +230,40 @@ def export_actor_v2_state_dict(
         "backtrace_actor.2.weight",
         "backtrace_actor.2.bias",
     ]
+    if metadata:
+        tensor_names = [
+            "graph_encoder.layer.weight",
+            "graph_encoder.layer.bias",
+            *tensor_names,
+        ]
     missing = [name for name in tensor_names if name not in state_dict]
     if missing:
         raise KeyError("Checkpoint is missing V2 actor tensors: " + ", ".join(missing))
 
     gate_weight = state_dict["gate_encoder.0.weight"]
     hidden_dim, embedding_dim = gate_weight.shape
+    if metadata and (
+        metadata.get("backend") != "smartatpg"
+        or int(metadata.get("gate_embedding_dim", -1)) != 11
+        or int(metadata.get("policy_state_dim", -1)) != 13
+        or embedding_dim != 13
+    ):
+        raise ValueError("SmartATPG Actor requires 11D embeddings and 13D policy state")
     output_path = Path(path).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     temporary = output_path.with_suffix(output_path.suffix + ".tmp")
     with temporary.open("w", encoding="utf-8", newline="\n") as output:
-        output.write("SMARTATPG_ACTOR_V3\n" if metadata else "SMARTATPG_ACTOR_V2\n")
+        output.write("SMARTATPG_MODEL_V5\n" if metadata else "SMARTATPG_ACTOR_V2\n")
         if metadata:
-            for key in ("backend", "feature_schema", "snapshot"):
+            for key in (
+                "backend", "feature_schema", "graph_config",
+                "gate_embedding_dim", "policy_state_dim", "snapshot",
+            ):
                 output.write(f"{key} {metadata[key]}\n")
-        output.write(f"embedding_dim {embedding_dim}\n")
+            output.write(f"best_round {int(metadata.get('best_round', 0))}\n")
+            output.write(f"best_score {metadata.get('best_score', 'none')}\n")
+        if not metadata:
+            output.write(f"embedding_dim {embedding_dim}\n")
         output.write(f"hidden_dim {hidden_dim}\n")
         for name in tensor_names:
             tensor = state_dict[name].detach().cpu().float().contiguous()
@@ -267,7 +306,7 @@ class CppPodemPPOTrainer:
     ):
         from .smartatpg_features import CircuitGraph
         if isinstance(embedding_path, CircuitGraph):
-            from .smartatpg import GraphGate, DESCRIPTOR_DIM
+            from .smartatpg import GraphGate, POLICY_STATE_DIM
             if getattr(agent, "embedding_backend", None) != "smartatpg":
                 raise ValueError("Circuit graph inputs require a SmartATPG agent")
             self.embedding_path = None
@@ -276,7 +315,7 @@ class CppPodemPPOTrainer:
                 raise ValueError("Circuit graph is not registered with this agent")
             self.gates = {name: GraphGate(name, self.circuit_hash, index)
                           for index, name in enumerate(embedding_path.names)}
-            embedding_dim = DESCRIPTOR_DIM
+            embedding_dim = POLICY_STATE_DIM
         else:
             self.embedding_path = Path(embedding_path).resolve()
             self.circuit_hash, embeddings = _load_cpp_embedding_artifact(self.embedding_path)
@@ -287,9 +326,12 @@ class CppPodemPPOTrainer:
             }
             embedding_dim = next(iter(embeddings.values())).numel()
         self.agent = agent or RLGuidedPPOAgent(gate_embedding_dim=embedding_dim)
-        if self.agent.gate_embedding_dim != embedding_dim:
+        agent_input_dim = getattr(
+            self.agent, "policy_state_dim", self.agent.gate_embedding_dim
+        )
+        if agent_input_dim != embedding_dim:
             raise ValueError(
-                "Shared PPO agent embedding dimension does not match the circuit embeddings."
+                "Shared PPO agent input dimension does not match the circuit inputs."
             )
         self.checkpoint_path = Path(checkpoint_path).resolve() if checkpoint_path else None
         if self.checkpoint_path and self.checkpoint_path.exists():
@@ -427,7 +469,7 @@ class CppPodemBacktraceV2Trainer(CppPodemPPOTrainer):
             self._gate(request["objective_name"]),
             int(request["objective_value"]),
             candidates,
-            [True, True],
+            request.get("action_mask", [True, True]),
         )
         action = next(
             index for index, candidate in enumerate(candidates) if candidate is selected
@@ -475,14 +517,32 @@ class CppPodemBacktraceV2Trainer(CppPodemPPOTrainer):
         self.agent.finish_episode(terminal_reward)
         self._episode_extrinsic_reward += terminal_reward
         self.last_metrics = self.agent.update()
-        if self.last_metrics is not None:
-            metrics = dict(self.last_metrics)
-            metrics["extrinsic_reward_sum"] = self._episode_extrinsic_reward
-            metrics["scaled_intrinsic_reward_sum"] = (
-                self.agent.rnd_beta * metrics["intrinsic_reward_sum"]
-            )
-            metrics["outcome"] = int(event["outcome"])
-            self.episode_metrics.append(metrics)
+        metrics = dict(self.last_metrics or {
+            "steps": 0,
+            "total_loss": 0.0,
+            "policy_loss": 0.0,
+            "value_loss": 0.0,
+            "entropy": 0.0,
+            "ratio_mean": 0.0,
+            "rnd_loss": 0.0,
+            "intrinsic_reward_sum": 0.0,
+            "reward_sum": self._episode_extrinsic_reward,
+        })
+        metrics["extrinsic_reward_sum"] = self._episode_extrinsic_reward
+        metrics["scaled_intrinsic_reward_sum"] = (
+            self.agent.rnd_beta * metrics["intrinsic_reward_sum"]
+        )
+        metrics["combined_reward_sum"] = (
+            metrics["extrinsic_reward_sum"]
+            + metrics["scaled_intrinsic_reward_sum"]
+        )
+        metrics["fault_id"] = event.get("fault_id", "")
+        metrics["outcome"] = int(event["outcome"])
+        metrics["detected"] = int(event["outcome"] == 1)
+        metrics["backtracks"] = int(event["backtracks"])
+        metrics["backtrace_steps"] = int(event["backtrace_steps"])
+        metrics["pi_visits"] = int(event["pi_visits"])
+        self.episode_metrics.append(metrics)
 
     def run(self, *args, rl_mode: str = "backtrace_rl", **kwargs) -> dict[str, Any]:
         if rl_mode != "backtrace_rl":
@@ -513,7 +573,7 @@ class CppPodemBacktraceV2Trainer(CppPodemPPOTrainer):
                 item["scaled_intrinsic_reward_sum"] for item in self.episode_metrics
             ),
             "combined_reward_sum": sum(
-                item["reward_sum"] for item in self.episode_metrics
+                item["combined_reward_sum"] for item in self.episode_metrics
             ),
         }
         for output_key, source_key in metric_keys.items():
@@ -540,7 +600,7 @@ class CppPodemBacktraceV2Evaluator(CppPodemBacktraceV2Trainer):
             self._gate(request["objective_name"]),
             int(request["objective_value"]),
             candidates,
-            [True, True],
+            request.get("action_mask", [True, True]),
         )
         return next(
             index for index, candidate in enumerate(candidates) if candidate is selected

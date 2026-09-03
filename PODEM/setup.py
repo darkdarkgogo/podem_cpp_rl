@@ -26,10 +26,13 @@ class BuildExt(build_ext):
     def build_extensions(self):
         if self.compiler.compiler_type == "msvc":
             compile_args = ["/std:c++14", "/EHsc", "/O2"]
+            link_args = ["/MANIFEST:NO"]
         else:
             compile_args = ["-std=c++11", "-Ofast"]
+            link_args = []
         for extension in self.extensions:
             extension.extra_compile_args = compile_args
+            extension.extra_link_args = link_args
         super().build_extensions()
 
 

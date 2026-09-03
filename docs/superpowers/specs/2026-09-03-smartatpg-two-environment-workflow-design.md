@@ -67,6 +67,7 @@ DeepGate 和 DeepGate2 源码不在本次修改范围内。
 - `prepare_smartatpg_benchmark.py`
 - `benchmark_smartatpg.py`
 - `build_native.py`
+- `smartatpg_portable.py`
 - 新的两个 Linux 入口脚本
 
 删除已经被当前 SmartATPG 流程替代的旧脚本：

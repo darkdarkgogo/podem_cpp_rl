@@ -1,4 +1,4 @@
-"""Benchmark heuristic PODEM against SmartATPG best and final policies."""
+"""Benchmark heuristic PODEM against the best 11D SmartATPG policy."""
 
 import argparse
 import csv
@@ -11,17 +11,20 @@ import statistics
 import subprocess
 import time
 
-import torch
-
-from rl_podem.cpp_bridge import _native_circuit_path
-from rl_podem.smartatpg_artifacts import (
-    checkpoint_policy,
-    export_actor,
-    export_descriptors,
-    policy_from_state,
-    snapshot_id,
+from smartatpg_portable import (
+    CIRCUITS,
+    FEATURE_SCHEMA,
+    GATE_EMBEDDING_DIM,
+    GRAPH_CONFIG,
+    POLICY_STATE_DIM,
+    export_embeddings,
+    load_graph,
+    load_model,
+    sha256_file,
 )
-from rl_podem.smartatpg_features import load_circuit_graph
+
+
+MANIFEST_FORMAT = "SMARTATPG_BENCHMARK_BUNDLE_V2"
 
 
 PATTERNS = {
@@ -41,11 +44,11 @@ TIMING_PATTERN = re.compile(
 
 
 def _sha256(path):
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    return sha256_file(path)
+
+
+def _native_circuit_path(path):
+    return str(Path(path).resolve())
 
 
 def _load_json(path, default=None):
@@ -65,12 +68,48 @@ def _atomic_json_save(path, value):
     temporary.replace(path)
 
 
+def _bundle_path(bundle_root, relative):
+    bundle_root = Path(bundle_root).resolve()
+    path = (bundle_root / relative).resolve()
+    try:
+        path.relative_to(bundle_root)
+    except ValueError as error:
+        raise ValueError(f"Bundle path escapes its root: {relative}") from error
+    return path
+
+
+def _validate_manifest(manifest, bundle_root):
+    expected = {
+        "format": MANIFEST_FORMAT,
+        "backend": "smartatpg",
+        "feature_schema": FEATURE_SCHEMA,
+        "graph_config": GRAPH_CONFIG,
+        "gate_embedding_dim": GATE_EMBEDDING_DIM,
+        "policy_state_dim": POLICY_STATE_DIM,
+    }
+    if any(manifest.get(key) != value for key, value in expected.items()):
+        raise ValueError("Benchmark manifest is incompatible with SmartATPG 11D")
+    circuits = list(manifest.get("circuits", []))
+    if [item.get("name") for item in circuits] != list(CIRCUITS):
+        raise ValueError("Benchmark manifest must contain all 16 ISCAS circuits")
+    for item in [manifest.get("model", {}), *circuits]:
+        required = {"path"} if "path" in item else {"circuit", "fault_map"}
+        if set(item.get("artifact_sha256", {})) != required:
+            label = item.get("name", "model")
+            raise ValueError(f"Benchmark {label} artifact list is incomplete")
+        for key, expected_hash in item["artifact_sha256"].items():
+            path = _bundle_path(bundle_root, item[key])
+            if not path.is_file() or _sha256(path) != expected_hash:
+                raise ValueError(f"Benchmark artifact changed: {path}")
+    return circuits
+
+
 def percentage_change(reference, candidate):
     reference = float(reference)
     candidate = float(candidate)
     if reference == 0.0:
         return 0.0 if candidate == 0.0 else None
-    return (candidate - reference) / reference * 100.0
+    return (reference - candidate) / reference * 100.0
 
 
 def _parse_native_output(output, log_path):
@@ -103,53 +142,59 @@ def _stage_circuit_copy(item, output_dir):
             )
     else:
         shutil.copy2(source, destination)
+    fault_map = Path(item["fault_map"])
+    if _sha256(fault_map) != item["artifact_sha256"]["fault_map"]:
+        raise ValueError(f"Fault-map artifact hash changed: {fault_map}")
     return destination
 
 
-def _prepare_models(checkpoint, manifest, output_dir):
-    states = {
-        "rl_best": checkpoint_policy(checkpoint, "best"),
-        "rl_final": checkpoint_policy(checkpoint, "latest"),
-    }
-    graphs = {}
+def _prepare_models(model_path, manifest, output_dir):
+    model = load_model(model_path)
+    if model.snapshot != manifest["snapshot"]:
+        raise ValueError("Model snapshot does not match benchmark bundle")
+    if (
+        model.best_round != int(manifest["best_round"])
+        or model.best_score != tuple(float(value) for value in manifest["best_score"])
+    ):
+        raise ValueError("Model selection metadata does not match benchmark bundle")
     preprocessing = []
-    models = {"heuristic": {}}
-    for model, state in states.items():
-        model_dir = output_dir / "models" / model
-        actor = model_dir / "actor.txt"
-        export_actor(state, actor)
-        policy = policy_from_state(state)
-        models[model] = {
-            "actor": actor,
-            "snapshot": snapshot_id(state),
+    models = {
+        "heuristic": {},
+        "rl_best": {
+            "actor": Path(model_path).resolve(),
+            "snapshot": model.snapshot,
             "embeddings": {},
-        }
-        for item in manifest["circuits"]:
-            name = item["name"]
-            if name not in graphs:
-                started = time.perf_counter()
-                graphs[name] = load_circuit_graph(item["circuit"])
-                preprocessing.append({
-                    "circuit": name,
-                    "operation": "graph_parse",
-                    "seconds": time.perf_counter() - started,
-                })
-            embedding = model_dir / f"{name}.emb"
-            started = time.perf_counter()
-            export_descriptors(state, graphs[name], embedding, policy)
-            preprocessing.append({
+        },
+    }
+    model_dir = output_dir / "models" / "rl_best"
+    for item in manifest["circuits"]:
+        name = item["name"]
+        started = time.perf_counter()
+        graph = load_graph(item["circuit"])
+        graph_seconds = time.perf_counter() - started
+        embedding = model_dir / f"{name}.emb"
+        started = time.perf_counter()
+        export_embeddings(model, graph, embedding)
+        embedding_seconds = time.perf_counter() - started
+        preprocessing.extend([
+            {
                 "circuit": name,
-                "model": model,
-                "operation": "descriptor_export",
-                "seconds": time.perf_counter() - started,
-            })
-            models[model]["embeddings"][name] = embedding
-    return models, preprocessing
+                "operation": "graph_feature_build",
+                "seconds": graph_seconds,
+            },
+            {
+                "circuit": name,
+                "operation": "graphsage_embedding",
+                "seconds": embedding_seconds,
+            },
+        ])
+        models["rl_best"]["embeddings"][name] = embedding
+    return models, preprocessing, model
 
 
 def _protocol(native_executable, manifest, models, repeats, seed, backtrack_limit):
     return {
-        "format": "SMARTATPG_FINAL_BENCHMARK_V1",
+        "format": "SMARTATPG_FINAL_BENCHMARK_V2",
         "native_executable": str(native_executable),
         "native_sha256": _sha256(native_executable),
         "manifest_sha256": hashlib.sha256(
@@ -169,7 +214,7 @@ def _protocol(native_executable, manifest, models, repeats, seed, backtrack_limi
         "backtrack_limit": backtrack_limit,
         "model_order": "rotated by repeat and circuit",
         "scope": "all faults on the same manifest circuits",
-        "timing": "native ATPG interval and whole-process wall time; preprocessing excluded",
+        "timing": "C++ ATPG interval only; embedding, compilation, and orchestration excluded",
     }
 
 
@@ -222,7 +267,7 @@ def _run_records(
                     cwd=native_executable.parents[1],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
-                    timeout=600,
+                    timeout=7200,
                 )
                 wall_seconds = time.perf_counter() - started
                 log_path = output_dir / "logs" / (
@@ -274,13 +319,17 @@ def _summarize(records, manifest, model_names, repeats):
                         f"Nondeterministic {key} for {item['name']}/{model}."
                     )
                 row[key] = samples[0][key]
-            for key in ("atpg_seconds", "native_total_seconds", "wall_seconds"):
-                row[key] = statistics.median(sample[key] for sample in samples)
+            row["atpg_seconds"] = statistics.median(
+                sample["atpg_seconds"] for sample in samples
+            )
+            row["fault_coverage"] = (
+                row["detected"] / row["total_faults"]
+                if row["total_faults"]
+                else 0.0
+            )
             rows.append(row)
 
-    numeric_keys = list(PATTERNS) + [
-        "atpg_seconds", "native_total_seconds", "wall_seconds"
-    ]
+    numeric_keys = list(PATTERNS) + ["atpg_seconds"]
     totals = {
         model: {
             key: sum(row[key] for row in rows if row["model"] == model)
@@ -288,25 +337,32 @@ def _summarize(records, manifest, model_names, repeats):
         }
         for model in model_names
     }
+    for model in model_names:
+        totals[model]["fault_coverage"] = (
+            totals[model]["detected"] / totals[model]["total_faults"]
+            if totals[model]["total_faults"]
+            else 0.0
+        )
     comparisons = {}
     heuristic = totals["heuristic"]
-    for model in ("rl_best", "rl_final"):
+    for model in ("rl_best",):
         comparisons[model] = {}
-        for key in ("backtracks", "backtrace_steps", "atpg_seconds", "wall_seconds"):
-            change = percentage_change(heuristic[key], totals[model][key])
+        for key in ("backtracks", "backtrace_steps", "atpg_seconds"):
+            improvement = percentage_change(heuristic[key], totals[model][key])
             comparisons[model][key] = {
-                "change_percent": change,
-                "reduction_percent": -change if change is not None else None,
+                "improvement_percent": improvement,
+                "reduction_percent": improvement,
             }
     return rows, totals, comparisons
 
 
-def _write_reports(output_dir, rows, totals, comparisons, checkpoint):
+def _write_reports(output_dir, rows, totals, comparisons, model):
     result = {
         "totals": totals,
         "relative_to_heuristic": comparisons,
-        "best_label": checkpoint["best_label"],
-        "best_score": checkpoint["best_score"],
+        "best_round": model.best_round,
+        "best_score": list(model.best_score) if model.best_score is not None else None,
+        "timing_scope": "C++ ATPG interval only; embedding and orchestration excluded",
     }
     _atomic_json_save(output_dir / "final_comparison.json", result)
     with (output_dir / "final_comparison.csv").open(
@@ -322,33 +378,35 @@ def _write_reports(output_dir, rows, totals, comparisons, checkpoint):
         "All models use the same native executable, circuits, faults, seed, and backtrack limit.",
         "Positive reduction percentages indicate fewer steps or less time than heuristic.",
         "",
-        "| Model | Detected / total | Aborted | Redundant | Backtracks | Backtrace steps | Test vectors | ATPG s | Wall s |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "Only the C++ ATPG interval is used for runtime comparison. GraphSAGE embedding, compilation, and Python orchestration are excluded.",
+        "",
+        "| Model | Detected / total | Aborted | Redundant | Backtracks | Backtrace steps | Test vectors | ATPG s |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
-    for model in ("heuristic", "rl_best", "rl_final"):
+    for model in ("heuristic", "rl_best"):
         item = totals[model]
         lines.append(
             f"| {model} | {item['detected']}/{item['total_faults']} | "
             f"{item['aborted']} | {item['redundant']} | {item['backtracks']} | "
             f"{item['backtrace_steps']} | {item['test_vectors']} | "
-            f"{item['atpg_seconds']:.6f} | {item['wall_seconds']:.6f} |"
+            f"{item['atpg_seconds']:.6f} |"
         )
     lines.extend([
         "",
-        "| Model | Backtrack reduction | Backtrace reduction | ATPG-time reduction | Wall-time reduction |",
-        "|---|---:|---:|---:|---:|",
+        "| Model | Backtrack reduction | Backtrace reduction | ATPG-time reduction |",
+        "|---|---:|---:|---:|",
     ])
-    for model in ("rl_best", "rl_final"):
+    for model in ("rl_best",):
         values = comparisons[model]
         formatted = []
-        for key in ("backtracks", "backtrace_steps", "atpg_seconds", "wall_seconds"):
+        for key in ("backtracks", "backtrace_steps", "atpg_seconds"):
             value = values[key]["reduction_percent"]
             formatted.append("n/a" if value is None else f"{value:.3f}%")
         lines.append(f"| {model} | " + " | ".join(formatted) + " |")
     lines.extend([
         "",
-        f"Best checkpoint label: `{checkpoint['best_label']}`.",
-        "SmartATPG graph and descriptor preprocessing is reported separately and excluded from ATPG time.",
+        f"Best training round: `{result['best_round']}`.",
+        "SmartATPG feature construction and GraphSAGE embedding are reported separately and excluded from ATPG time.",
         "",
     ])
     (output_dir / "FINAL_RESULTS.md").write_text("\n".join(lines), encoding="utf-8")
@@ -358,7 +416,6 @@ def _write_reports(output_dir, rows, totals, comparisons, checkpoint):
 
 def run_benchmark(
     manifest_path,
-    checkpoint_path,
     native_executable,
     output_dir,
     repeats=5,
@@ -367,14 +424,28 @@ def run_benchmark(
 ):
     if repeats <= 0:
         raise ValueError("Benchmark repeats must be positive.")
+    manifest_path = Path(manifest_path).resolve()
+    bundle_root = manifest_path.parent
     manifest = _load_json(manifest_path)
-    checkpoint = torch.load(checkpoint_path, map_location="cpu")
+    circuits = _validate_manifest(manifest, bundle_root)
+    runtime_manifest = dict(manifest)
+    runtime_manifest["circuits"] = [
+        {
+            **item,
+            "circuit": str(_bundle_path(bundle_root, item["circuit"])),
+            "fault_map": str(_bundle_path(bundle_root, item["fault_map"])),
+        }
+        for item in circuits
+    ]
+    model_path = _bundle_path(bundle_root, manifest["model"]["path"])
     native_executable = Path(native_executable).resolve()
     if not native_executable.is_file():
         raise FileNotFoundError(f"Missing native executable: {native_executable}")
     output_dir = Path(output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    models, preprocessing = _prepare_models(checkpoint, manifest, output_dir)
+    models, preprocessing, model = _prepare_models(
+        model_path, runtime_manifest, output_dir
+    )
     protocol = _protocol(
         native_executable, manifest, models, repeats, seed, backtrack_limit
     )
@@ -384,7 +455,7 @@ def run_benchmark(
     _atomic_json_save(protocol_path, protocol)
     _atomic_json_save(output_dir / "preprocessing.json", preprocessing)
     records = _run_records(
-        manifest,
+        runtime_manifest,
         models,
         native_executable,
         output_dir,
@@ -393,15 +464,14 @@ def run_benchmark(
         backtrack_limit,
     )
     rows, totals, comparisons = _summarize(
-        records, manifest, list(models), repeats
+        records, runtime_manifest, list(models), repeats
     )
-    return _write_reports(output_dir, rows, totals, comparisons, checkpoint)
+    return _write_reports(output_dir, rows, totals, comparisons, model)
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("manifest", type=Path)
-    parser.add_argument("checkpoint", type=Path)
     parser.add_argument("native_executable", type=Path)
     parser.add_argument("output_dir", type=Path)
     parser.add_argument("--repeats", type=int, default=5)
@@ -410,7 +480,6 @@ def main(argv=None):
     args = parser.parse_args(argv)
     run_benchmark(
         args.manifest,
-        args.checkpoint,
         args.native_executable,
         args.output_dir,
         args.repeats,

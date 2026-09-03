@@ -8,8 +8,12 @@ import torch
 
 from .backends import resolve_backend, smartatpg_metadata
 from .cpp_bridge import export_actor_v2_state_dict
-from .smartatpg import SmartATPGPolicy, DESCRIPTOR_DIM
-from .smartatpg_features import FEATURE_SCHEMA, GRAPH_CONFIG, load_circuit_graph
+from .smartatpg import (
+    GATE_EMBEDDING_DIM, POLICY_STATE_DIM, SmartATPGPolicy,
+)
+from .smartatpg_features import (
+    FEATURE_SCHEMA, GRAPH_CONFIG_ID, load_circuit_graph,
+)
 
 
 def snapshot_id(state):
@@ -26,10 +30,20 @@ def snapshot_id(state):
     return digest.hexdigest()
 
 
-def export_actor(state, path):
+def export_actor(state, path, best_round=0, best_score=None):
     identity = snapshot_id(state)
+    score_text = (
+        "none" if best_score is None
+        else ",".join(format(float(value), ".17g") for value in best_score)
+    )
     export_actor_v2_state_dict(state, path, metadata={
-        "backend": "smartatpg", "feature_schema": FEATURE_SCHEMA, "snapshot": identity,
+        "backend": "smartatpg", "feature_schema": FEATURE_SCHEMA,
+        "graph_config": GRAPH_CONFIG_ID,
+        "gate_embedding_dim": GATE_EMBEDDING_DIM,
+        "policy_state_dim": POLICY_STATE_DIM,
+        "snapshot": identity,
+        "best_round": int(best_round),
+        "best_score": score_text,
     })
     return identity
 
@@ -47,20 +61,25 @@ def export_descriptors(state, graph, path, policy=None):
     if snapshot_id(policy.state_dict()) != identity:
         raise ValueError("Descriptor encoder does not match the selected inference snapshot")
     with torch.no_grad():
-        values = policy.descriptors(graph, list(range(len(graph.names)))).cpu()
-    if values.shape != (len(graph.names), DESCRIPTOR_DIM) or not bool(torch.isfinite(values).all()):
-        raise ValueError("Invalid SmartATPG descriptors")
+        values = policy.graph_embeddings(graph).cpu()
+    if values.shape != (len(graph.names), GATE_EMBEDDING_DIM) or not bool(torch.isfinite(values).all()):
+        raise ValueError("Invalid SmartATPG gate embeddings")
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     with temporary.open("w", encoding="utf-8", newline="\n") as out:
-        out.write("SMARTATPG_EMBEDDINGS_V2\n")
-        out.write(f"backend smartatpg\nfeature_schema {FEATURE_SCHEMA}\nsnapshot {identity}\n")
-        out.write(f"circuit_hash {graph.circuit_hash}\ndimension {DESCRIPTOR_DIM}\ncount {len(graph.names)}\n")
+        out.write("SMARTATPG_EMBEDDINGS_V3\n")
+        out.write(
+            f"backend smartatpg\nfeature_schema {FEATURE_SCHEMA}\n"
+            f"graph_config {GRAPH_CONFIG_ID}\n"
+            f"gate_embedding_dim {GATE_EMBEDDING_DIM}\n"
+            f"policy_state_dim {POLICY_STATE_DIM}\nsnapshot {identity}\n"
+        )
+        out.write(f"circuit_hash {graph.circuit_hash}\ndimension {GATE_EMBEDDING_DIM}\ncount {len(graph.names)}\n")
         for name, row in zip(graph.names, values.tolist()):
             out.write(name + " " + " ".join(format(v, ".9g") for v in row) + "\n")
     temporary.replace(path)
-    return len(graph.names), DESCRIPTOR_DIM
+    return len(graph.names), GATE_EMBEDDING_DIM
 
 
 def export_snapshot(state, graphs, actor_path):

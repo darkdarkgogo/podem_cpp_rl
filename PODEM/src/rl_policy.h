@@ -28,6 +28,7 @@ struct DecisionRequest {
   std::vector<std::string> candidate_names;
   const std::size_t *candidate_ids = nullptr;
   std::size_t candidate_count = 0;
+  bool action_mask[2] = {true, true};
   int heuristic_action = -1;
   unsigned long sequence;
   std::string fault_id;
@@ -66,12 +67,15 @@ public:
   std::size_t size() const { return embeddings_.size(); }
   const std::string &backend() const { return backend_; }
   const std::string &schema() const { return schema_; }
+  const std::string &graph_config() const { return graph_config_; }
+  std::size_t policy_state_dimension() const { return policy_state_dim_; }
   const std::string &snapshot() const { return snapshot_; }
   void clear();
 
 private:
   std::size_t dimension_ = 0;
-  std::string backend_ = "deepgate", schema_, snapshot_;
+  std::size_t policy_state_dim_ = 0;
+  std::string backend_ = "deepgate", schema_, graph_config_, snapshot_;
   std::unordered_map<std::string, std::vector<float> > embeddings_;
 };
 
@@ -93,10 +97,12 @@ public:
   std::vector<float> backtrace_action_logits(
       const std::vector<float> &objective, int objective_value) const;
   std::size_t embedding_dimension() const { return embedding_dim_; }
+  std::size_t gate_embedding_dimension() const { return gate_embedding_dim_; }
   std::size_t hidden_dimension() const { return hidden_dim_; }
   bool is_v2() const { return version_ >= 2; }
   const std::string &backend() const { return backend_; }
   const std::string &schema() const { return schema_; }
+  const std::string &graph_config() const { return graph_config_; }
   const std::string &snapshot() const { return snapshot_; }
 
 private:
@@ -130,9 +136,10 @@ private:
   const Tensor &tensor(const std::string &name) const;
 
   std::size_t embedding_dim_ = 0;
+  std::size_t gate_embedding_dim_ = 0;
   std::size_t hidden_dim_ = 0;
   int version_ = 0;
-  std::string backend_ = "deepgate", schema_, snapshot_;
+  std::string backend_ = "deepgate", schema_, graph_config_, snapshot_;
   std::unordered_map<std::string, Tensor> tensors_;
   const Tensor *gate_weight_ = nullptr;
   const Tensor *gate_bias_ = nullptr;
@@ -169,6 +176,7 @@ private:
   std::vector<float> state_buffer_;
   std::vector<float> hidden_buffer_;
   std::vector<float> v2_embedding_cache_;
+  std::vector<float> v2_policy_input_buffer_;
   std::vector<float> v2_logits_cache_;
   std::vector<unsigned char> v2_cache_valid_;
 };

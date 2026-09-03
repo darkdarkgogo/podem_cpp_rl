@@ -101,6 +101,8 @@ int ATPG::choose_policy_candidate(smartatpg::DecisionMode mode,
   }
   request.candidate_ids = rl_candidate_ids_scratch.data();
   request.candidate_count = rl_candidate_ids_scratch.size();
+  request.action_mask[0] = !candidate_wires.empty();
+  request.action_mask[1] = candidate_wires.size() > 1;
   if (mode == smartatpg::DecisionMode::BACKTRACE && objective_wire &&
       !objective_wire->inode.empty()) {
     const int gate_type = objective_wire->inode.front()->type;
