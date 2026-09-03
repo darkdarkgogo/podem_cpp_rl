@@ -2,9 +2,9 @@
 
 ## 范围
 
-本次只修改 SmartATPG 后端。DeepGate 以及计划中的 DeepGate2 迁移均不在本次修改范围内。
+本次只修改 SmartATPG 论文复现流程。DeepGate 以及计划中的 DeepGate2 迁移均不在本次修改范围内。
 
-SmartATPG 策略必须使用每个 gate 自己的 GraphSAGE embedding，不使用整张电路的全局 pooling embedding，也不进行行为克隆（BC）。
+SmartATPG 策略必须使用每个 gate 自己的 GraphSAGE embedding，不使用整张电路的全局 pooling embedding，不进行行为克隆（BC），也不使用课程训练。
 
 ## Gate 特征
 
@@ -58,11 +58,40 @@ Mask 不属于 gate embedding，不能写入静态 gate embedding 表。Python �
 
 ## 训练
 
-SmartATPG 无条件跳过行为克隆。每次新的 SmartATPG 训练都从随机初始化的 GraphSAGE、Actor 和 Critic 开始执行 PPO。本次改动不改变 DeepGate 的训练行为。
+SmartATPG 使用独立的论文复现准备和训练入口，不再作为 `train_curriculum.py` 的训练分支。每次新的 SmartATPG 训练都从随机初始化的 GraphSAGE、Actor 和 Critic 开始执行 PPO。本次改动不改变 DeepGate 的训练行为。
 
-现有 PPO reward、GAE/MC 选择、RND 行为、curriculum fault 顺序、checkpoint 保存频率、best model 选择和断点恢复语义均保持不变。
+训练只使用两个电路：
+
+- `c6288`；
+- 扫描化组合版本的 `s38417`。
+
+每个电路选择100个 hard-to-detect fault，共计200个训练 fault。选择流程固定如下：
+
+1. 使用不带神经网络策略的基础 PODEM；
+2. 使用固定 seed 和统一的 backtrack limit，对该电路完整 fault catalog 中的每个 fault 分别运行；
+3. 首先按 `backtracks` 从高到低排序；
+4. `backtracks` 相同时，按 `backtrace_steps` 从高到低排序；
+5. 仍然相同时，按稳定的 `fault_id` 字典序从小到大排序；
+6. 直接取排序后的前100个，不随机打乱，也不划分 curriculum 难度阶段。
+
+选定的 fault ID、排序统计、基础 PODEM seed、backtrack limit、电路与 fault map 哈希必须写入 manifest，以便重复实验时得到同一训练集合。
+
+论文复现默认超参数固定为：
+
+| 参数 | 数值 |
+| --- | ---: |
+| Actor 学习率 | `0.001` |
+| Critic 学习率 | `0.01` |
+| 奖励参数 alpha | `7.5` |
+| 奖励参数 beta | `0.07` |
+
+SmartATPG 无条件跳过行为克隆，也不执行 easy/medium/hard 分级训练、stage sweep 或 curriculum round。训练流程直接在上述200个固定 fault 上执行 PPO+RND。
+
+保留论文定义的 reward、PPO、RND、checkpoint 保存、best model 选择和断点恢复能力。训练顺序必须由 manifest 和固定 seed 决定并可复现。
 
 断点恢复只接受满足以下条件的新 checkpoint：使用新的特征 schema、三层 GraphSAGE 配置、11维 gate embedding 和13维 policy state。旧 SmartATPG checkpoint 必须被拒绝。
+
+论文测试流程不使用这两个训练电路重新选取测试 fault。其余 ISCAS'85 和 ISCAS'89 电路使用完整的 testable/redundant fault catalog 进行评估，并报告 backtracks、backtrace steps、运行时间和 fault coverage。
 
 ## Artifact 与 C++ 原生推理
 
@@ -82,7 +111,9 @@ C++ artifact reader 必须区分11维 gate embedding 和13维 policy state。旧
 - 三跳以内的 fanin 特征发生变化时，对应 gate embedding 会改变；
 - mask 不写入 embedding 文件，但会进入13维 policy state；
 - PPO 梯度能够更新全部三层 GraphSAGE 参数；
-- 无论通用 BC 参数如何设置，SmartATPG 实际执行的 BC epoch 都是0；
+- 基础 PODEM 排序结果可复现，并且 `c6288`、`s38417` 各选择前100个 fault；
+- SmartATPG 实际执行的 BC epoch、curriculum stage 和 curriculum round 都是0；
+- Actor/Critic 默认学习率分别严格为 `0.001` 和 `0.01`；
 - 旧 SmartATPG schema 的 checkpoint 和 artifact 会被拒绝；
 - 相同 snapshot 下，Python 与 C++ 的 logits 和最终选择保持一致。
 
