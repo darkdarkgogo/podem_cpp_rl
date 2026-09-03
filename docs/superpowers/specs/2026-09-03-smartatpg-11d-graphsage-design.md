@@ -123,7 +123,56 @@ Rollout buffer 只保存重算策略所需的电路身份、当前 gate 索引�
 
 断点恢复只接受满足以下条件的新 checkpoint：使用新的特征 schema、单层 GraphSAGE 配置、11维 gate embedding 和13维 policy state。旧 SmartATPG checkpoint 必须被拒绝。
 
-论文测试流程不使用这两个训练电路重新选取测试 fault。其余 ISCAS'85 和 ISCAS'89 电路使用完整的 testable/redundant fault catalog 进行评估，并报告 backtracks、backtrace steps、运行时间和 fault coverage。
+## Linux 训练入口
+
+提供一个 Linux 一键入口，从 PODEM 仓库根目录完成数据准备、基础 PODEM fault 排序、20轮训练、最佳参数保存、C++ 原生程序构建和最终 benchmark。入口必须支持中断后从 `training_state.pth` 精确恢复；已经完成的 fault、round 评估和 benchmark 组合不得重复覆盖。
+
+默认使用 CUDA GPU；CUDA 不可用时允许回退到 CPU，并在日志和运行元数据中明确记录实际 device。运行目录保存完整命令、Python/PyTorch/CUDA 版本、随机 seed、训练耗时和最终退出状态。
+
+训练时可以从另一个终端启动：
+
+```bash
+tensorboard --logdir artifacts/<run-name>/tensorboard --host 0.0.0.0 --port 6006
+```
+
+本机浏览器访问 `http://localhost:6006`；从另一台电脑查看时，使用 Linux 主机地址或 SSH 端口转发。
+
+## 训练后全电路比较
+
+20轮训练完成后，冻结 `best_training_state.pth`，为每个目标电路重新计算该 best GraphSAGE 对应的11维 gate embedding，并只比较以下两种策略：
+
+- `heuristic`：不加载神经网络的基础 PODEM；
+- `rl_best`：加载 best GraphSAGE embedding 和 best Actor 的 SmartATPG。
+
+默认 benchmark 覆盖论文中的全部 ISCAS'85 和 ISCAS'89 电路：
+
+```text
+c432, c499, c1355, c1908, c2670, c3540, c5315, c6288, c7552,
+s5378, s9234, s13207, s15850, s35932, s38417, s38584
+```
+
+其中时序电路先采用全扫描方式转换成组合电路，再执行相同的二输入 gate 规范化和 fault map 生成。当前 workspace 中16个原始 BENCH 均可找到；准备流程必须把最终使用的规范化电路和哈希固定到 benchmark manifest。任何清单文件缺失或哈希变化都必须终止并明确报告，不能静默跳过电路。
+
+每个电路都运行完整 fault catalog。两种策略必须使用完全相同的规范化电路、fault map、fault 顺序、seed 和 backtrack limit。每个“策略×电路”先执行1次不计入统计的预热，再正式执行5次；运行顺序按 repeat 和 circuit 轮换，降低先后顺序造成的系统偏差。
+
+每个电路和全部电路汇总以下指标：
+
+- detected、aborted、redundant、fault coverage 和 test vectors；
+- total backtracks；
+- total backtrace steps；
+- ATPG runtime；
+- 整个原生进程 wall time；
+- RL 相对 heuristic 的 backtracks、backtrace steps 和 runtime 改善百分比。
+
+改善百分比统一定义为：
+
+```text
+improvement = (heuristic - rl_best) / heuristic * 100%
+```
+
+正数表示 RL 更好，负数表示 RL 更差。Backtracks 和 backtrace steps 应在相同 seed 下保持确定；runtime 使用5次正式运行的中位数，同时保留每次原始结果。GraphSAGE 图解析和 gate embedding 导出时间单独报告，不计入 ATPG runtime；整个进程 wall time另行报告，不得与 ATPG 搜索时间混为一项。
+
+最终生成机器可读的 JSON、CSV，面向人工检查的 Markdown 汇总，以及每次原生运行的完整日志。主比较表只展示 `heuristic` 和 `rl_best`。
 
 ## TensorBoard 监控
 
@@ -173,6 +222,11 @@ C++ artifact reader 必须区分11维 gate embedding 和13维 policy state。旧
 - 每轮确定性评估和最佳 checkpoint 选择符合检测数、backtracks、backtrace steps、return 的字典序规则；
 - TensorBoard 同时记录逐 episode 和逐 round 的 backtracks、backtrace steps 与 return；
 - 断点恢复后 TensorBoard step、训练顺序和最佳轮选择保持连续；
+- Linux 一键入口能够完成准备、20轮训练、best 导出和最终 benchmark；
+- 全部16个 ISCAS 电路均完成 heuristic 与 `rl_best` 的完整 fault 比较；
+- 每种策略每个电路执行1次预热和5次正式测量，runtime 汇总使用中位数；
+- 最终 JSON、CSV 和 Markdown 正确报告 backtracks、backtrace steps、runtime 及改善百分比；
+- GraphSAGE 预处理时间与 ATPG runtime 分开报告；
 - 旧 SmartATPG schema 的 checkpoint 和 artifact 会被拒绝；
 - 相同 snapshot 下，Python 与 C++ 的 logits 和最终选择保持一致。
 
