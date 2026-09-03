@@ -84,14 +84,62 @@ SmartATPG 使用独立的论文复现准备和训练入口，不再作为 `train
 | Critic 学习率 | `0.01` |
 | 奖励参数 alpha | `7.5` |
 | 奖励参数 beta | `0.07` |
+| 训练轮数 | `20` |
 
 SmartATPG 无条件跳过行为克隆，也不执行 easy/medium/hard 分级训练、stage sweep 或 curriculum round。训练流程直接在上述200个固定 fault 上执行 PPO+RND。
+
+一轮训练定义为：`c6288` 的100个训练 fault 和 `s38417` 的100个训练 fault 各执行一次，共执行200个 episode。默认训练20轮，即总计4000个训练 episode。每轮内的 fault 顺序使用 `训练 seed + round` 生成确定性随机排列，以降低固定顺序偏差，并确保断点恢复后顺序完全一致。
+
+## 每轮评估与最佳参数
+
+每轮训练完成后，冻结参数并使用确定性 `argmax` 策略重新运行固定的200个训练 fault。评估过程不采样 action、不计算 PPO 更新，也不更新 RND、GraphSAGE、Actor 或 Critic。
+
+每轮生成一个完整 checkpoint。最佳参数采用以下字典序判定：
+
+1. 检测到的 fault 数量最多；
+2. 检测数量相同时，总 backtracks 最少；
+3. 仍相同时，总 backtrace steps 最少；
+4. 仍相同时，总 return 最高；
+5. 全部相同时，保留更早的 round。
+
+训练 episode 的 return 表示送入 PPO 的奖励总和，可包含按配置缩放后的 RND 内在奖励。每轮确定性评估的 return 只统计论文定义的外在 reward，不加入 RND bonus；总 return 是200个评估 episode 外在 return 的总和。使用 fault detection 作为第一条件，避免模型通过少检测 fault 获得虚假的低 backtracks，也避免随训练变化的 RND 预测误差干扰 best 参数选择。
+
+训练目录至少保存：
+
+- `training_state.pth`：最近一轮的完整状态，用于断点恢复；
+- `best_training_state.pth`：最佳轮的 GraphSAGE、Actor、Critic 和相关训练元数据；
+- `actor_best.txt`：最佳轮用于 C++ 推理的 Actor；
+- `actor_latest.txt`：最近一轮的 Actor；
+- `round_metrics.json`：20轮确定性评估记录；
+- `tensorboard/`：TensorBoard event 文件。
 
 保留论文定义的 reward、PPO、RND、checkpoint 保存、best model 选择和断点恢复能力。训练顺序必须由 manifest 和固定 seed 决定并可复现。
 
 断点恢复只接受满足以下条件的新 checkpoint：使用新的特征 schema、三层 GraphSAGE 配置、11维 gate embedding 和13维 policy state。旧 SmartATPG checkpoint 必须被拒绝。
 
 论文测试流程不使用这两个训练电路重新选取测试 fault。其余 ISCAS'85 和 ISCAS'89 电路使用完整的 testable/redundant fault catalog 进行评估，并报告 backtracks、backtrace steps、运行时间和 fault coverage。
+
+## TensorBoard 监控
+
+训练期间继续写入 TensorBoard。至少提供以下逐 episode 指标：
+
+- `episode/backtracks`；
+- `episode/backtrace_steps`；
+- `episode/return`；
+- `episode/extrinsic_return` 和 `episode/intrinsic_return`；
+- `episode/detected`；
+- `episode/ppo_loss`；
+- `episode/rnd_loss`。
+
+每轮确定性评估至少写入：
+
+- `round/backtracks_total` 和 `round/backtracks_mean`；
+- `round/backtrace_steps_total` 和 `round/backtrace_steps_mean`；
+- `round/return_total` 和 `round/return_mean`；
+- `round/detected_faults` 和 `round/fault_coverage`；
+- `round/is_best`。
+
+TensorBoard 的 global step 对逐 episode 指标使用已完成的训练 episode 数，对逐 round 指标使用 round 编号。断点恢复时必须继续原有 step，不能覆盖或重置历史曲线。
 
 ## Artifact 与 C++ 原生推理
 
@@ -114,6 +162,10 @@ C++ artifact reader 必须区分11维 gate embedding 和13维 policy state。旧
 - 基础 PODEM 排序结果可复现，并且 `c6288`、`s38417` 各选择前100个 fault；
 - SmartATPG 实际执行的 BC epoch、curriculum stage 和 curriculum round 都是0；
 - Actor/Critic 默认学习率分别严格为 `0.001` 和 `0.01`；
+- 默认执行20轮，每轮恰好包含固定200个训练 fault；
+- 每轮确定性评估和最佳 checkpoint 选择符合检测数、backtracks、backtrace steps、return 的字典序规则；
+- TensorBoard 同时记录逐 episode 和逐 round 的 backtracks、backtrace steps 与 return；
+- 断点恢复后 TensorBoard step、训练顺序和最佳轮选择保持连续；
 - 旧 SmartATPG schema 的 checkpoint 和 artifact 会被拒绝；
 - 相同 snapshot 下，Python 与 C++ 的 logits 和最终选择保持一致。
 
