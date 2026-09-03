@@ -44,7 +44,9 @@ DeepGate 和 DeepGate2 源码不在本次修改范围内。
 6. 调用 `g++` 重新编译 C++ PODEM。
 7. 使用同一可执行文件、同一电路、faultmap、seed 和 backtrack limit，分别运行 heuristic PODEM 与 RL PODEM。
 8. RL 模式由 C++ 加载 Actor 和该电路刚计算的 embedding；两个动态 action mask 只在运行时加入13维 state，不写入 embedding。
-9. 汇总 fault coverage、backtracks、backtrace steps、ATPG runtime 和 wall runtime，输出 JSON、CSV、Markdown 与原始日志。
+9. 汇总 fault coverage、backtracks、backtrace steps 和 C++ 报告的 ATPG runtime，输出 JSON、CSV、Markdown 与原始日志。
+
+性能比较只使用 C++ PODEM 内部计时区间报告的 ATPG runtime。GraphSAGE 特征构建、embedding 计算与导出、C++ 编译、进程启动和其他 Python 编排时间均不计入 heuristic/RL 时间提升比例。wall runtime 可以保留在原始记录中用于排障，但不进入正式汇总和性能比较。
 
 评测输入默认覆盖16个电路，也允许用户传入新的 BENCH 电路。新电路必须重新计算 embedding，不能复用其他电路的 embedding。
 
@@ -103,5 +105,5 @@ DeepGate 和 DeepGate2 源码不在本次修改范围内。
 3. 修改 GraphSAGE W 后，新电路 embedding 随之变化。
 4. 两个入口互不调用：训练入口不编译或跑最终 benchmark，评测入口不导入 Torch 或加载 `.pth`。
 5. C++ 能加载 V5 Actor 与新生成的11维 embedding，并拒绝 snapshot 不匹配。
-6. heuristic/RL 比较继续使用相同 fault、seed、backtrack limit、预热和重复次数。
+6. heuristic/RL 比较继续使用相同 fault、seed、backtrack limit、预热和重复次数，时间提升只比较 C++ ATPG runtime。
 7. `scripts` 中只剩设计规定的当前脚本，文档和测试没有悬空引用。
