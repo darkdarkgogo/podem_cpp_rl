@@ -28,26 +28,26 @@ SmartATPG 策略必须使用每个 gate 自己的 GraphSAGE embedding，不使�
 
 ## GraphSAGE 编码器
 
-编码器沿 fanin 方向执行三轮均值聚合。每一轮都保持节点表示为11维，并分别拥有独立、可训练的权重矩阵和偏置：
+编码器沿 fanin 方向只执行一轮均值聚合，输出仍保持为11维：
 
 ```text
 h_v^0 = x_v
 m_v^k = mean(h_u^(k-1) for u in fanins(v))
-h_v^k = ReLU(W_k [h_v^(k-1) || m_v^k] + b_k), k = 1, 2, 3
+h_v^1 = ReLU(W [h_v^0 || m_v^1] + b)
 ```
 
-每一轮拼接后的输入为22维，输出为11维。没有 fanin 的节点使用全零的11维邻居均值。
+拼接后的输入为22维，输出为11维，因此 GraphSAGE 层是一个可训练的 `Linear(22, 11)`。没有 fanin 的节点使用全零的11维邻居均值。
 
-最终 gate embedding 是 `h_v^3`，维度为11。设计中不存在整图 mean pooling、全局 graph context、64维隐藏表示或全局 context cache。
+最终 gate embedding 是 `h_v^1`，维度为11。设计中不存在第二轮或第三轮聚合、整图 mean pooling、全局 graph context、64维隐藏表示或全局 context cache。
 
-`W_1`、`W_2` 和 `W_3` 属于策略模型参数。它们随新的 SmartATPG 模型一起初始化，并通过 PPO 梯度与 Actor、Critic 一起训练。三个权重矩阵必须保存在 checkpoint 中，并参与 snapshot 身份计算。
+`W` 和 `b` 属于策略模型参数。它们随新的 SmartATPG 模型一起初始化，并通过 PPO 梯度与 Actor、Critic 一起训练。GraphSAGE 参数必须保存在 checkpoint 中，并参与 snapshot 身份计算。
 
 ## 策略状态与 Mask
 
 对 gate `v` 进行 backtrace 决策时，策略状态定义为：
 
 ```text
-state_v = [h_v^3 || action_mask]
+state_v = [h_v^1 || action_mask]
 ```
 
 Gate embedding 为11维。二输入 action mask 是独立的2维状态字段，因此 Actor/Critic 的 state 总维度为13。mask 同时用于屏蔽非法 action 的 logit，确保策略不能选择不可用的输入。
@@ -90,6 +90,12 @@ SmartATPG 无条件跳过行为克隆，也不执行 easy/medium/hard 分级训�
 
 一轮训练定义为：`c6288` 的100个训练 fault 和 `s38417` 的100个训练 fault 各执行一次，共执行200个 episode。默认训练20轮，即总计4000个训练 episode。每轮内的 fault 顺序使用 `训练 seed + round` 生成确定性随机排列，以降低固定顺序偏差，并确保断点恢复后顺序完全一致。
 
+一个 fault 对应一个 episode。一个 episode 内先完整收集该 fault 的全部 backtrace 决策 step，episode 结束后立即执行一次 PPO 更新。该 episode 的全部 step 构成当前更新 batch，不与其他 fault 的 episode 合并，也不再切分 minibatch。因为每个 fault 的搜索路径长度不同，所以每次更新的 batch step 数可以不同。
+
+Rollout buffer 只保存重算策略所需的电路身份、当前 gate 索引、mask、objective value、action、旧 log probability、旧 value 和 reward，不把 detached gate embedding 当作训练输入永久保存。执行 PPO 更新时，使用当前 GraphSAGE 参数重新计算该 episode 涉及 gate 的 `h_v^1`，使 PPO loss 的梯度能够更新 `W` 和 `b`。
+
+一次 PPO update（内部可以按 PPO epoch 执行多次 optimizer step）完成后，把新策略同步为下一 episode 的采样策略，并使之前计算的全部 gate embedding cache 失效。下一个 episode 第一次使用某个电路时，必须用更新后的 `W` 和 `b` 重新计算该电路所有 gate 的 embedding。同一次 episode 内参数不变，可以复用本 episode 的 embedding 计算结果。
+
 ## 每轮评估与最佳参数
 
 每轮训练完成后，冻结参数并使用确定性 `argmax` 策略重新运行固定的200个训练 fault。评估过程不采样 action、不计算 PPO 更新，也不更新 RND、GraphSAGE、Actor 或 Critic。
@@ -115,7 +121,7 @@ SmartATPG 无条件跳过行为克隆，也不执行 easy/medium/hard 分级训�
 
 保留论文定义的 reward、PPO、RND、checkpoint 保存、best model 选择和断点恢复能力。训练顺序必须由 manifest 和固定 seed 决定并可复现。
 
-断点恢复只接受满足以下条件的新 checkpoint：使用新的特征 schema、三层 GraphSAGE 配置、11维 gate embedding 和13维 policy state。旧 SmartATPG checkpoint 必须被拒绝。
+断点恢复只接受满足以下条件的新 checkpoint：使用新的特征 schema、单层 GraphSAGE 配置、11维 gate embedding 和13维 policy state。旧 SmartATPG checkpoint 必须被拒绝。
 
 论文测试流程不使用这两个训练电路重新选取测试 fault。其余 ISCAS'85 和 ISCAS'89 电路使用完整的 testable/redundant fault catalog 进行评估，并报告 backtracks、backtrace steps、运行时间和 fault coverage。
 
@@ -143,7 +149,7 @@ TensorBoard 的 global step 对逐 episode 指标使用已完成的训练 episod
 
 ## Artifact 与 C++ 原生推理
 
-SmartATPG 为电路中的每个 gate 导出一行11维 `h_v^3`。Actor 元数据记录 backend、特征 schema、GraphSAGE 配置、gate embedding 维度、policy state 维度和 snapshot 身份。Actor 与 gate embedding 文件必须来自同一个 snapshot。
+训练期间不把 gate embedding 当作固定输入文件。只有导出 C++ 原生推理模型时，才冻结某个 checkpoint 的 GraphSAGE，并为目标电路中的每个 gate 导出一行11维 `h_v^1`。Actor 元数据记录 backend、特征 schema、GraphSAGE 配置、gate embedding 维度、policy state 维度和 snapshot 身份。Actor 与 gate embedding 文件必须来自同一个 snapshot。
 
 C++ artifact reader 必须区分11维 gate embedding 和13维 policy state。旧 SmartATPG 的80维 descriptor 及其 checkpoint 与新模型不兼容，加载时必须给出明确错误，不能静默地重新解释为新格式。
 
@@ -154,11 +160,12 @@ C++ artifact reader 必须区分11维 gate embedding 和13维 policy state。旧
 - 11列 gate 特征的固定顺序和归一化结果；
 - 输入电路含 XOR 或 XNOR 时明确拒绝；
 - graph 数据和导出 artifact 中均不存在 CO；
-- GraphSAGE 包含三个相互独立的 `Linear(22, 11)` 聚合层；
+- GraphSAGE 只包含一个 `Linear(22, 11)` 聚合层；
 - 不存在整图 pooling 或共享的全电路 context；
-- 三跳以内的 fanin 特征发生变化时，对应 gate embedding 会改变；
+- 一跳 fanin 特征发生变化时，对应 gate embedding 会改变；
 - mask 不写入 embedding 文件，但会进入13维 policy state；
-- PPO 梯度能够更新全部三层 GraphSAGE 参数；
+- PPO 更新重新计算 gate embedding，且梯度能够更新 GraphSAGE 的 `W` 和 `b`；
+- 每次 PPO update 完成后旧 embedding cache 失效，下一个 episode 使用新参数重新计算；
 - 基础 PODEM 排序结果可复现，并且 `c6288`、`s38417` 各选择前100个 fault；
 - SmartATPG 实际执行的 BC epoch、curriculum stage 和 curriculum round 都是0；
 - Actor/Critic 默认学习率分别严格为 `0.001` 和 `0.01`；
