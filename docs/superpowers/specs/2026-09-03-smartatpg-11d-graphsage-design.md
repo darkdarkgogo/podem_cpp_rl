@@ -151,7 +151,9 @@ c432, c499, c1355, c1908, c2670, c3540, c5315, c6288, c7552,
 s5378, s9234, s13207, s15850, s35932, s38417, s38584
 ```
 
-其中时序电路先采用全扫描方式转换成组合电路，再执行相同的二输入 gate 规范化和 fault map 生成。当前 workspace 中16个原始 BENCH 均可找到；准备流程必须把最终使用的规范化电路和哈希固定到 benchmark manifest。任何清单文件缺失或哈希变化都必须终止并明确报告，不能静默跳过电路。
+其中时序电路先采用全扫描方式转换成组合电路，再执行相同的二输入 gate 规范化和 fault map 生成。`PODEM/sample_circuits` 当前缺少 `s13207.bench` 和 `s15850.bench`，但 workspace 中已有原始文件 `smartestATPG-main/test/s13207.bench` 和 `smartestATPG-main/test/s15850.bench`。实现时必须将这两个原始电路正式纳入 PODEM 的基准输入，生成对应的 full-scan BENCH、binary BENCH 和 fault map，使最终 benchmark 实际包含全部16个电路，而不只是目录中现有的14个。
+
+准备流程必须把16个原始电路、转换后电路、fault map 的来源路径和哈希固定到 benchmark manifest。任何清单文件缺失、转换失败或哈希变化都必须终止并明确报告，不能静默跳过电路。
 
 每个电路都运行完整 fault catalog。两种策略必须使用完全相同的规范化电路、fault map、fault 顺序、seed 和 backtrack limit。每个“策略×电路”先执行1次不计入统计的预热，再正式执行5次；运行顺序按 repeat 和 circuit 轮换，降低先后顺序造成的系统偏差。
 
@@ -224,6 +226,7 @@ C++ artifact reader 必须区分11维 gate embedding 和13维 policy state。旧
 - 断点恢复后 TensorBoard step、训练顺序和最佳轮选择保持连续；
 - Linux 一键入口能够完成准备、20轮训练、best 导出和最终 benchmark；
 - 全部16个 ISCAS 电路均完成 heuristic 与 `rl_best` 的完整 fault 比较；
+- `s13207` 和 `s15850` 已生成 full-scan、binary netlist 和 fault map，并出现在最终 benchmark manifest 与结果中；
 - 每种策略每个电路执行1次预热和5次正式测量，runtime 汇总使用中位数；
 - 最终 JSON、CSV 和 Markdown 正确报告 backtracks、backtrace steps、runtime 及改善百分比；
 - GraphSAGE 预处理时间与 ATPG runtime 分开报告；
