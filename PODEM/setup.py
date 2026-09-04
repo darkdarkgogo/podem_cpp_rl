@@ -19,9 +19,6 @@ CORE_SOURCES = [
     "python_bindings.cpp",
 ]
 
-DEEPGATE_PACKAGE_ROOT = "vendor/deepgate_recgnn_extractor/deepgate_recgnn_extractor"
-
-
 class BuildExt(build_ext):
     def build_extensions(self):
         if self.compiler.compiler_type == "msvc":
@@ -47,14 +44,8 @@ setup(
     name="cpp-podem",
     version="0.1.0",
     description="pybind11 training bridge for the C++ PODEM engine",
-    packages=(
-        find_packages("python")
-        + find_packages("vendor/deepgate_recgnn_extractor")
-    ),
-    package_dir={
-        "": "python",
-        "deepgate_recgnn_extractor": DEEPGATE_PACKAGE_ROOT,
-    },
+    packages=find_packages("python"),
+    package_dir={"": "python"},
     python_requires=">=3.9",
     ext_modules=[extension],
     cmdclass={"build_ext": BuildExt},

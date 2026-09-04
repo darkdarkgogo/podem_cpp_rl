@@ -80,7 +80,7 @@ circuits containing recognized expanded XOR cells should change; currently
 these are `c432` and `c499`. The binary BENCH files remain logically and
 textually unchanged unless their generated headers require synchronization.
 
-Existing DeepGate embeddings and actor weights remain usable because gate IDs
+Existing embeddings and actor weights remain usable because gate IDs
 and topology do not change. Curriculum manifests and teacher data reference a
 specific fault catalog and must be regenerated before any further training.
 Old training and benchmark artifacts are retained for comparison.

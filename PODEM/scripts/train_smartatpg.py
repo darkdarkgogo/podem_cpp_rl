@@ -1,4 +1,4 @@
-"""Train the 11D SmartATPG GraphSAGE policy without BC or curriculum."""
+"""Train a selected 11D SmartATPG graph policy without BC or curriculum."""
 
 import argparse
 import hashlib
@@ -18,12 +18,17 @@ from rl_podem.cpp_bridge import (
 )
 from rl_podem.ppo import device
 from rl_podem.smartatpg import SmartATPGPPOAgent
+from rl_podem.gat_gru import GATGRUSmartATPGPPOAgent
 from rl_podem.smartatpg_artifacts import export_actor
 from rl_podem.smartatpg_features import load_circuit_graph
 
 
-CHECKPOINT_FORMAT = "SMARTATPG_11D_TRAINING_V1"
-BEST_CHECKPOINT_FORMAT = "SMARTATPG_11D_BEST_V1"
+CHECKPOINT_FORMAT = "SMARTATPG_11D_TRAINING_V2"
+BEST_CHECKPOINT_FORMAT = "SMARTATPG_11D_BEST_V2"
+AGENT_TYPES = {
+    "fanin_mean": SmartATPGPPOAgent,
+    "level_gat_gru": GATGRUSmartATPGPPOAgent,
+}
 PAPER_REWARD = {
     "non_pi": -0.1,
     "alpha": 7.5,
@@ -213,6 +218,10 @@ def main(argv=None):
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--rnd-beta", type=float, default=0.05)
     parser.add_argument("--k-epochs", type=int, default=8)
+    parser.add_argument(
+        "--encoder", choices=tuple(AGENT_TYPES), default="fanin_mean",
+        help="Graph encoder variant; use separate output directories per variant.",
+    )
     args = parser.parse_args(argv)
     if args.rounds <= 0 or args.k_epochs <= 0:
         raise ValueError("Rounds and PPO epochs must be positive")
@@ -221,7 +230,7 @@ def main(argv=None):
     circuits = _validate_manifest(manifest)
     backtrack_limit = int(manifest["backtrack_limit"])
     graphs = {item["name"]: load_circuit_graph(item["circuit"]) for item in circuits}
-    agent = SmartATPGPPOAgent(
+    agent = AGENT_TYPES[args.encoder](
         graphs,
         hidden_dim=32,
         lr_actor=0.001,
@@ -259,6 +268,7 @@ def main(argv=None):
         "curriculum_stages": 0,
         "device": str(device),
         "paper_reward": PAPER_REWARD,
+        "encoder_variant": args.encoder,
     }
     state = {
         "format": CHECKPOINT_FORMAT,

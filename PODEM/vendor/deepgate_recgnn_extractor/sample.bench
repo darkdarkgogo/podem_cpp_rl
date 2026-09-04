@@ -1,8 +1,0 @@
-INPUT(a)
-INPUT(b)
-INPUT(c)
-OUTPUT(out)
-g1 = AND(a, b)
-g2 = NOT(c)
-out = OR(g1, g2)
-

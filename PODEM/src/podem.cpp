@@ -462,12 +462,11 @@ ATPG::wptr ATPG::find_pi_assignment(const wptr object_wire, const int &object_le
 		{
 			vector<wptr> &candidates = rl_candidate_wires_scratch;
 			candidates.clear();
+			size_t unresolved_count = 0;
 			for (wptr input_wire : objective_gate->iwire)
 			{
-				if (input_wire->value == U)
-				{
-					candidates.push_back(input_wire);
-				}
+				candidates.push_back(input_wire);
+				unresolved_count += input_wire->value == U ? 1 : 0;
 			}
 
 			BacktraceLock &locked = rl_backtrace_locks[object_wire->rl_gate_id];
@@ -475,25 +474,31 @@ ATPG::wptr ATPG::find_pi_assignment(const wptr object_wire, const int &object_le
 			{
 				const bool same_objective =
 						locked.objective_level == object_level;
-				const bool still_candidate =
-						find(candidates.begin(), candidates.end(),
-								 locked.selected_wire) != candidates.end();
-				if (same_objective && still_candidate)
-					new_object_wire = locked.selected_wire;
-				else
+				const int required_input_value =
+						(objective_gate->type == NAND || objective_gate->type == NOR)
+								? (object_level ^ 1)
+								: object_level;
+				if (!same_objective)
 					locked.generation = 0;
+				else if (locked.selected_wire->value == U)
+					new_object_wire = locked.selected_wire;
+				else if (locked.selected_wire->value == required_input_value)
+					locked.generation = 0;
+				else
+				{
+					locked.generation = 0;
+					return nullptr;
+				}
 			}
 
-			if (!new_object_wire && candidates.size() == 1)
-				new_object_wire = candidates.front();
-			else if (!new_object_wire && candidates.size() > 1)
+			if (!new_object_wire && unresolved_count > 0)
 			{
 				const int selected = choose_policy_candidate(
 						smartatpg::DecisionMode::BACKTRACE, object_wire,
 						object_level, candidates);
 				new_object_wire = candidates[selected];
 			}
-			else if (!new_object_wire && candidates.empty())
+			else if (!new_object_wire)
 				return nullptr;
 
 			if (new_object_wire)

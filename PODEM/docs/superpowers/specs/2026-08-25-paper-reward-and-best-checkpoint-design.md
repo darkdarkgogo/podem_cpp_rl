@@ -6,7 +6,7 @@ Align V2 backtrace training with the SmartATPG reward function, raise the
 backtrack limit enough to distinguish hard faults, and prevent the final sweep
 from overwriting a better policy.
 
-The change keeps DeepGate embeddings fixed, trains only the V2 backtrace actor,
+The change keeps gate embeddings fixed, trains only the V2 backtrace actor,
 and leaves propagation RL disabled.
 
 ## Fixed Configuration

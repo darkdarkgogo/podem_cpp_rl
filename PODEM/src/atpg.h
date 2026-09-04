@@ -210,7 +210,7 @@ private:
 	void parse_line(const string &);
 	void create_structure();
 	int FindType(const string &);
-	void error(const string &);
+	[[noreturn]] void error(const string &);
 	void display_circuit();
 
 	/*  in init_flist.cpp */

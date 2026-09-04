@@ -1,4 +1,4 @@
-"""Benchmark heuristic PODEM against the best 11D SmartATPG policy."""
+"""Benchmark heuristic PODEM against both trained 11D SmartATPG encoders."""
 
 import argparse
 import csv
@@ -12,6 +12,8 @@ import subprocess
 import time
 
 from smartatpg_portable import (
+    ACTION_MASK_DIM,
+    ACTOR_INPUT_DIM,
     CIRCUITS,
     FEATURE_SCHEMA,
     GATE_EMBEDDING_DIM,
@@ -24,7 +26,7 @@ from smartatpg_portable import (
 )
 
 
-MANIFEST_FORMAT = "SMARTATPG_BENCHMARK_BUNDLE_V2"
+MANIFEST_FORMAT = "SMARTATPG_BENCHMARK_BUNDLE_V3"
 
 
 PATTERNS = {
@@ -83,16 +85,20 @@ def _validate_manifest(manifest, bundle_root):
         "format": MANIFEST_FORMAT,
         "backend": "smartatpg",
         "feature_schema": FEATURE_SCHEMA,
-        "graph_config": GRAPH_CONFIG,
         "gate_embedding_dim": GATE_EMBEDDING_DIM,
-        "policy_state_dim": POLICY_STATE_DIM,
+        "actor_input_dim": ACTOR_INPUT_DIM,
+        "action_mask_dim": ACTION_MASK_DIM,
+        "decision_state_dim": POLICY_STATE_DIM,
     }
     if any(manifest.get(key) != value for key, value in expected.items()):
         raise ValueError("Benchmark manifest is incompatible with SmartATPG 11D")
     circuits = list(manifest.get("circuits", []))
     if [item.get("name") for item in circuits] != list(CIRCUITS):
         raise ValueError("Benchmark manifest must contain all 16 ISCAS circuits")
-    for item in [manifest.get("model", {}), *circuits]:
+    model_records = manifest.get("models", {})
+    if set(model_records) != {"smartatpg_mean", "smartatpg_gat_gru"}:
+        raise ValueError("Benchmark manifest must contain both SmartATPG models")
+    for item in [*model_records.values(), *circuits]:
         required = {"path"} if "path" in item else {"circuit", "fault_map"}
         if set(item.get("artifact_sha256", {})) != required:
             label = item.get("name", "model")
@@ -148,53 +154,54 @@ def _stage_circuit_copy(item, output_dir):
     return destination
 
 
-def _prepare_models(model_path, manifest, output_dir):
-    model = load_model(model_path)
-    if model.snapshot != manifest["snapshot"]:
-        raise ValueError("Model snapshot does not match benchmark bundle")
-    if (
-        model.best_round != int(manifest["best_round"])
-        or model.best_score != tuple(float(value) for value in manifest["best_score"])
-    ):
-        raise ValueError("Model selection metadata does not match benchmark bundle")
+def _prepare_models(model_paths, manifest, output_dir):
     preprocessing = []
-    models = {
-        "heuristic": {},
-        "rl_best": {
+    portable_models = {}
+    models = {"heuristic": {}}
+    for name, model_path in model_paths.items():
+        record = manifest["models"][name]
+        model = load_model(model_path)
+        if model.snapshot != record["snapshot"]:
+            raise ValueError(f"Model snapshot does not match bundle: {name}")
+        if (
+            model.best_round != int(record["best_round"])
+            or model.best_score != tuple(float(value) for value in record["best_score"])
+            or model.encoder_variant != record["encoder_variant"]
+        ):
+            raise ValueError(f"Model selection metadata does not match bundle: {name}")
+        portable_models[name] = model
+        models[name] = {
             "actor": Path(model_path).resolve(),
             "snapshot": model.snapshot,
             "embeddings": {},
-        },
-    }
-    model_dir = output_dir / "models" / "rl_best"
+        }
     for item in manifest["circuits"]:
         name = item["name"]
         started = time.perf_counter()
         graph = load_graph(item["circuit"])
         graph_seconds = time.perf_counter() - started
-        embedding = model_dir / f"{name}.emb"
-        started = time.perf_counter()
-        export_embeddings(model, graph, embedding)
-        embedding_seconds = time.perf_counter() - started
-        preprocessing.extend([
-            {
+        preprocessing.append({
+            "circuit": name,
+            "operation": "graph_feature_build",
+            "seconds": graph_seconds,
+        })
+        for model_name, model in portable_models.items():
+            embedding = output_dir / "models" / model_name / f"{name}.emb"
+            started = time.perf_counter()
+            export_embeddings(model, graph, embedding)
+            preprocessing.append({
                 "circuit": name,
-                "operation": "graph_feature_build",
-                "seconds": graph_seconds,
-            },
-            {
-                "circuit": name,
-                "operation": "graphsage_embedding",
-                "seconds": embedding_seconds,
-            },
-        ])
-        models["rl_best"]["embeddings"][name] = embedding
-    return models, preprocessing, model
+                "model": model_name,
+                "operation": "graph_embedding",
+                "seconds": time.perf_counter() - started,
+            })
+            models[model_name]["embeddings"][name] = embedding
+    return models, preprocessing, portable_models
 
 
 def _protocol(native_executable, manifest, models, repeats, seed, backtrack_limit):
     return {
-        "format": "SMARTATPG_FINAL_BENCHMARK_V2",
+        "format": "SMARTATPG_FINAL_BENCHMARK_V3",
         "native_executable": str(native_executable),
         "native_sha256": _sha256(native_executable),
         "manifest_sha256": hashlib.sha256(
@@ -345,7 +352,7 @@ def _summarize(records, manifest, model_names, repeats):
         )
     comparisons = {}
     heuristic = totals["heuristic"]
-    for model in ("rl_best",):
+    for model in (name for name in model_names if name != "heuristic"):
         comparisons[model] = {}
         for key in ("backtracks", "backtrace_steps", "atpg_seconds"):
             improvement = percentage_change(heuristic[key], totals[model][key])
@@ -356,12 +363,40 @@ def _summarize(records, manifest, model_names, repeats):
     return rows, totals, comparisons
 
 
-def _write_reports(output_dir, rows, totals, comparisons, model):
+def _write_reports(output_dir, rows, totals, comparisons, portable_models):
+    direct = {}
+    baseline = totals["smartatpg_mean"]
+    candidate = totals["smartatpg_gat_gru"]
+    for key in ("backtracks", "backtrace_steps", "atpg_seconds"):
+        direct[key] = {
+            "gat_gru_reduction_percent": percentage_change(
+                baseline[key], candidate[key]
+            )
+        }
+    direct.update({
+        "detected_delta": candidate["detected"] - baseline["detected"],
+        "fault_coverage_percentage_points": 100.0 * (
+            candidate["fault_coverage"] - baseline["fault_coverage"]
+        ),
+        "aborted_delta": candidate["aborted"] - baseline["aborted"],
+        "redundant_delta": candidate["redundant"] - baseline["redundant"],
+        "test_vectors_delta": candidate["test_vectors"] - baseline["test_vectors"],
+    })
     result = {
         "totals": totals,
         "relative_to_heuristic": comparisons,
-        "best_round": model.best_round,
-        "best_score": list(model.best_score) if model.best_score is not None else None,
+        "gat_gru_relative_to_mean": direct,
+        "models": {
+            name: {
+                "encoder_variant": model.encoder_variant,
+                "best_round": model.best_round,
+                "best_score": list(model.best_score),
+                "parameter_count": sum(
+                    tensor.rows * tensor.cols for tensor in model.tensors.values()
+                ),
+            }
+            for name, model in portable_models.items()
+        },
         "timing_scope": "C++ ATPG interval only; embedding and orchestration excluded",
     }
     _atomic_json_save(output_dir / "final_comparison.json", result)
@@ -378,12 +413,12 @@ def _write_reports(output_dir, rows, totals, comparisons, model):
         "All models use the same native executable, circuits, faults, seed, and backtrack limit.",
         "Positive reduction percentages indicate fewer steps or less time than heuristic.",
         "",
-        "Only the C++ ATPG interval is used for runtime comparison. GraphSAGE embedding, compilation, and Python orchestration are excluded.",
+        "Only the C++ ATPG interval is used for runtime comparison. Graph embedding, compilation, and Python orchestration are excluded.",
         "",
         "| Model | Detected / total | Aborted | Redundant | Backtracks | Backtrace steps | Test vectors | ATPG s |",
         "|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
-    for model in ("heuristic", "rl_best"):
+    for model in ("heuristic", "smartatpg_mean", "smartatpg_gat_gru"):
         item = totals[model]
         lines.append(
             f"| {model} | {item['detected']}/{item['total_faults']} | "
@@ -396,7 +431,7 @@ def _write_reports(output_dir, rows, totals, comparisons, model):
         "| Model | Backtrack reduction | Backtrace reduction | ATPG-time reduction |",
         "|---|---:|---:|---:|",
     ])
-    for model in ("rl_best",):
+    for model in ("smartatpg_mean", "smartatpg_gat_gru"):
         values = comparisons[model]
         formatted = []
         for key in ("backtracks", "backtrace_steps", "atpg_seconds"):
@@ -405,8 +440,36 @@ def _write_reports(output_dir, rows, totals, comparisons, model):
         lines.append(f"| {model} | " + " | ".join(formatted) + " |")
     lines.extend([
         "",
-        f"Best training round: `{result['best_round']}`.",
-        "SmartATPG feature construction and GraphSAGE embedding are reported separately and excluded from ATPG time.",
+        "## GAT-GRU vs fanin-mean SmartATPG",
+        "",
+        "| Detected delta | Coverage delta (pp) | Aborted delta | Redundant delta | Test-vector delta | Backtrack reduction | Backtrace reduction | ATPG-time reduction |",
+        "|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ])
+    direct_reductions = []
+    for key in ("backtracks", "backtrace_steps", "atpg_seconds"):
+        value = direct[key]["gat_gru_reduction_percent"]
+        direct_reductions.append("n/a" if value is None else f"{value:.3f}%")
+    lines.append(
+        f"| {direct['detected_delta']} | "
+        f"{direct['fault_coverage_percentage_points']:.3f} | "
+        f"{direct['aborted_delta']} | {direct['redundant_delta']} | "
+        f"{direct['test_vectors_delta']} | " + " | ".join(direct_reductions) + " |"
+    )
+    lines.extend([
+        "",
+        "| Model | Encoder | Parameters | Best round | Best score |",
+        "|---|---|---:|---:|---|",
+    ])
+    for name in ("smartatpg_mean", "smartatpg_gat_gru"):
+        model = result["models"][name]
+        lines.append(
+            f"| {name} | {model['encoder_variant']} | "
+            f"{model['parameter_count']} | {model['best_round']} | "
+            f"{model['best_score']} |"
+        )
+    lines.extend([
+        "",
+        "Graph construction and both model embeddings are reported separately and excluded from ATPG time.",
         "",
     ])
     (output_dir / "FINAL_RESULTS.md").write_text("\n".join(lines), encoding="utf-8")
@@ -437,14 +500,17 @@ def run_benchmark(
         }
         for item in circuits
     ]
-    model_path = _bundle_path(bundle_root, manifest["model"]["path"])
+    model_paths = {
+        name: _bundle_path(bundle_root, record["path"])
+        for name, record in manifest["models"].items()
+    }
     native_executable = Path(native_executable).resolve()
     if not native_executable.is_file():
         raise FileNotFoundError(f"Missing native executable: {native_executable}")
     output_dir = Path(output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    models, preprocessing, model = _prepare_models(
-        model_path, runtime_manifest, output_dir
+    models, preprocessing, portable_models = _prepare_models(
+        model_paths, runtime_manifest, output_dir
     )
     protocol = _protocol(
         native_executable, manifest, models, repeats, seed, backtrack_limit
@@ -466,7 +532,9 @@ def run_benchmark(
     rows, totals, comparisons = _summarize(
         records, runtime_manifest, list(models), repeats
     )
-    return _write_reports(output_dir, rows, totals, comparisons, model)
+    return _write_reports(
+        output_dir, rows, totals, comparisons, portable_models
+    )
 
 
 def main(argv=None):

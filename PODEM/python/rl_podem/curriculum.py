@@ -14,7 +14,6 @@ from .cpp_bridge import (
     CppPodemBacktraceV2Evaluator,
     CppPodemBacktraceV2Trainer,
     _fnv1a_file_hash,
-    _load_cpp_embedding_artifact,
     _native_circuit_path,
 )
 from .ppo import BacktracePPOAgentV2, device
@@ -157,12 +156,12 @@ class CppPodemCurriculumEvaluator(CppPodemBacktraceV2Evaluator):
 
     def __init__(
         self,
-        embedding_path,
+        graph,
         baselines: Mapping[str, Mapping[str, Any]],
         agent: BacktracePPOAgentV2,
         reward_config: Mapping[str, float] = REWARD_CONFIG,
     ):
-        super().__init__(embedding_path, agent=agent)
+        super().__init__(graph, agent=agent)
         self.baselines = {str(key): dict(value) for key, value in baselines.items()}
         self.reward_config = dict(reward_config)
         self.current_fault_id: Optional[str] = None
@@ -559,12 +558,12 @@ def pretrain_actor(
 class CppPodemCurriculumTrainer(CppPodemBacktraceV2Trainer):
     def __init__(
         self,
-        embedding_path: Union[str, Path],
+        graph,
         baselines: Mapping[str, Mapping[str, Any]],
-        agent: Optional[BacktracePPOAgentV2] = None,
+        agent: BacktracePPOAgentV2,
         reward_config: Mapping[str, float] = REWARD_CONFIG,
     ):
-        super().__init__(embedding_path, agent=agent)
+        super().__init__(graph, agent=agent)
         self.baselines = {str(key): dict(value) for key, value in baselines.items()}
         self.reward_config = dict(reward_config)
         self.current_fault_id: Optional[str] = None
@@ -735,20 +734,3 @@ class CppPodemCurriculumTrainer(CppPodemBacktraceV2Trainer):
             raise ValueError("Exploration coefficients must be non-negative.")
         self.agent.rnd_beta = float(rnd_beta)
         self.agent.entropy_coef = float(entropy_coef)
-
-
-def load_embedding_tables(circuits: Iterable[Mapping[str, Any]]) -> dict[str, dict]:
-    tables = {}
-    dimension = None
-    for circuit in circuits:
-        expected_hash = _fnv1a_file_hash(circuit["circuit"])
-        artifact_hash, table = _load_cpp_embedding_artifact(circuit["embeddings"])
-        if artifact_hash != expected_hash:
-            raise ValueError(f"Embedding circuit hash mismatch for {circuit['name']}.")
-        current_dimension = next(iter(table.values())).numel()
-        if dimension is None:
-            dimension = current_dimension
-        elif current_dimension != dimension:
-            raise ValueError("All curriculum embeddings must have the same dimension.")
-        tables[str(circuit["name"])] = table
-    return tables

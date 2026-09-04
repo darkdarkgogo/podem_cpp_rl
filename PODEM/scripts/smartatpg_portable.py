@@ -1,4 +1,4 @@
-"""Torch-free SmartATPG V5 model and GraphSAGE inference utilities."""
+"""Torch-free SmartATPG graph-model inference utilities."""
 
 from __future__ import annotations
 
@@ -10,13 +10,18 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-MODEL_FORMAT = "SMARTATPG_MODEL_V5"
-EMBEDDING_FORMAT = "SMARTATPG_EMBEDDINGS_V3"
+MODEL_FORMAT = "SMARTATPG_MODEL_V6"
+LEGACY_MODEL_FORMAT = "SMARTATPG_MODEL_V5"
+EMBEDDING_FORMAT = "SMARTATPG_EMBEDDINGS_V4"
+LEGACY_EMBEDDING_FORMAT = "SMARTATPG_EMBEDDINGS_V3"
 FEATURE_SCHEMA = "SMARTATPG_FEATURES_V2_11D"
 GRAPH_CONFIG = "fanin_mean_1x22x11"
+GAT_GRU_GRAPH_CONFIG = "level_gat_gru_fwd_rev_11d_v1"
 GATE_TYPES = ("PI", "AND", "NAND", "OR", "NOR", "NOT", "BUF")
 GATE_EMBEDDING_DIM = 11
 POLICY_STATE_DIM = 13
+ACTOR_INPUT_DIM = 11
+ACTION_MASK_DIM = 2
 COST_CAP = 10**9
 CIRCUITS = (
     "c432", "c499", "c1355", "c1908", "c2670", "c3540", "c5315",
@@ -26,9 +31,7 @@ CIRCUITS = (
 PORT_RE = re.compile(r"^(INPUT|OUTPUT)\s*\(\s*([^()\s]+)\s*\)$", re.I)
 GATE_RE = re.compile(r"^([^\s=(),]+)\s*=\s*(\w+)\s*\(([^()]*)\)$")
 
-MODEL_TENSORS = (
-    "graph_encoder.layer.weight",
-    "graph_encoder.layer.bias",
+ACTOR_TENSORS = (
     "gate_encoder.0.weight",
     "gate_encoder.0.bias",
     "objective_value_embedding.weight",
@@ -36,6 +39,18 @@ MODEL_TENSORS = (
     "backtrace_actor.0.bias",
     "backtrace_actor.2.weight",
     "backtrace_actor.2.bias",
+)
+MEAN_ENCODER_TENSORS = (
+    "graph_encoder.layer.weight",
+    "graph_encoder.layer.bias",
+)
+GAT_GRU_ENCODER_TENSORS = tuple(
+    f"graph_encoder.{direction}.{name}"
+    for direction in ("forward_pass", "reverse_pass")
+    for name in (
+        "attention", "projection.weight", "gru.weight_ih",
+        "gru.weight_hh", "gru.bias_ih", "gru.bias_hh",
+    )
 )
 
 
@@ -48,10 +63,15 @@ class Tensor:
 
 @dataclass(frozen=True)
 class PortableModel:
+    model_format: str
+    encoder_variant: str
+    graph_config: str
     snapshot: str
     best_round: int
     best_score: tuple[float, ...] | None
     hidden_dim: int
+    actor_input_dim: int
+    decision_state_dim: int
     tensors: dict[str, Tensor]
 
 
@@ -60,6 +80,8 @@ class PortableGraph:
     circuit_hash: str
     names: tuple[str, ...]
     fanins: tuple[tuple[int, ...], ...]
+    fanouts: tuple[tuple[int, ...], ...]
+    level_groups: tuple[tuple[int, ...], ...]
     features: tuple[tuple[float, ...], ...]
 
 
@@ -95,18 +117,47 @@ def _field(tokens, expected):
 def load_model(path):
     path = Path(path)
     tokens = iter(path.read_text(encoding="utf-8").split())
-    if _next(tokens, "header") != MODEL_FORMAT:
-        raise ValueError("SmartATPG benchmark requires a V5 model with GraphSAGE weights")
-    expected_metadata = {
-        "backend": "smartatpg",
-        "feature_schema": FEATURE_SCHEMA,
-        "graph_config": GRAPH_CONFIG,
-        "gate_embedding_dim": str(GATE_EMBEDDING_DIM),
-        "policy_state_dim": str(POLICY_STATE_DIM),
-    }
+    model_format = _next(tokens, "header")
+    if model_format not in (LEGACY_MODEL_FORMAT, MODEL_FORMAT):
+        raise ValueError("SmartATPG benchmark requires a V5 or V6 model")
+    if model_format == LEGACY_MODEL_FORMAT:
+        encoder_variant = "fanin_mean"
+        expected_metadata = {
+            "backend": "smartatpg", "feature_schema": FEATURE_SCHEMA,
+            "graph_config": GRAPH_CONFIG,
+            "gate_embedding_dim": str(GATE_EMBEDDING_DIM),
+            "policy_state_dim": str(POLICY_STATE_DIM),
+        }
+        actor_input_dim = POLICY_STATE_DIM
+        decision_state_dim = POLICY_STATE_DIM
+    else:
+        expected_metadata = {
+            "backend": "smartatpg", "feature_schema": FEATURE_SCHEMA,
+        }
     for key, expected in expected_metadata.items():
         if _field(tokens, key) != expected:
             raise ValueError(f"Invalid SmartATPG model {key}")
+    if model_format == MODEL_FORMAT:
+        encoder_variant = _field(tokens, "encoder_variant")
+        graph_config = _field(tokens, "graph_config")
+        expected_config = {
+            "fanin_mean": GRAPH_CONFIG,
+            "level_gat_gru": GAT_GRU_GRAPH_CONFIG,
+        }.get(encoder_variant)
+        if graph_config != expected_config:
+            raise ValueError("Invalid SmartATPG encoder variant or graph configuration")
+        if int(_field(tokens, "gate_embedding_dim")) != GATE_EMBEDDING_DIM:
+            raise ValueError("SmartATPG gate embedding dimension must be 11")
+        actor_input_dim = int(_field(tokens, "actor_input_dim"))
+        if actor_input_dim != ACTOR_INPUT_DIM:
+            raise ValueError("SmartATPG V6 Actor input dimension must be 11")
+        if int(_field(tokens, "action_mask_dim")) != ACTION_MASK_DIM:
+            raise ValueError("SmartATPG action mask dimension must be 2")
+        decision_state_dim = int(_field(tokens, "decision_state_dim"))
+        if decision_state_dim != POLICY_STATE_DIM:
+            raise ValueError("SmartATPG decision state dimension must be 13")
+    else:
+        graph_config = GRAPH_CONFIG
     snapshot = _field(tokens, "snapshot")
     if len(snapshot) != 64 or any(value not in "0123456789abcdef" for value in snapshot):
         raise ValueError("Invalid SmartATPG model snapshot")
@@ -151,20 +202,41 @@ def load_model(path):
         trailing = None
     if trailing is not None:
         raise ValueError(f"Unexpected trailing model data: {trailing}")
-    if set(tensors) != set(MODEL_TENSORS):
-        missing = sorted(set(MODEL_TENSORS) - set(tensors))
-        extra = sorted(set(tensors) - set(MODEL_TENSORS))
-        raise ValueError(f"Invalid V5 tensor set; missing={missing}, extra={extra}")
-    graph_weight = tensors["graph_encoder.layer.weight"]
-    graph_bias = tensors["graph_encoder.layer.bias"]
-    if (graph_weight.rows, graph_weight.cols) != (11, 22):
-        raise ValueError("GraphSAGE weight must have shape [11,22]")
-    if graph_bias.rows * graph_bias.cols != 11:
-        raise ValueError("GraphSAGE bias must contain 11 values")
+    encoder_tensors = (
+        MEAN_ENCODER_TENSORS if encoder_variant == "fanin_mean"
+        else GAT_GRU_ENCODER_TENSORS
+    )
+    expected_tensors = set((*encoder_tensors, *ACTOR_TENSORS))
+    if set(tensors) != expected_tensors:
+        missing = sorted(expected_tensors - set(tensors))
+        extra = sorted(set(tensors) - expected_tensors)
+        raise ValueError(f"Invalid model tensor set; missing={missing}, extra={extra}")
+    if encoder_variant == "fanin_mean":
+        graph_weight = tensors["graph_encoder.layer.weight"]
+        graph_bias = tensors["graph_encoder.layer.bias"]
+        if (graph_weight.rows, graph_weight.cols) != (11, 22):
+            raise ValueError("GraphSAGE weight must have shape [11,22]")
+        if graph_bias.rows * graph_bias.cols != 11:
+            raise ValueError("GraphSAGE bias must contain 11 values")
+    else:
+        for direction in ("forward_pass", "reverse_pass"):
+            prefix = f"graph_encoder.{direction}."
+            shapes = {
+                "attention": (1, 22), "projection.weight": (11, 11),
+                "gru.weight_ih": (33, 11), "gru.weight_hh": (33, 11),
+                "gru.bias_ih": (1, 33), "gru.bias_hh": (1, 33),
+            }
+            for name, shape in shapes.items():
+                tensor = tensors[prefix + name]
+                if (tensor.rows, tensor.cols) != shape:
+                    raise ValueError(f"Invalid GAT-GRU tensor shape for {prefix + name}")
     if (tensors["gate_encoder.0.weight"].rows,
-            tensors["gate_encoder.0.weight"].cols) != (hidden_dim, 13):
-        raise ValueError("Actor gate encoder must have shape [hidden_dim,13]")
-    return PortableModel(snapshot, best_round, best_score, hidden_dim, tensors)
+            tensors["gate_encoder.0.weight"].cols) != (hidden_dim, actor_input_dim):
+        raise ValueError("Actor gate encoder input shape does not match metadata")
+    return PortableModel(
+        model_format, encoder_variant, graph_config, snapshot, best_round,
+        best_score, hidden_dim, actor_input_dim, decision_state_dim, tensors,
+    )
 
 
 def load_graph(path):
@@ -255,7 +327,12 @@ def load_graph(path):
         cc0.append(min(COST_CAP, zero))
         cc1.append(min(COST_CAP, one))
 
-    fanouts = tuple(len(children[name]) for name in names)
+    fanout_indices = tuple(tuple(index[value] for value in children[name]) for name in names)
+    fanouts = tuple(len(values) for values in fanout_indices)
+    level_groups = tuple(
+        tuple(i for i, value in enumerate(levels) if value == level)
+        for level in range(max(levels) + 1)
+    )
     max_level = max(1, max(levels))
     normalized = []
     for values in (fanouts, cc0, cc1):
@@ -271,11 +348,97 @@ def load_graph(path):
         row[10] = normalized[2][position]
         features.append(tuple(row))
     return PortableGraph(
-        circuit_hash(path), tuple(names), fanins, tuple(features)
+        circuit_hash(path), tuple(names), fanins, fanout_indices,
+        level_groups, tuple(features)
     )
 
 
+def _linear(tensor, vector, bias=None):
+    return tuple(
+        (0.0 if bias is None else bias[row]) + sum(
+            tensor.values[row * tensor.cols + column] * vector[column]
+            for column in range(tensor.cols)
+        )
+        for row in range(tensor.rows)
+    )
+
+
+def _sigmoid(value):
+    if value >= 0:
+        return 1.0 / (1.0 + math.exp(-value))
+    exp_value = math.exp(value)
+    return exp_value / (1.0 + exp_value)
+
+
+def _gru_cell(model, prefix, message, previous):
+    input_values = _linear(
+        model.tensors[prefix + "gru.weight_ih"], message,
+        model.tensors[prefix + "gru.bias_ih"].values,
+    )
+    hidden_values = _linear(
+        model.tensors[prefix + "gru.weight_hh"], previous,
+        model.tensors[prefix + "gru.bias_hh"].values,
+    )
+    size = GATE_EMBEDDING_DIM
+    reset = tuple(_sigmoid(input_values[i] + hidden_values[i]) for i in range(size))
+    update = tuple(
+        _sigmoid(input_values[size + i] + hidden_values[size + i])
+        for i in range(size)
+    )
+    candidate = tuple(
+        math.tanh(input_values[2 * size + i] + reset[i] * hidden_values[2 * size + i])
+        for i in range(size)
+    )
+    return tuple(
+        candidate[i] + update[i] * (previous[i] - candidate[i])
+        for i in range(size)
+    )
+
+
+def _gat_gru_sweep(model, hidden, level_groups, adjacency, direction):
+    prefix = f"graph_encoder.{direction}."
+    projection = model.tensors[prefix + "projection.weight"]
+    attention = model.tensors[prefix + "attention"].values
+    for targets in level_groups:
+        updates = {}
+        for target in targets:
+            neighbors = adjacency[target]
+            if not neighbors:
+                continue
+            transformed_target = _linear(projection, hidden[target])
+            transformed_sources = {
+                source: _linear(projection, hidden[source]) for source in neighbors
+            }
+            scores = []
+            for source in neighbors:
+                joined = transformed_target + transformed_sources[source]
+                score = sum(a * b for a, b in zip(attention, joined))
+                scores.append(score if score >= 0 else 0.2 * score)
+            maximum = max(scores)
+            exponentials = [math.exp(score - maximum) for score in scores]
+            normalizer = sum(exponentials)
+            weights = [value / normalizer for value in exponentials]
+            message = tuple(
+                sum(weight * transformed_sources[source][column]
+                    for weight, source in zip(weights, neighbors))
+                for column in range(GATE_EMBEDDING_DIM)
+            )
+            updates[target] = _gru_cell(model, prefix, message, hidden[target])
+        for target, value in updates.items():
+            hidden[target] = value
+    return hidden
+
+
 def compute_embeddings(model, graph):
+    if model.encoder_variant == "level_gat_gru":
+        hidden = list(graph.features)
+        hidden = _gat_gru_sweep(
+            model, hidden, graph.level_groups[1:], graph.fanins, "forward_pass"
+        )
+        return tuple(_gat_gru_sweep(
+            model, hidden, reversed(graph.level_groups), graph.fanouts,
+            "reverse_pass",
+        ))
     weight = model.tensors["graph_encoder.layer.weight"]
     bias = model.tensors["graph_encoder.layer.bias"].values
     embeddings = []
@@ -307,12 +470,26 @@ def export_embeddings(model, graph, path):
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     with temporary.open("w", encoding="utf-8", newline="\n") as output:
-        output.write(f"{EMBEDDING_FORMAT}\n")
+        if model.model_format == LEGACY_MODEL_FORMAT:
+            output.write(f"{LEGACY_EMBEDDING_FORMAT}\n")
+            output.write(
+                f"backend smartatpg\nfeature_schema {FEATURE_SCHEMA}\n"
+                f"graph_config {model.graph_config}\n"
+                f"gate_embedding_dim {GATE_EMBEDDING_DIM}\n"
+                f"policy_state_dim {POLICY_STATE_DIM}\n"
+            )
+        else:
+            output.write(f"{EMBEDDING_FORMAT}\n")
+            output.write(
+                f"backend smartatpg\nfeature_schema {FEATURE_SCHEMA}\n"
+                f"encoder_variant {model.encoder_variant}\n"
+                f"graph_config {model.graph_config}\n"
+                f"gate_embedding_dim {GATE_EMBEDDING_DIM}\n"
+                f"actor_input_dim {ACTOR_INPUT_DIM}\n"
+                f"action_mask_dim {ACTION_MASK_DIM}\n"
+                f"decision_state_dim {POLICY_STATE_DIM}\n"
+            )
         output.write(
-            f"backend smartatpg\nfeature_schema {FEATURE_SCHEMA}\n"
-            f"graph_config {GRAPH_CONFIG}\n"
-            f"gate_embedding_dim {GATE_EMBEDDING_DIM}\n"
-            f"policy_state_dim {POLICY_STATE_DIM}\n"
             f"snapshot {model.snapshot}\n"
             f"circuit_hash {graph.circuit_hash}\n"
             f"dimension {GATE_EMBEDDING_DIM}\ncount {len(graph.names)}\n"

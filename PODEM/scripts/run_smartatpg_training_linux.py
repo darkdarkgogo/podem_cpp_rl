@@ -1,4 +1,4 @@
-"""Run resumable SmartATPG training and export a portable benchmark bundle."""
+"""Train both SmartATPG encoders and export one comparison bundle."""
 
 import argparse
 import json
@@ -57,9 +57,11 @@ def _check_cpp_extension():
 
 
 def _run(command, log_path, environment):
+    started = time.perf_counter()
     code = _tee_command(command, log_path, environment)
     if code:
         raise SystemExit(code)
+    return time.perf_counter() - started
 
 
 def main(argv=None):
@@ -82,6 +84,9 @@ def main(argv=None):
 
     output_dir = args.output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
+    preparation_dir = output_dir / "preparation"
+    baseline_dir = output_dir / "smartatpg_mean"
+    gat_gru_dir = output_dir / "smartatpg_gat_gru"
     environment = os.environ.copy()
     environment.update({
         "PYTHONUNBUFFERED": "1",
@@ -96,27 +101,39 @@ def main(argv=None):
         sys.executable,
         "-u",
         str(ROOT / "scripts/prepare_smartatpg_training.py"),
-        str(output_dir),
+        str(preparation_dir),
         "--count", "100",
         "--backtrack-limit", str(args.backtrack_limit),
         "--seed", str(args.profile_seed),
         "--resume",
     ]
-    train_command = [
+    baseline_train_command = [
         sys.executable,
         "-u",
         str(ROOT / "scripts/train_smartatpg.py"),
-        str(output_dir / "training_manifest.json"),
-        str(output_dir),
+        str(preparation_dir / "training_manifest.json"),
+        str(baseline_dir),
         "--rounds", str(args.rounds),
         "--seed", str(args.seed),
+        "--encoder", "fanin_mean",
+    ]
+    gat_gru_train_command = [
+        sys.executable,
+        "-u",
+        str(ROOT / "scripts/train_smartatpg.py"),
+        str(preparation_dir / "training_manifest.json"),
+        str(gat_gru_dir),
+        "--rounds", str(args.rounds),
+        "--seed", str(args.seed),
+        "--encoder", "level_gat_gru",
     ]
     bundle_command = [
         sys.executable,
         "-u",
         str(ROOT / "scripts/prepare_smartatpg_benchmark.py"),
         str(output_dir / "benchmark_bundle"),
-        str(output_dir / "model_best.txt"),
+        str(baseline_dir / "model_best.txt"),
+        str(gat_gru_dir / "model_best.txt"),
         "--resume",
     ]
     metadata = {
@@ -129,19 +146,35 @@ def main(argv=None):
         "seed": args.seed,
         "profile_seed": args.profile_seed,
         "backtrack_limit": args.backtrack_limit,
-        "commands": [prepare_command, train_command, bundle_command],
+        "commands": [
+            prepare_command, baseline_train_command,
+            gat_gru_train_command, bundle_command,
+        ],
         "started_at": time.strftime("%Y-%m-%d %H:%M:%S"),
     }
     metadata_path = output_dir / "training_run_metadata.json"
     _atomic_json(metadata_path, metadata)
     started = time.perf_counter()
-    _run(prepare_command, output_dir / "prepare_training.log", environment)
-    _run(train_command, output_dir / "train.log", environment)
-    if not (output_dir / "model_best.txt").is_file():
-        raise RuntimeError("Training completed without model_best.txt")
-    _run(bundle_command, output_dir / "prepare_bundle.log", environment)
+    timings = {
+        "preparation_seconds": _run(
+            prepare_command, output_dir / "prepare_training.log", environment
+        ),
+        "smartatpg_mean_training_seconds": _run(
+            baseline_train_command, baseline_dir / "train.log", environment
+        ),
+        "smartatpg_gat_gru_training_seconds": _run(
+            gat_gru_train_command, gat_gru_dir / "train.log", environment
+        ),
+    }
+    for model_dir in (baseline_dir, gat_gru_dir):
+        if not (model_dir / "model_best.txt").is_file():
+            raise RuntimeError(f"Training completed without {model_dir / 'model_best.txt'}")
+    timings["bundle_seconds"] = _run(
+        bundle_command, output_dir / "prepare_bundle.log", environment
+    )
     metadata.update({
         "elapsed_seconds": time.perf_counter() - started,
+        "timings": timings,
         "finished_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "bundle": str(output_dir / "benchmark_bundle"),
     })

@@ -101,16 +101,19 @@ int ATPG::choose_policy_candidate(smartatpg::DecisionMode mode,
   }
   request.candidate_ids = rl_candidate_ids_scratch.data();
   request.candidate_count = rl_candidate_ids_scratch.size();
-  request.action_mask[0] = !candidate_wires.empty();
-  request.action_mask[1] = candidate_wires.size() > 1;
+  request.action_mask[0] = !candidate_wires.empty() &&
+                           candidate_wires[0]->value == U;
+  request.action_mask[1] = candidate_wires.size() > 1 &&
+                           candidate_wires[1]->value == U;
   if (mode == smartatpg::DecisionMode::BACKTRACE && objective_wire &&
       !objective_wire->inode.empty()) {
     const int gate_type = objective_wire->inode.front()->type;
     const bool easiest =
         ((gate_type == OR || gate_type == NAND) && objective_value) ||
         ((gate_type == NOR || gate_type == AND) && !objective_value);
-    request.heuristic_action =
-        easiest ? 0 : static_cast<int>(candidate_wires.size() - 1);
+    request.heuristic_action = easiest ?
+        (request.action_mask[0] ? 0 : 1) :
+        (request.action_mask[1] ? 1 : 0);
   }
   if (decision_policy->needs_gate_names()) {
     if (objective_wire) {
@@ -133,6 +136,10 @@ int ATPG::choose_policy_candidate(smartatpg::DecisionMode mode,
                         " candidate index " + to_string(selected) +
                         " for " + to_string(candidate_wires.size()) +
                         " candidates");
+  }
+  if (selected >= 2 || !request.action_mask[selected]) {
+    throw runtime_error("Policy selected a masked " +
+                        smartatpg::decision_mode_name(mode) + " candidate");
   }
   last_policy_decision_sequence = request.sequence;
   return selected;

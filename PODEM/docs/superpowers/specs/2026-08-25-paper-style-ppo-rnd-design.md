@@ -2,7 +2,7 @@
 
 ## Objective
 
-Train a new PPO actor from random initialization using fixed DeepGate
+Train a new PPO actor from random initialization using fixed gate
 embeddings, Random Network Distillation (RND), and 100 hard stuck-at faults
 from each of `c6288.bench` and `s38417_scan.bench`. RND is training-only;
 native C++ deployment continues to load only circuit embeddings and exported
@@ -23,7 +23,7 @@ one selected fault always corresponds to one PPO episode.
 
 ## RND
 
-Each decision receives a stable RND observation built from fixed DeepGate
+Each decision receives a stable RND observation built from fixed gate
 features rather than the changing PPO encoder:
 
 - backtrace: objective embedding, mean candidate embedding, mode `[1, 0]`;
@@ -47,8 +47,8 @@ Actor export continues to write only the tensors consumed by
 
 ## Training and Validation
 
-The existing `deepgate_best.pth` is frozen. Embeddings are generated for the
-exact two training BENCH files. PPO and RND are initialized from scratch with
+Embeddings are generated for the exact two training BENCH files. PPO and RND
+are initialized from scratch with
 a fixed seed. Training alternates the two circuits and shuffles their selected
 fault order reproducibly.
 

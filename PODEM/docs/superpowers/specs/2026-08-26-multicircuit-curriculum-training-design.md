@@ -40,8 +40,8 @@ V4 uses the binary-netlist versions of:
 - `c6288`;
 - full-scan `s38417_scan`.
 
-Each circuit must have a matching fixed DeepGate embedding artifact and fault
-map. DeepGate is not retrained by this workflow. The preparation script records
+Each circuit must have a matching fixed embedding artifact and fault map. The
+encoder is not retrained by this workflow. The preparation script records
 SHA-256 hashes for every circuit, fault map, and embedding file.
 
 The original heuristic profiles every collapsed stuck-at fault independently

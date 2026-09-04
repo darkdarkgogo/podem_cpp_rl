@@ -68,14 +68,21 @@ public:
   const std::string &backend() const { return backend_; }
   const std::string &schema() const { return schema_; }
   const std::string &graph_config() const { return graph_config_; }
+  const std::string &encoder_variant() const { return encoder_variant_; }
+  std::size_t actor_input_dimension() const { return actor_input_dim_; }
+  std::size_t action_mask_dimension() const { return action_mask_dim_; }
+  std::size_t decision_state_dimension() const { return decision_state_dim_; }
   std::size_t policy_state_dimension() const { return policy_state_dim_; }
   const std::string &snapshot() const { return snapshot_; }
   void clear();
 
 private:
   std::size_t dimension_ = 0;
+  std::size_t actor_input_dim_ = 0;
+  std::size_t action_mask_dim_ = 0;
+  std::size_t decision_state_dim_ = 0;
   std::size_t policy_state_dim_ = 0;
-  std::string backend_ = "deepgate", schema_, graph_config_, snapshot_;
+  std::string backend_ = "smartatpg", schema_, encoder_variant_, graph_config_, snapshot_;
   std::unordered_map<std::string, std::vector<float> > embeddings_;
 };
 
@@ -86,23 +93,17 @@ public:
   ActorModel &operator=(const ActorModel &) = delete;
 
   void load(const std::string &path);
-  std::vector<float> backtrace_logits(
-      const std::vector<float> &objective,
-      const std::vector<std::vector<float> > &candidates) const;
-  std::vector<float> propagation_logits(
-      const std::vector<std::vector<float> > &candidates) const;
-  std::vector<float> optimized_logits(
-      DecisionMode mode, const std::vector<float> &objective,
-      const std::vector<std::vector<float> > &candidates) const;
   std::vector<float> backtrace_action_logits(
       const std::vector<float> &objective, int objective_value) const;
   std::size_t embedding_dimension() const { return embedding_dim_; }
   std::size_t gate_embedding_dimension() const { return gate_embedding_dim_; }
   std::size_t hidden_dimension() const { return hidden_dim_; }
-  bool is_v2() const { return version_ >= 2; }
   const std::string &backend() const { return backend_; }
   const std::string &schema() const { return schema_; }
   const std::string &graph_config() const { return graph_config_; }
+  const std::string &encoder_variant() const { return encoder_variant_; }
+  std::size_t action_mask_dimension() const { return action_mask_dim_; }
+  std::size_t decision_state_dimension() const { return decision_state_dim_; }
   const std::string &snapshot() const { return snapshot_; }
 
 private:
@@ -112,24 +113,6 @@ private:
     std::vector<float> values;
   };
 
-  struct ActorHead {
-    const Tensor *hidden_weight = nullptr;
-    const Tensor *hidden_bias = nullptr;
-    const Tensor *output_weight = nullptr;
-    const Tensor *output_bias = nullptr;
-  };
-
-  std::vector<float> encode_gate(const std::vector<float> &embedding,
-                                 std::size_t mode) const;
-  void encode_gate_into(const std::vector<float> &embedding, std::size_t mode,
-                        float *output) const;
-  float score_encoded(DecisionMode mode, const float *state,
-                      const float *candidate,
-                      std::vector<float> &hidden_buffer) const;
-  const ActorHead &head(DecisionMode mode) const;
-  std::vector<float> dense(const Tensor &weight, const Tensor &bias,
-                           const std::vector<float> &input,
-                           bool apply_tanh) const;
   void backtrace_action_logits_into(const float *objective,
                                     int objective_value, float *state,
                                     float *hidden, float *logits) const;
@@ -137,16 +120,15 @@ private:
 
   std::size_t embedding_dim_ = 0;
   std::size_t gate_embedding_dim_ = 0;
+  std::size_t action_mask_dim_ = 0;
+  std::size_t decision_state_dim_ = 0;
   std::size_t hidden_dim_ = 0;
   int version_ = 0;
-  std::string backend_ = "deepgate", schema_, graph_config_, snapshot_;
+  std::string backend_ = "smartatpg", schema_, encoder_variant_, graph_config_, snapshot_;
   std::unordered_map<std::string, Tensor> tensors_;
   const Tensor *gate_weight_ = nullptr;
   const Tensor *gate_bias_ = nullptr;
-  const Tensor *mode_embedding_ = nullptr;
   const Tensor *objective_value_embedding_ = nullptr;
-  ActorHead backtrace_head_;
-  ActorHead propagation_head_;
 
   friend class NativeActorPolicy;
 };
@@ -163,22 +145,20 @@ public:
   int select(const DecisionRequest &request) override;
   bool needs_gate_names() const override { return false; }
   bool supports(DecisionMode mode) const override {
-    return !actor_.is_v2() || mode == DecisionMode::BACKTRACE;
+    return mode == DecisionMode::BACKTRACE;
   }
 
 private:
-  const float *cached_gate(DecisionMode mode, std::size_t gate_id) const;
-
   ActorModel actor_;
   std::size_t gate_count_ = 0;
-  std::vector<float> backtrace_cache_;
-  std::vector<float> propagation_cache_;
   std::vector<float> state_buffer_;
   std::vector<float> hidden_buffer_;
   std::vector<float> v2_embedding_cache_;
   std::vector<float> v2_policy_input_buffer_;
   std::vector<float> v2_logits_cache_;
   std::vector<unsigned char> v2_cache_valid_;
+  std::size_t v2_variants_per_gate_ = 0;
+  bool v2_mask_is_actor_input_ = false;
 };
 
 std::string fnv1a_file_hash(const std::string &path);

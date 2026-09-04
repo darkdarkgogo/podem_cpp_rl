@@ -67,7 +67,7 @@ propagation cache[id] = tanh(W_gate * embedding[id] + b_gate) + mode[1]
 ```
 
 This removes repeated 64-by-64 gate encoding from every decision. The original
-DeepGate embeddings may be released after both caches are built because native
+Gate embeddings may be released after both caches are built because native
 selection no longer consumes them.
 
 Actor tensor names are resolved once during model loading. Dense layers keep
@@ -131,7 +131,7 @@ The implementation is accepted when all of the following pass:
 ## Non-Goals
 
 - Moving native actor inference to CUDA.
-- Changing actor topology, DeepGate embeddings, PPO, RND, or reward design.
+- Changing actor topology, gate embeddings, PPO, RND, or reward design.
 - Retraining the current checkpoint as part of this optimization.
 - Removing dynamic allocation from unrelated PODEM circuit and fault data
   structures.

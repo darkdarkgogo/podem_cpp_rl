@@ -2,23 +2,16 @@ from __future__ import annotations
 
 import math
 import os
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Optional, Tuple, Union
 
 import torch
 
-from .ppo import BacktracePPOAgentV2, RLGuidedPPOAgent
-
-
-@dataclass(frozen=True)
-class EmbeddingGate:
-    outputpin: str
-    deepgate_embedding: torch.Tensor
+from .ppo import BacktracePPOAgentV2
 
 
 def _load_cpp_embedding_artifact(
-    path: Union[str, Path], *, expected_backend="deepgate", include_metadata=False,
+    path: Union[str, Path], *, expected_backend="smartatpg", include_metadata=False,
 ) -> Tuple[str, dict[str, torch.Tensor]]:
     def read_pair(handle, expected_key):
         line = handle.readline()
@@ -33,36 +26,48 @@ def _load_cpp_embedding_artifact(
     with Path(path).open("r", encoding="utf-8") as handle:
         header = handle.readline().strip()
         if header not in (
-            "SMARTATPG_EMBEDDINGS_V1", "SMARTATPG_EMBEDDINGS_V2",
-            "SMARTATPG_EMBEDDINGS_V3",
+            "SMARTATPG_EMBEDDINGS_V2", "SMARTATPG_EMBEDDINGS_V3",
+            "SMARTATPG_EMBEDDINGS_V4",
         ):
             raise ValueError(f"Unsupported embedding format: {path}")
-        metadata = {"backend": "deepgate", "feature_schema": "", "snapshot": ""}
         if header == "SMARTATPG_EMBEDDINGS_V2":
-            metadata = {key: read_pair(handle, key) for key in ("backend", "feature_schema", "snapshot")}
-            if metadata["backend"] == "smartatpg":
-                raise ValueError(
-                    "Legacy 80-dimensional SmartATPG descriptors are incompatible "
-                    "with the 11-dimensional GraphSAGE format"
-                )
-        elif header == "SMARTATPG_EMBEDDINGS_V3":
-            metadata = {
-                key: read_pair(handle, key)
-                for key in (
-                    "backend", "feature_schema", "graph_config",
-                    "gate_embedding_dim", "policy_state_dim", "snapshot",
-                )
-            }
-            if (
-                metadata["backend"] != "smartatpg"
-                or metadata["feature_schema"] != "SMARTATPG_FEATURES_V2_11D"
-                or metadata["graph_config"] != "fanin_mean_1x22x11"
-                or metadata["gate_embedding_dim"] != "11"
-                or metadata["policy_state_dim"] != "13"
-                or len(metadata["snapshot"]) != 64
-                or any(char not in "0123456789abcdef" for char in metadata["snapshot"])
-            ):
-                raise ValueError("Invalid SmartATPG 11D embedding metadata")
+            raise ValueError(
+                "Legacy 80-dimensional SmartATPG descriptors are incompatible "
+                "with the 11-dimensional GraphSAGE format"
+            )
+        keys = (
+            ("backend", "feature_schema", "graph_config", "gate_embedding_dim",
+             "policy_state_dim", "snapshot")
+            if header == "SMARTATPG_EMBEDDINGS_V3" else
+            ("backend", "feature_schema", "encoder_variant", "graph_config",
+             "gate_embedding_dim", "actor_input_dim", "action_mask_dim",
+             "decision_state_dim", "snapshot")
+        )
+        metadata = {key: read_pair(handle, key) for key in keys}
+        valid_graph = (
+            metadata["graph_config"] == "fanin_mean_1x22x11"
+            if header == "SMARTATPG_EMBEDDINGS_V3" else
+            metadata["graph_config"] in (
+                "fanin_mean_1x22x11", "level_gat_gru_fwd_rev_11d_v1"
+            )
+        )
+        dimensions_valid = (
+            metadata.get("policy_state_dim") == "13"
+            if header == "SMARTATPG_EMBEDDINGS_V3" else
+            metadata.get("actor_input_dim") == "11"
+            and metadata.get("action_mask_dim") == "2"
+            and metadata.get("decision_state_dim") == "13"
+        )
+        if (
+            metadata["backend"] != "smartatpg"
+            or metadata["feature_schema"] != "SMARTATPG_FEATURES_V2_11D"
+            or not valid_graph
+            or metadata["gate_embedding_dim"] != "11"
+            or not dimensions_valid
+            or len(metadata["snapshot"]) != 64
+            or any(char not in "0123456789abcdef" for char in metadata["snapshot"])
+        ):
+            raise ValueError("Invalid SmartATPG 11D embedding metadata")
         if expected_backend is not None and expected_backend != metadata["backend"]:
             raise ValueError(f"Descriptor backend {metadata['backend']} conflicts with {expected_backend}")
         circuit_hash = read_pair(handle, "circuit_hash")
@@ -70,7 +75,7 @@ def _load_cpp_embedding_artifact(
         count = int(read_pair(handle, "count"))
         if dimension <= 0 or count < 0:
             raise ValueError(f"Invalid embedding dimensions in: {path}")
-        if metadata["backend"] == "smartatpg" and dimension != 11:
+        if dimension != 11:
             raise ValueError("SmartATPG gate embedding dimension must be 11")
 
         for row in range(count):
@@ -97,8 +102,8 @@ def _load_cpp_embedding_artifact(
     return (circuit_hash, table, metadata) if include_metadata else (circuit_hash, table)
 
 
-def load_cpp_embedding_table(path: Union[str, Path], *, embedding_backend="deepgate") -> dict[str, torch.Tensor]:
-    return _load_cpp_embedding_artifact(path, expected_backend=embedding_backend)[1]
+def load_cpp_embedding_table(path: Union[str, Path]) -> dict[str, torch.Tensor]:
+    return _load_cpp_embedding_artifact(path)[1]
 
 
 def _fnv1a_file_hash(path: Union[str, Path]) -> str:
@@ -164,64 +169,12 @@ def catalog_cpp_podem(
     )
 
 
-def export_actor_state_dict(
-    state_dict: dict[str, torch.Tensor], path: Union[str, Path]
-) -> None:
-    tensor_names = [
-        "gate_encoder.0.weight",
-        "gate_encoder.0.bias",
-        "mode_embedding.weight",
-        "backtrace_actor.0.weight",
-        "backtrace_actor.0.bias",
-        "backtrace_actor.2.weight",
-        "backtrace_actor.2.bias",
-        "propagation_actor.0.weight",
-        "propagation_actor.0.bias",
-        "propagation_actor.2.weight",
-        "propagation_actor.2.bias",
-    ]
-    missing = [name for name in tensor_names if name not in state_dict]
-    if missing:
-        raise KeyError("Checkpoint is missing actor tensors: " + ", ".join(missing))
-
-    gate_weight = state_dict["gate_encoder.0.weight"]
-    hidden_dim, embedding_dim = gate_weight.shape
-    output_path = Path(path).resolve()
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("w", encoding="utf-8", newline="\n") as output:
-        output.write("SMARTATPG_ACTOR_V1\n")
-        output.write(f"embedding_dim {embedding_dim}\n")
-        output.write(f"hidden_dim {hidden_dim}\n")
-        for name in tensor_names:
-            tensor = state_dict[name].detach().cpu().float().contiguous()
-            if tensor.ndim == 1:
-                rows, cols = 1, tensor.shape[0]
-            elif tensor.ndim == 2:
-                rows, cols = tensor.shape
-            else:
-                raise ValueError(f"Unsupported actor tensor rank for {name}: {tensor.ndim}")
-            values = tensor.reshape(-1).tolist()
-            output.write(f"tensor {name} {rows} {cols}\n")
-            output.write(" ".join(format(value, ".9g") for value in values))
-            output.write("\n")
-        output.write("end\n")
-
-
-def export_actor_checkpoint(
-    checkpoint_path: Union[str, Path], output_path: Union[str, Path]
-) -> None:
-    state_dict = torch.load(checkpoint_path, map_location="cpu")
-    if isinstance(state_dict, dict) and "state_dict" in state_dict:
-        state_dict = state_dict["state_dict"]
-    export_actor_state_dict(state_dict, output_path)
-
-
 def export_actor_v2_state_dict(
     state_dict: dict[str, torch.Tensor], path: Union[str, Path], *, metadata=None
 ) -> None:
-    if metadata is None and any(name.startswith("graph_encoder.") for name in state_dict):
-        raise ValueError("SmartATPG weights require a snapshot-paired V5 model export")
-    tensor_names = [
+    if metadata is None:
+        raise ValueError("SmartATPG weights require a snapshot-paired model export")
+    actor_tensor_names = [
         "gate_encoder.0.weight",
         "gate_encoder.0.bias",
         "objective_value_embedding.weight",
@@ -230,40 +183,51 @@ def export_actor_v2_state_dict(
         "backtrace_actor.2.weight",
         "backtrace_actor.2.bias",
     ]
-    if metadata:
-        tensor_names = [
-            "graph_encoder.layer.weight",
-            "graph_encoder.layer.bias",
-            *tensor_names,
-        ]
+    variant = metadata.get("encoder_variant")
+    if variant == "fanin_mean":
+        encoder_tensor_names = (
+            "graph_encoder.layer.weight", "graph_encoder.layer.bias",
+        )
+    elif variant == "level_gat_gru":
+        encoder_tensor_names = tuple(
+            f"graph_encoder.{direction}.{name}"
+            for direction in ("forward_pass", "reverse_pass")
+            for name in (
+                "attention", "projection.weight", "gru.weight_ih",
+                "gru.weight_hh", "gru.bias_ih", "gru.bias_hh",
+            )
+        )
+    else:
+        raise ValueError(f"Unsupported SmartATPG encoder variant: {variant}")
+    tensor_names = [*encoder_tensor_names, *actor_tensor_names]
     missing = [name for name in tensor_names if name not in state_dict]
     if missing:
         raise KeyError("Checkpoint is missing V2 actor tensors: " + ", ".join(missing))
 
     gate_weight = state_dict["gate_encoder.0.weight"]
     hidden_dim, embedding_dim = gate_weight.shape
-    if metadata and (
+    if (
         metadata.get("backend") != "smartatpg"
         or int(metadata.get("gate_embedding_dim", -1)) != 11
-        or int(metadata.get("policy_state_dim", -1)) != 13
-        or embedding_dim != 13
+        or int(metadata.get("actor_input_dim", -1)) != 11
+        or int(metadata.get("action_mask_dim", -1)) != 2
+        or int(metadata.get("decision_state_dim", -1)) != 13
+        or embedding_dim != 11
     ):
-        raise ValueError("SmartATPG Actor requires 11D embeddings and 13D policy state")
+        raise ValueError("SmartATPG Actor requires an 11D input and a separate 2D mask")
     output_path = Path(path).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     temporary = output_path.with_suffix(output_path.suffix + ".tmp")
     with temporary.open("w", encoding="utf-8", newline="\n") as output:
-        output.write("SMARTATPG_MODEL_V5\n" if metadata else "SMARTATPG_ACTOR_V2\n")
-        if metadata:
-            for key in (
-                "backend", "feature_schema", "graph_config",
-                "gate_embedding_dim", "policy_state_dim", "snapshot",
-            ):
-                output.write(f"{key} {metadata[key]}\n")
-            output.write(f"best_round {int(metadata.get('best_round', 0))}\n")
-            output.write(f"best_score {metadata.get('best_score', 'none')}\n")
-        if not metadata:
-            output.write(f"embedding_dim {embedding_dim}\n")
+        output.write("SMARTATPG_MODEL_V6\n")
+        for key in (
+            "backend", "feature_schema", "encoder_variant", "graph_config",
+            "gate_embedding_dim", "actor_input_dim", "action_mask_dim",
+            "decision_state_dim", "snapshot",
+        ):
+            output.write(f"{key} {metadata[key]}\n")
+        output.write(f"best_round {int(metadata.get('best_round', 0))}\n")
+        output.write(f"best_score {metadata.get('best_score', 'none')}\n")
         output.write(f"hidden_dim {hidden_dim}\n")
         for name in tensor_names:
             tensor = state_dict[name].detach().cpu().float().contiguous()
@@ -297,98 +261,40 @@ def smartatpg_pi_reward(
     return 10.0 - alpha * math.exp(beta * (backtracks + pi_visits))
 
 
-class CppPodemPPOTrainer:
+class _CppPodemTrainerBase:
     def __init__(
         self,
-        embedding_path: Union[str, Path],
-        checkpoint_path: Optional[Union[str, Path]] = None,
-        agent: Optional[RLGuidedPPOAgent] = None,
+        graph,
+        agent: BacktracePPOAgentV2,
     ):
         from .smartatpg_features import CircuitGraph
-        if isinstance(embedding_path, CircuitGraph):
-            from .smartatpg import GraphGate, POLICY_STATE_DIM
-            if getattr(agent, "embedding_backend", None) != "smartatpg":
-                raise ValueError("Circuit graph inputs require a SmartATPG agent")
-            self.embedding_path = None
-            self.circuit_hash = embedding_path.circuit_hash
-            if self.circuit_hash not in agent.graphs:
-                raise ValueError("Circuit graph is not registered with this agent")
-            self.gates = {name: GraphGate(name, self.circuit_hash, index)
-                          for index, name in enumerate(embedding_path.names)}
-            embedding_dim = POLICY_STATE_DIM
-        else:
-            self.embedding_path = Path(embedding_path).resolve()
-            self.circuit_hash, embeddings = _load_cpp_embedding_artifact(self.embedding_path)
-            if not embeddings:
-                raise ValueError("Embedding table is empty.")
-            self.gates = {
-                name: EmbeddingGate(name, embedding) for name, embedding in embeddings.items()
-            }
-            embedding_dim = next(iter(embeddings.values())).numel()
-        self.agent = agent or RLGuidedPPOAgent(gate_embedding_dim=embedding_dim)
+        from .smartatpg import ACTOR_INPUT_DIM, GraphGate
+        if not isinstance(graph, CircuitGraph):
+            raise TypeError("SmartATPG training requires a CircuitGraph")
+        if getattr(agent, "embedding_backend", None) != "smartatpg":
+            raise ValueError("Circuit graph inputs require a SmartATPG agent")
+        self.circuit_hash = graph.circuit_hash
+        if self.circuit_hash not in agent.graphs:
+            raise ValueError("Circuit graph is not registered with this agent")
+        self.gates = {name: GraphGate(name, self.circuit_hash, index)
+                      for index, name in enumerate(graph.names)}
+        embedding_dim = ACTOR_INPUT_DIM
+        self.agent = agent
         agent_input_dim = getattr(
-            self.agent, "policy_state_dim", self.agent.gate_embedding_dim
+            self.agent, "actor_input_dim", self.agent.gate_embedding_dim
         )
         if agent_input_dim != embedding_dim:
             raise ValueError(
                 "Shared PPO agent input dimension does not match the circuit inputs."
             )
-        self.checkpoint_path = Path(checkpoint_path).resolve() if checkpoint_path else None
-        if self.checkpoint_path and self.checkpoint_path.exists():
-            self.agent.load(str(self.checkpoint_path))
-
         self.sequence_to_step: dict[int, int] = {}
         self.last_metrics: Optional[dict[str, Any]] = None
-        self.step_penalty = -0.01
-        self.backtrack_penalty = -0.1
-        self.success_reward = 1.0
-        self.failure_reward = -1.0
 
-    def _gate(self, name: str) -> EmbeddingGate:
+    def _gate(self, name: str):
         try:
             return self.gates[name]
         except KeyError as error:
             raise KeyError(f"No policy input for C++ wire '{name}'.") from error
-
-    def decision_callback(self, request: dict[str, Any]) -> int:
-        candidates = [self._gate(name) for name in request["candidate_names"]]
-        if request["mode"] == "backtrace":
-            selected = self.agent.select_backtrace_action(
-                self._gate(request["objective_name"]), candidates
-            )
-        elif request["mode"] == "propagation":
-            selected = self.agent.select_propagation_action(candidates)
-        else:
-            raise ValueError(f"Unknown C++ PODEM decision mode: {request['mode']}")
-
-        action = next(
-            index for index, candidate in enumerate(candidates) if candidate is selected
-        )
-        self.agent.add_reward(self.step_penalty)
-        if self.agent.last_selected_step_idx is not None:
-            self.sequence_to_step[int(request["sequence"])] = self.agent.last_selected_step_idx
-        return action
-
-    def event_callback(self, event: dict[str, Any]) -> None:
-        event_type = event["event"]
-        if event_type == "episode_start":
-            self.sequence_to_step.clear()
-            return
-        if event_type == "backtrack":
-            step_idx = self.sequence_to_step.get(int(event["decision_sequence"]))
-            self.agent.add_reward_to_step(step_idx, self.backtrack_penalty)
-            return
-        if event_type in ("backtrace_step", "pi_not_done"):
-            return
-        if event_type != "episode_end":
-            raise ValueError(f"Unknown C++ PODEM event: {event_type}")
-
-        terminal_reward = (
-            self.success_reward if int(event["outcome"]) == 1 else self.failure_reward
-        )
-        terminal_reward -= 0.05 * int(event["backtracks"])
-        self.agent.finish_episode(terminal_reward)
-        self.last_metrics = self.agent.update()
 
     def run(
         self,
@@ -426,32 +332,13 @@ class CppPodemPPOTrainer:
             _native_circuit_path(fault_map_path) if fault_map_path else "",
         )
 
-    def save(self, actor_output_path: Optional[Union[str, Path]] = None) -> None:
-        if self.checkpoint_path:
-            self.checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
-            self.agent.save(str(self.checkpoint_path))
-        if actor_output_path:
-            export_actor_state_dict(self.agent.policy_old.state_dict(), actor_output_path)
-
-
-class CppPodemBacktraceV2Trainer(CppPodemPPOTrainer):
+class CppPodemBacktraceV2Trainer(_CppPodemTrainerBase):
     def __init__(
         self,
-        embedding_path: Union[str, Path],
-        agent: Optional[BacktracePPOAgentV2] = None,
+        graph,
+        agent: BacktracePPOAgentV2,
     ):
-        from .smartatpg_features import CircuitGraph
-        if isinstance(embedding_path, CircuitGraph):
-            super().__init__(embedding_path, agent=agent)
-        else:
-            _, embeddings = _load_cpp_embedding_artifact(embedding_path)
-            if not embeddings:
-                raise ValueError("Embedding table is empty.")
-            embedding_dim = next(iter(embeddings.values())).numel()
-            super().__init__(
-                embedding_path,
-                agent=agent or BacktracePPOAgentV2(gate_embedding_dim=embedding_dim),
-            )
+        super().__init__(graph, agent=agent)
         self.reward_alpha = 7.5
         self.reward_beta = 0.07
         self.non_pi_reward = -0.1
@@ -583,13 +470,6 @@ class CppPodemBacktraceV2Trainer(CppPodemPPOTrainer):
                 else 0.0
             )
         return summary
-
-    def save(self, actor_output_path: Optional[Union[str, Path]] = None) -> None:
-        if actor_output_path:
-            export_actor_v2_state_dict(
-                self.agent.policy_old.state_dict(), actor_output_path
-            )
-
 
 class CppPodemBacktraceV2Evaluator(CppPodemBacktraceV2Trainer):
     def decision_callback(self, request: dict[str, Any]) -> int:

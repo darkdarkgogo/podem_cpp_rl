@@ -480,9 +480,10 @@ char ATPG::itoc(const int &i) {
   switch (i) {
     case 1:
       return '1';
-    case 2:
+    case U:
       return 'U';
     case 0:
       return '0';
   }
+  error("invalid logic value: " + std::to_string(i));
 }

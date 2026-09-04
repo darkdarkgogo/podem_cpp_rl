@@ -95,7 +95,7 @@ def main(argv=None):
         "--backtrack-limit", str(args.backtrack_limit),
     ]
     metadata = {
-        "format": "SMARTATPG_BENCHMARK_RUN_V2",
+        "format": "SMARTATPG_BENCHMARK_RUN_V3",
         "python": sys.executable,
         "bundle_manifest": str(manifest),
         "repeats": args.repeats,

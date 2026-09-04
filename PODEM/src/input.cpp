@@ -340,13 +340,13 @@ int ATPG::FindType(const string &gatetype) {
     if (targc != 6) error("Bad Gate Record");
     return (EQV);
   }
-  error("unreconizable gate type");
+  error("unrecognized gate type: " + gatetype);
 }/* end of FindType */
 
 /*
 * print error message and die
 */
-void ATPG::error(const string &message) {
+[[noreturn]] void ATPG::error(const string &message) {
   fprintf(stderr, "%s around line %d in file %s\n", message.c_str(), lineno, filename.c_str());
   exit(EXIT_FAILURE);
 }/* end of error */

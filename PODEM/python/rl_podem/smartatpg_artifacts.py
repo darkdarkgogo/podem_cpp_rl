@@ -1,4 +1,4 @@
-"""Snapshot-paired SmartATPG export, independent of DeepGate."""
+"""Snapshot-paired SmartATPG artifact export."""
 
 import hashlib
 import json
@@ -9,15 +9,41 @@ import torch
 from .backends import resolve_backend, smartatpg_metadata
 from .cpp_bridge import export_actor_v2_state_dict
 from .smartatpg import (
-    GATE_EMBEDDING_DIM, POLICY_STATE_DIM, SmartATPGPolicy,
+    ACTION_MASK_DIM, ACTOR_INPUT_DIM, DECISION_STATE_DIM,
+    ENCODER_VARIANT, GATE_EMBEDDING_DIM, POLICY_STATE_DIM, SmartATPGPolicy,
 )
 from .smartatpg_features import (
     FEATURE_SCHEMA, GRAPH_CONFIG_ID, load_circuit_graph,
 )
 
 
+def encoder_variant(state):
+    if "graph_encoder.layer.weight" in state:
+        return ENCODER_VARIANT
+    if "graph_encoder.forward_pass.projection.weight" in state:
+        return "level_gat_gru"
+    raise ValueError("Cannot identify the SmartATPG graph encoder")
+
+
+def inference_metadata(state):
+    variant = encoder_variant(state)
+    values = smartatpg_metadata(variant)
+    return {
+        "backend": values["embedding_backend"],
+        "feature_schema": values["feature_schema"],
+        "encoder_variant": variant,
+        "graph_config": values["graph_config_id"],
+        "gate_embedding_dim": GATE_EMBEDDING_DIM,
+        "actor_input_dim": ACTOR_INPUT_DIM,
+        "action_mask_dim": ACTION_MASK_DIM,
+        "decision_state_dim": DECISION_STATE_DIM,
+    }
+
+
 def snapshot_id(state):
-    digest = hashlib.sha256(json.dumps(smartatpg_metadata(), sort_keys=True).encode("ascii"))
+    digest = hashlib.sha256(
+        json.dumps(inference_metadata(state), sort_keys=True).encode("ascii")
+    )
     for name in sorted(state):
         if name.startswith("critic."):
             continue
@@ -32,15 +58,13 @@ def snapshot_id(state):
 
 def export_actor(state, path, best_round=0, best_score=None):
     identity = snapshot_id(state)
+    metadata = inference_metadata(state)
     score_text = (
         "none" if best_score is None
         else ",".join(format(float(value), ".17g") for value in best_score)
     )
     export_actor_v2_state_dict(state, path, metadata={
-        "backend": "smartatpg", "feature_schema": FEATURE_SCHEMA,
-        "graph_config": GRAPH_CONFIG_ID,
-        "gate_embedding_dim": GATE_EMBEDDING_DIM,
-        "policy_state_dim": POLICY_STATE_DIM,
+        **metadata,
         "snapshot": identity,
         "best_round": int(best_round),
         "best_score": score_text,
@@ -50,7 +74,11 @@ def export_actor(state, path, best_round=0, best_score=None):
 
 def policy_from_state(state):
     hidden_dim = state["gate_encoder.0.weight"].shape[0]
-    policy = SmartATPGPolicy(hidden_dim)
+    if encoder_variant(state) == ENCODER_VARIANT:
+        policy = SmartATPGPolicy(hidden_dim)
+    else:
+        from .gat_gru import GATGRUSmartATPGPolicy
+        policy = GATGRUSmartATPGPolicy(hidden_dim)
     policy.load_state_dict(state)
     return policy.eval()
 
@@ -68,12 +96,18 @@ def export_descriptors(state, graph, path, policy=None):
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     with temporary.open("w", encoding="utf-8", newline="\n") as out:
-        out.write("SMARTATPG_EMBEDDINGS_V3\n")
+        metadata = inference_metadata(state)
+        out.write("SMARTATPG_EMBEDDINGS_V4\n")
         out.write(
-            f"backend smartatpg\nfeature_schema {FEATURE_SCHEMA}\n"
-            f"graph_config {GRAPH_CONFIG_ID}\n"
+            f"backend {metadata['backend']}\n"
+            f"feature_schema {metadata['feature_schema']}\n"
+            f"encoder_variant {metadata['encoder_variant']}\n"
+            f"graph_config {metadata['graph_config']}\n"
             f"gate_embedding_dim {GATE_EMBEDDING_DIM}\n"
-            f"policy_state_dim {POLICY_STATE_DIM}\nsnapshot {identity}\n"
+            f"actor_input_dim {ACTOR_INPUT_DIM}\n"
+            f"action_mask_dim {ACTION_MASK_DIM}\n"
+            f"decision_state_dim {DECISION_STATE_DIM}\n"
+            f"snapshot {identity}\n"
         )
         out.write(f"circuit_hash {graph.circuit_hash}\ndimension {GATE_EMBEDDING_DIM}\ncount {len(graph.names)}\n")
         for name, row in zip(graph.names, values.tolist()):
@@ -95,7 +129,8 @@ def export_snapshot(state, graphs, actor_path):
         export_descriptors(state, graph, path, policy)
         circuits[name] = {"embeddings": str(path), "circuit_hash": graph.circuit_hash}
     export_actor(state, actor_path)
-    manifest = {"format": "SMARTATPG_INFERENCE_SNAPSHOT_V1", **smartatpg_metadata(),
+    manifest = {"format": "SMARTATPG_INFERENCE_SNAPSHOT_V2",
+                **smartatpg_metadata(encoder_variant(state)),
                 "snapshot": identity, "actor": str(native_actor), "circuits": circuits}
     manifest_path = actor_path.with_suffix(actor_path.suffix + ".json")
     temporary = manifest_path.with_suffix(manifest_path.suffix + ".tmp")

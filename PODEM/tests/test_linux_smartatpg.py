@@ -44,8 +44,9 @@ class SplitLauncherTests(unittest.TestCase):
 
             def fake_command(command, log_path, environment):
                 if str(command[2]).endswith("train_smartatpg.py"):
-                    output.mkdir(parents=True, exist_ok=True)
-                    (output / "model_best.txt").write_text("model", encoding="utf-8")
+                    model_dir = Path(command[4])
+                    model_dir.mkdir(parents=True, exist_ok=True)
+                    (model_dir / "model_best.txt").write_text("model", encoding="utf-8")
                 return 0
 
             with (
@@ -58,10 +59,11 @@ class SplitLauncherTests(unittest.TestCase):
             ):
                 run_training_main(["--output-dir", str(output)])
             commands = [call.args[0] for call in tee.call_args_list]
-            self.assertEqual(len(commands), 3)
+            self.assertEqual(len(commands), 4)
             self.assertTrue(str(commands[0][2]).endswith("prepare_smartatpg_training.py"))
             self.assertTrue(str(commands[1][2]).endswith("train_smartatpg.py"))
-            self.assertTrue(str(commands[2][2]).endswith("prepare_smartatpg_benchmark.py"))
+            self.assertTrue(str(commands[2][2]).endswith("train_smartatpg.py"))
+            self.assertTrue(str(commands[3][2]).endswith("prepare_smartatpg_benchmark.py"))
             flattened = " ".join(" ".join(map(str, command)) for command in commands)
             self.assertNotIn("build_native.py", flattened)
             self.assertNotIn("benchmark_smartatpg.py", flattened)
@@ -137,11 +139,12 @@ class BenchmarkSummaryTests(unittest.TestCase):
         self.assertIsNone(percentage_change(0, 1))
 
     def test_summary_compares_atpg_time_only(self):
-        models = ("heuristic", "rl_best")
+        models = ("heuristic", "smartatpg_mean", "smartatpg_gat_gru")
         records = []
         for model, backtracks, seconds in (
             ("heuristic", 100, (2.0, 4.0)),
-            ("rl_best", 90, (1.5, 2.5)),
+            ("smartatpg_mean", 90, (1.5, 2.5)),
+            ("smartatpg_gat_gru", 80, (1.0, 2.0)),
         ):
             for repeat, atpg_seconds in enumerate(seconds, 1):
                 records.append({
@@ -167,11 +170,11 @@ class BenchmarkSummaryTests(unittest.TestCase):
         self.assertEqual(totals["heuristic"]["atpg_seconds"], 3.0)
         self.assertNotIn("wall_seconds", totals["heuristic"])
         self.assertNotIn("native_total_seconds", rows[0])
-        self.assertEqual(set(comparisons["rl_best"]), {
+        self.assertEqual(set(comparisons["smartatpg_mean"]), {
             "backtracks", "backtrace_steps", "atpg_seconds"
         })
         self.assertEqual(
-            comparisons["rl_best"]["backtracks"]["reduction_percent"], 10.0
+            comparisons["smartatpg_mean"]["backtracks"]["reduction_percent"], 10.0
         )
 
 

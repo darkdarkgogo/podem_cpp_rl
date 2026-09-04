@@ -38,9 +38,13 @@ class CircuitGraph:
     names: tuple[str, ...]
     gate_types: tuple[str, ...]
     fanins: tuple[tuple[int, ...], ...]
+    fanout_indices: tuple[tuple[int, ...], ...]
     x: torch.Tensor
     edge_index: torch.Tensor
     levels: tuple[int, ...]
+    level_groups: tuple[tuple[int, ...], ...]
+    forward_level_edges: tuple[torch.Tensor, ...]
+    reverse_level_edges: tuple[torch.Tensor, ...]
     fanouts: tuple[int, ...]
     cc0: tuple[float, ...]
     cc1: tuple[float, ...]
@@ -133,7 +137,27 @@ def load_circuit_graph(path):
             zero, one = one, zero
         cc0.append(_bounded(zero))
         cc1.append(_bounded(one))
-    fanouts = tuple(len(children[name]) for name in names)
+    fanout_indices = tuple(tuple(index[value] for value in children[name]) for name in names)
+    fanouts = tuple(len(values) for values in fanout_indices)
+    level_groups = tuple(
+        tuple(i for i, value in enumerate(levels) if value == level)
+        for level in range(max(levels) + 1)
+    )
+    def level_edges(groups, adjacency):
+        result = []
+        for targets in groups:
+            pairs = [
+                (source, target)
+                for target in targets
+                for source in adjacency[target]
+            ]
+            result.append(
+                torch.tensor(pairs, dtype=torch.long).reshape(-1, 2).t().contiguous()
+            )
+        return tuple(result)
+
+    forward_level_edges = level_edges(level_groups, fanins)
+    reverse_level_edges = level_edges(level_groups, fanout_indices)
     features = torch.zeros((len(names), FEATURE_DIM), dtype=torch.float32)
     features[torch.arange(len(names)), torch.tensor([GATE_TYPES.index(kind) for kind in types])] = 1
     features[:, 7] = torch.tensor(levels, dtype=torch.float32) / max(1, max(levels))
@@ -146,6 +170,7 @@ def load_circuit_graph(path):
     edges = [(v, out) for out, inputs in enumerate(fanins) for v in inputs]
     edge_index = torch.tensor(edges, dtype=torch.long).reshape(-1, 2).t().contiguous()
     return CircuitGraph(
-        circuit_hash(path), tuple(names), types, fanins, features, edge_index,
-        tuple(levels), fanouts, tuple(cc0), tuple(cc1)
+        circuit_hash(path), tuple(names), types, fanins, fanout_indices,
+        features, edge_index, tuple(levels), level_groups,
+        forward_level_edges, reverse_level_edges, fanouts, tuple(cc0), tuple(cc1)
     )

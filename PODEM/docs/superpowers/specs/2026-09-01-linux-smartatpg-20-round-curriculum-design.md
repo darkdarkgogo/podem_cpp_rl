@@ -9,8 +9,8 @@ full training and validation/test fault splits and print their mean extrinsic
 rewards. After all 20 rounds, run a fair native benchmark comparing the final
 and best RL policies with the heuristic PODEM implementation.
 
-The SmartATPG graph backend is the only embedding backend required by this
-workflow. DeepGate is not loaded or required.
+The SmartATPG graph backend is the only embedding backend used by this
+workflow.
 
 ## Definitions and Scale
 

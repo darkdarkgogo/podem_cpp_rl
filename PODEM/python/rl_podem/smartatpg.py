@@ -1,4 +1,4 @@
-"""Trainable graph policy; the fixed DeepGate policy remains independent."""
+"""Trainable graph policy for SmartATPG-guided PODEM."""
 
 from dataclasses import dataclass, replace
 
@@ -11,9 +11,14 @@ from .ppo import (BacktraceActorCriticV2, BacktraceDecisionStepV2,
 from .smartatpg_features import FEATURE_DIM, FEATURE_SCHEMA, GRAPH_CONFIG
 
 GATE_EMBEDDING_DIM = FEATURE_DIM
-POLICY_STATE_DIM = GATE_EMBEDDING_DIM + 2
+ACTOR_INPUT_DIM = GATE_EMBEDDING_DIM
+ACTION_MASK_DIM = 2
+DECISION_STATE_DIM = GATE_EMBEDDING_DIM + ACTION_MASK_DIM
+# Kept as the logical rollout-state dimension for metadata compatibility.
+POLICY_STATE_DIM = DECISION_STATE_DIM
+ENCODER_VARIANT = "fanin_mean"
 RND_SCHEMA = "SMARTATPG_RAW_OBJECTIVE_V1"
-TRAINING_FORMAT = "RL_PODEM_SMARTATPG_PPO_V2_11D"
+TRAINING_FORMAT = "RL_PODEM_SMARTATPG_PPO_V3_11D_MASKED_LOGITS"
 
 
 @dataclass(frozen=True)
@@ -41,9 +46,9 @@ class MeanGraphEncoder(nn.Module):
 
 
 class SmartATPGPolicy(BacktraceActorCriticV2):
-    def __init__(self, hidden_dim=32):
-        super().__init__(POLICY_STATE_DIM, hidden_dim)
-        self.graph_encoder = MeanGraphEncoder()
+    def __init__(self, hidden_dim=32, graph_encoder=None):
+        super().__init__(ACTOR_INPUT_DIM, hidden_dim)
+        self.graph_encoder = MeanGraphEncoder() if graph_encoder is None else graph_encoder
         self._embedding_cache = {}
         self._embedding_version = None
 
@@ -69,20 +74,18 @@ class SmartATPGPolicy(BacktraceActorCriticV2):
             self._embedding_cache[graph.circuit_hash] = self.graph_encoder(graph)
         return self._embedding_cache[graph.circuit_hash]
 
-    def descriptors(self, graph, node_indices, masks=None, embeddings=None):
+    def descriptors(self, graph, node_indices, embeddings=None):
         embeddings = (
             self.graph_embeddings(graph) if embeddings is None else embeddings
         )
         indices = torch.as_tensor(
             node_indices, dtype=torch.long, device=embeddings.device
         )
-        masks = torch.ones((len(indices), 2), device=embeddings.device) if masks is None else torch.as_tensor(
-            masks, dtype=torch.float32, device=embeddings.device)
-        if masks.shape != (len(indices), 2):
-            raise ValueError("SmartATPG requires a two-position action mask")
-        return torch.cat((embeddings[indices], masks), dim=-1)
+        return embeddings[indices]
 
     def batch_logits(self, descriptors, values):
+        if descriptors.ndim != 2 or descriptors.shape[1] != ACTOR_INPUT_DIM:
+            raise ValueError("SmartATPG Actor accepts only 11D gate embeddings")
         values = torch.as_tensor(values, dtype=torch.long, device=descriptors.device)
         state = self.gate_encoder(descriptors) + self.objective_value_embedding(values)
         return self.backtrace_actor(state), self.critic(state).squeeze(-1)
@@ -90,17 +93,24 @@ class SmartATPGPolicy(BacktraceActorCriticV2):
 
 class SmartATPGPPOAgent(BacktracePPOAgentV2):
     embedding_backend = "smartatpg"
+    encoder_variant = ENCODER_VARIANT
+    graph_config = GRAPH_CONFIG
+    training_format = TRAINING_FORMAT
+    policy_class = SmartATPGPolicy
 
     def __init__(self, graphs, hidden_dim=32, **kwargs):
         kwargs.setdefault("lr_actor", 0.001)
         kwargs.setdefault("lr_critic", 0.01)
-        super().__init__(POLICY_STATE_DIM, hidden_dim=hidden_dim, **kwargs)
+        super().__init__(ACTOR_INPUT_DIM, hidden_dim=hidden_dim, **kwargs)
         self.gate_embedding_dim = GATE_EMBEDDING_DIM
+        self.actor_input_dim = ACTOR_INPUT_DIM
+        self.action_mask_dim = ACTION_MASK_DIM
+        self.decision_state_dim = DECISION_STATE_DIM
         self.policy_state_dim = POLICY_STATE_DIM
         self.graphs = {graph.circuit_hash: graph for graph in graphs.values()}
         self.gate_indices = {key: graph.name_to_index for key, graph in self.graphs.items()}
-        self.policy = SmartATPGPolicy(hidden_dim).to(device)
-        self.policy_old = SmartATPGPolicy(hidden_dim).to(device)
+        self.policy = self.policy_class(hidden_dim).to(device)
+        self.policy_old = self.policy_class(hidden_dim).to(device)
         self.policy_old.load_state_dict(self.policy.state_dict())
         shared = [p for name, p in self.policy.named_parameters() if not name.startswith("critic.")]
         self.optimizer = torch.optim.Adam([
@@ -125,7 +135,7 @@ class SmartATPGPPOAgent(BacktracePPOAgentV2):
         with torch.no_grad():
             embeddings = self.policy_old.graph_embeddings(graph, cached=True)
             descriptor = self.policy_old.descriptors(
-                graph, [gate.node_index], mask.unsqueeze(0), embeddings
+                graph, [gate.node_index], embeddings
             )[0]
             logits, state_value = self.policy_old.backtrace_logits(descriptor, value)
             dist = Categorical(logits=logits.masked_fill(~mask.to(device), -1e9))
@@ -163,7 +173,6 @@ class SmartATPGPPOAgent(BacktracePPOAgentV2):
                 )
             descriptor = self.policy.descriptors(
                 graph, [self.gate_indices[graph.circuit_hash][step.objective_name]],
-                step.action_mask.unsqueeze(0),
                 embeddings_by_graph[graph.circuit_hash],
             )[0]
             evaluated.append(self.policy.evaluate_step(replace(step, objective_embedding=descriptor)))
@@ -171,15 +180,28 @@ class SmartATPGPPOAgent(BacktracePPOAgentV2):
 
     def training_state_dict(self):
         state = super().training_state_dict()
-        state.update(format=TRAINING_FORMAT, embedding_backend="smartatpg",
-                     feature_schema=FEATURE_SCHEMA, graph_config=dict(GRAPH_CONFIG), rnd_schema=RND_SCHEMA)
+        state.update(
+            format=self.training_format,
+            embedding_backend="smartatpg",
+            encoder_variant=self.encoder_variant,
+            feature_schema=FEATURE_SCHEMA,
+            graph_config=dict(self.graph_config),
+            rnd_schema=RND_SCHEMA,
+            actor_input_dim=ACTOR_INPUT_DIM,
+            action_mask_dim=ACTION_MASK_DIM,
+            decision_state_dim=DECISION_STATE_DIM,
+        )
         state["policy_state_dim"] = POLICY_STATE_DIM
         return state
 
     def load_training_state_dict(self, state):
-        expected = {"format": TRAINING_FORMAT, "embedding_backend": "smartatpg",
-                    "feature_schema": FEATURE_SCHEMA, "graph_config": GRAPH_CONFIG,
+        expected = {"format": self.training_format, "embedding_backend": "smartatpg",
+                    "encoder_variant": self.encoder_variant,
+                    "feature_schema": FEATURE_SCHEMA, "graph_config": self.graph_config,
                     "rnd_schema": RND_SCHEMA, "gate_embedding_dim": GATE_EMBEDDING_DIM,
+                    "actor_input_dim": ACTOR_INPUT_DIM,
+                    "action_mask_dim": ACTION_MASK_DIM,
+                    "decision_state_dim": DECISION_STATE_DIM,
                     "policy_state_dim": POLICY_STATE_DIM}
         if any(state.get(key) != value for key, value in expected.items()):
             raise ValueError("Incompatible SmartATPG checkpoint backend or graph schema")

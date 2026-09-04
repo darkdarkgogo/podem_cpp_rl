@@ -24,13 +24,13 @@ After conversion:
 
 - The output contains no DFF gate records.
 - Every pseudo PI and pseudo PO is declared exactly once.
-- The existing DeepGate parser can build a directed acyclic graph with no
+- The graph parser can build a directed acyclic graph with no
   unreachable nodes.
 - The C++ PODEM executable can parse and level the converted circuit.
 - The original `s38417.bench` remains byte-for-byte unchanged.
 
 ## Integration
 
-The converter is a reusable Python command under `scripts/`. DeepGate
-embedding export and PPO/RND training will use `s38417_scan.bench`; the raw
+The converter is a reusable Python command under `scripts/`. Embedding export
+and PPO/RND training will use `s38417_scan.bench`; the raw
 sequential benchmark remains archival input only.

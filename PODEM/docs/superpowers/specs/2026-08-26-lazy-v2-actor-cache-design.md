@@ -55,7 +55,7 @@ name-keyed embedding table can be cleared after that cache is constructed.
 
 ## Compatibility And Failure Behavior
 
-Actor V2 text files and DeepGate embedding files remain byte-compatible. Cache
+Actor V2 text files and fixed embedding files remain byte-compatible. Cache
 population uses the same `ActorModel::backtrace_action_logits` computation as
 the eager implementation, so actions must be identical. Existing dimension,
 circuit-hash, gate-name, and objective-value validation remains in force.

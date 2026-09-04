@@ -125,7 +125,8 @@ void ATPG::evaluate(nptr n) {
 }/* end of evaluate */
 
 int ATPG::ctoi(const char &c) {
-  if (c == '2') return (2);
+  if (c == '2' || c == 'U') return U;
   if (c == '1') return (1);
   if (c == '0') return (0);
+  error("invalid logic character: '" + string(1, c) + "'");
 }

@@ -72,7 +72,7 @@ gate embedding [D]
   -> two action logits [left, right]
 ```
 
-The initial V2 configuration keeps the existing 64-dimensional DeepGate
+The initial V2 configuration keeps the existing 64-dimensional fixed gate
 embedding and uses `H=32`. Candidate embeddings and the propagation actor are
 not part of V2. The critic consumes the same object/value state. RND remains a
 training-only auxiliary task and observes the object embedding plus a two-value
@@ -124,7 +124,7 @@ actions must match exactly on all validation decisions.
 
 The normalization script accepts a source bench and writes the binary bench and
 fault map without modifying the source. Paper-style preparation generates
-binary forms before DeepGate extraction, because embeddings and circuit hashes
+binary forms before feature extraction, because embeddings and circuit hashes
 must correspond to the normalized graph.
 
 Training V2 accepts only `backtrace_rl`. Native inference selects the actor

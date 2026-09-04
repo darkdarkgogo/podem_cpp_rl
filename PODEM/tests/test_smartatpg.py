@@ -1,9 +1,10 @@
 import dataclasses
+from collections import Counter
+import shutil
 import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 import torch
 
@@ -15,15 +16,21 @@ from rl_podem.smartatpg_features import (
     FEATURE_DIM, GATE_TYPES, GRAPH_CONFIG, load_circuit_graph,
 )
 from rl_podem.smartatpg import (
-    GATE_EMBEDDING_DIM, POLICY_STATE_DIM, GraphGate, SmartATPGPPOAgent,
-    SmartATPGPolicy,
+    ACTION_MASK_DIM, ACTOR_INPUT_DIM, DECISION_STATE_DIM, GATE_EMBEDDING_DIM,
+    POLICY_STATE_DIM, GraphGate, SmartATPGPPOAgent, SmartATPGPolicy,
+)
+from rl_podem.gat_gru import (
+    GATGRUSmartATPGPPOAgent, GATGRUSmartATPGPolicy,
 )
 from rl_podem.curriculum import CppPodemCurriculumEvaluator
-from rl_podem.cpp_bridge import _load_cpp_embedding_artifact, export_actor_v2_state_dict
+from rl_podem.cpp_bridge import (
+    _load_cpp_embedding_artifact, catalog_cpp_podem, export_actor_v2_state_dict,
+)
 from rl_podem.smartatpg_artifacts import export_actor, export_descriptors, snapshot_id, policy_from_state
 from rl_podem.artifact_paths import training_output_paths
 from smartatpg_portable import (
     compute_embeddings as compute_portable_embeddings,
+    export_embeddings as export_portable_embeddings,
     load_graph as load_portable_graph,
     load_model as load_portable_model,
 )
@@ -163,17 +170,30 @@ class SmartATPGTests(unittest.TestCase):
         self.assertEqual(agent.buffer.steps[0].action_mask.tolist(), [True, True])
         self.assertEqual(agent.buffer.steps[0].objective_embedding.numel(), 0)
 
-    def test_embedding_and_policy_state_dimensions(self):
+    def test_mask_is_not_an_actor_input(self):
         policy = SmartATPGPolicy()
         embeddings = policy.graph_embeddings(self.graph)
         descriptors = policy.descriptors(
-            self.graph, [self.graph.name_to_index["y"]], [[1, 0]], embeddings
+            self.graph, [self.graph.name_to_index["y"]], embeddings
         )
         self.assertEqual(embeddings.shape[1], GATE_EMBEDDING_DIM)
         self.assertEqual(GATE_EMBEDDING_DIM, 11)
-        self.assertEqual(descriptors.shape, (1, POLICY_STATE_DIM))
+        self.assertEqual(descriptors.shape, (1, ACTOR_INPUT_DIM))
+        self.assertEqual(ACTOR_INPUT_DIM, 11)
+        self.assertEqual(policy.gate_encoder[0].in_features, ACTOR_INPUT_DIM)
+        self.assertEqual(ACTION_MASK_DIM, 2)
+        self.assertEqual(DECISION_STATE_DIM, 13)
         self.assertEqual(POLICY_STATE_DIM, 13)
-        self.assertEqual(descriptors[0, -2:].tolist(), [1.0, 0.0])
+
+        gates = self.gates()
+        left = self.agent().select_backtrace_action_deterministic(
+            gates["y"], 1, [gates["n"], gates["b"]], [True, False]
+        )
+        right = self.agent().select_backtrace_action_deterministic(
+            gates["y"], 1, [gates["n"], gates["b"]], [False, True]
+        )
+        self.assertIs(left, gates["n"])
+        self.assertIs(right, gates["b"])
 
     def test_smartatpg_default_learning_rates(self):
         agent = SmartATPGPPOAgent({"test": self.graph}, rnd_beta=0)
@@ -221,15 +241,6 @@ class SmartATPGTests(unittest.TestCase):
                 training_output_paths(checkpoint, root / "best.txt", root / "latest.txt", "smartatpg")
         training_output_paths(root / "state.pth", root / "best.txt", root / "latest.txt", "smartatpg")
 
-    def test_deepgate_export_rejects_ppo_before_import(self):
-        from rl_podem.deepgate_bridge import export_cpp_embeddings
-        checkpoint = Path(self.temp.name) / "ppo.pth"
-        torch.save({"format": "RL_PODEM_CURRICULUM_TRAINING_V4", "agent": {"policy": {}}}, checkpoint)
-        with patch("rl_podem.deepgate_bridge._ensure_deepgate_importable") as importer:
-            with self.assertRaisesRegex(ValueError, "DeepGate encoder checkpoint"):
-                export_cpp_embeddings(self.path, checkpoint, Path(self.temp.name) / "wrong.emb")
-        importer.assert_not_called()
-
     def test_paired_export_and_native_logits(self):
         import cpp_podem
         agent = self.agent()
@@ -242,7 +253,9 @@ class SmartATPGTests(unittest.TestCase):
             embeddings, expected_backend="smartatpg", include_metadata=True)
         self.assertEqual(metadata["snapshot"], snapshot_id(state))
         self.assertEqual(metadata["gate_embedding_dim"], "11")
-        self.assertEqual(metadata["policy_state_dim"], "13")
+        self.assertEqual(metadata["actor_input_dim"], "11")
+        self.assertEqual(metadata["action_mask_dim"], "2")
+        self.assertEqual(metadata["decision_state_dim"], "13")
         self.assertTrue(all(vector.numel() == 11 for vector in table.values()))
         cpp_podem.validate_actor_artifacts(str(embeddings), str(actor), self.graph.circuit_hash,
                                           list(self.graph.names), "smartatpg")
@@ -262,21 +275,19 @@ class SmartATPGTests(unittest.TestCase):
         policy = policy_from_state(state)
         for name, vector in table.items():
             for value in (0, 1):
-                descriptor = torch.cat((vector, torch.ones(2)))
                 with torch.no_grad():
-                    expected = policy.batch_logits(descriptor.unsqueeze(0), [value])[0][0]
-                    single, _ = policy.backtrace_logits(descriptor, value)
+                    expected = policy.batch_logits(vector.unsqueeze(0), [value])[0][0]
+                    single, _ = policy.backtrace_logits(vector, value)
                     torch.testing.assert_close(single, expected)
-                actual = torch.tensor(cpp_podem.score_actor_v2(str(actor), descriptor.tolist(), value))
+                actual = torch.tensor(cpp_podem.score_actor_v2(str(actor), vector.tolist(), value))
                 torch.testing.assert_close(expected, actual, atol=1e-5, rtol=1e-4)
                 self.assertEqual(int(expected.argmax()), int(actual.argmax()))
-        with self.assertRaises(ValueError):
-            _load_cpp_embedding_artifact(embeddings)
+        _load_cpp_embedding_artifact(embeddings)
         with self.assertRaises(ValueError):
             export_actor_v2_state_dict(state, actor)
         with self.assertRaises(RuntimeError):
             cpp_podem.validate_actor_artifacts(str(embeddings), str(actor), self.graph.circuit_hash,
-                                              list(self.graph.names), "deepgate")
+                                              list(self.graph.names), "unsupported")
         different = {key: value.clone() for key, value in state.items()}
         different["graph_encoder.layer.bias"].add_(1)
         export_actor(different, actor)
@@ -284,9 +295,9 @@ class SmartATPGTests(unittest.TestCase):
             cpp_podem.validate_actor_artifacts(str(embeddings), str(actor), self.graph.circuit_hash,
                                               list(self.graph.names), "smartatpg")
 
-    def test_v5_contains_graphsage_and_portable_inference_matches_torch(self):
+    def test_v6_contains_fanin_mean_encoder_and_portable_inference_matches_torch(self):
         state = self.agent().policy_old.state_dict()
-        model_path = Path(self.temp.name) / "model_v5.txt"
+        model_path = Path(self.temp.name) / "model_v6.txt"
         export_actor(state, model_path, best_round=4, best_score=(-200, 3, 40, -5, 4))
         model = load_portable_model(model_path)
         self.assertEqual(model.best_round, 4)
@@ -300,11 +311,183 @@ class SmartATPGTests(unittest.TestCase):
 
         changed = {key: value.clone() for key, value in state.items()}
         changed["graph_encoder.layer.bias"].add_(0.5)
-        changed_path = Path(self.temp.name) / "changed_v5.txt"
+        changed_path = Path(self.temp.name) / "changed_v6.txt"
         export_actor(changed, changed_path)
         changed_model = load_portable_model(changed_path)
         changed_embedding = compute_portable_embeddings(changed_model, portable_graph)
         self.assertNotEqual(changed_embedding, tuple(map(tuple, portable.tolist())))
+
+    def test_gat_gru_dimensions_gradients_and_portable_parity(self):
+        import cpp_podem
+        policy = GATGRUSmartATPGPolicy()
+        encoder = policy.graph_encoder
+        self.assertFalse(hasattr(encoder, "input_projection"))
+        self.assertEqual(tuple(encoder.forward_pass.projection.weight.shape), (11, 11))
+        self.assertEqual(tuple(encoder.reverse_pass.projection.weight.shape), (11, 11))
+        self.assertEqual(tuple(encoder.forward_pass.attention.shape), (22,))
+        self.assertIsNot(
+            encoder.forward_pass.projection.weight,
+            encoder.reverse_pass.projection.weight,
+        )
+        embeddings = policy.graph_embeddings(self.graph)
+        self.assertEqual(tuple(embeddings.shape), (len(self.graph.names), 11))
+        embeddings.sum().backward()
+        for direction in (encoder.forward_pass, encoder.reverse_pass):
+            for parameter in direction.parameters():
+                self.assertIsNotNone(parameter.grad)
+                self.assertGreater(float(parameter.grad.abs().sum()), 0.0)
+
+        model_path = Path(self.temp.name) / "gat_gru_v6.txt"
+        export_actor(policy.state_dict(), model_path)
+        model = load_portable_model(model_path)
+        self.assertEqual(model.encoder_variant, "level_gat_gru")
+        portable = torch.tensor(compute_portable_embeddings(
+            model, load_portable_graph(self.path)
+        ))
+        torch.testing.assert_close(portable, embeddings.detach(), atol=2e-6, rtol=2e-5)
+        embedding_path = Path(self.temp.name) / "gat_gru.emb"
+        export_descriptors(policy.state_dict(), self.graph, embedding_path)
+        cpp_podem.validate_actor_artifacts(
+            str(embedding_path), str(model_path), self.graph.circuit_hash,
+            list(self.graph.names), "smartatpg",
+        )
+        vector = embeddings[0].detach().cpu()
+        expected, _ = policy.backtrace_logits(vector, 1)
+        actual = torch.tensor(
+            cpp_podem.score_actor_v2(str(model_path), vector.tolist(), 1)
+        )
+        torch.testing.assert_close(expected, actual, atol=1e-5, rtol=1e-4)
+
+        baseline_path = Path(self.temp.name) / "baseline_v6.txt"
+        export_actor(SmartATPGPolicy().state_dict(), baseline_path)
+        with self.assertRaisesRegex(RuntimeError, "graph configuration|encoder variant|snapshot"):
+            cpp_podem.validate_actor_artifacts(
+                str(embedding_path), str(baseline_path), self.graph.circuit_hash,
+                list(self.graph.names), "smartatpg",
+            )
+
+    def test_gat_gru_agent_updates_both_directions(self):
+        path = Path(self.temp.name) / "intermediate.bench"
+        path.write_text(
+            "INPUT(a)\nINPUT(b)\nINPUT(c)\n"
+            "mid=AND(a,b)\nout=OR(mid,c)\nOUTPUT(out)\n",
+            encoding="utf-8",
+        )
+        graph = load_circuit_graph(path)
+        agent = GATGRUSmartATPGPPOAgent(
+            {"test": graph}, advantage_method="gae",
+            normalize_returns=False, normalize_advantages=True,
+            return_scale=100, rnd_beta=0, k_epochs=1,
+        )
+        gates = {
+            name: GraphGate(name, graph.circuit_hash, index)
+            for index, name in enumerate(graph.names)
+        }
+        agent.select_backtrace_action(gates["mid"], 1, [gates["a"], gates["b"]])
+        agent.finish_episode(10)
+        before = {key: value.clone() for key, value in agent.policy.state_dict().items()}
+        agent.update()
+        for prefix in (
+            "graph_encoder.forward_pass", "graph_encoder.reverse_pass",
+        ):
+            self.assertTrue(any(
+                key.startswith(prefix) and not torch.equal(before[key], value)
+                for key, value in agent.policy.state_dict().items()
+            ))
+
+    def test_legacy_v5_model_and_v3_embeddings_remain_compatible(self):
+        import cpp_podem
+        state = {
+            key: value.detach().cpu().clone()
+            for key, value in self.agent().policy_old.state_dict().items()
+            if not key.startswith("critic.")
+        }
+        state["gate_encoder.0.weight"] = torch.cat((
+            state["gate_encoder.0.weight"],
+            torch.zeros(state["gate_encoder.0.weight"].shape[0], 2),
+        ), dim=1)
+        snapshot = "1" * 64
+        model_path = Path(self.temp.name) / "legacy_v5.txt"
+        lines = [
+            "SMARTATPG_MODEL_V5", "backend smartatpg",
+            "feature_schema SMARTATPG_FEATURES_V2_11D",
+            "graph_config fanin_mean_1x22x11", "gate_embedding_dim 11",
+            "policy_state_dim 13", f"snapshot {snapshot}",
+            "best_round 1", "best_score -1,2,3,-4,1", "hidden_dim 32",
+        ]
+        tensor_names = (
+            "graph_encoder.layer.weight", "graph_encoder.layer.bias",
+            "gate_encoder.0.weight", "gate_encoder.0.bias",
+            "objective_value_embedding.weight", "backtrace_actor.0.weight",
+            "backtrace_actor.0.bias", "backtrace_actor.2.weight",
+            "backtrace_actor.2.bias",
+        )
+        for name in tensor_names:
+            tensor = state[name]
+            rows, cols = ((1, tensor.numel()) if tensor.ndim == 1 else tensor.shape)
+            values = " ".join(format(float(value), ".9g") for value in tensor.flatten())
+            lines.append(f"tensor {name} {rows} {cols} {values}")
+        lines.append("end")
+        model_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+        model = load_portable_model(model_path)
+        self.assertEqual(model.model_format, "SMARTATPG_MODEL_V5")
+        self.assertEqual(model.actor_input_dim, 13)
+        embedding_path = Path(self.temp.name) / "legacy_v3.emb"
+        graph = load_portable_graph(self.path)
+        export_portable_embeddings(model, graph, embedding_path)
+        self.assertEqual(
+            embedding_path.read_text(encoding="utf-8").splitlines()[0],
+            "SMARTATPG_EMBEDDINGS_V3",
+        )
+        cpp_podem.validate_actor_artifacts(
+            str(embedding_path), str(model_path), self.graph.circuit_hash,
+            list(self.graph.names), "smartatpg",
+        )
+        embedding = compute_portable_embeddings(model, graph)[0]
+        logits = cpp_podem.score_actor_v2(
+            str(model_path), [*embedding, 1.0, 0.0], 1
+        )
+        self.assertEqual(len(logits), 2)
+        self.assertTrue(all(torch.isfinite(torch.tensor(logits))))
+
+    def test_native_backtrace_lock_reuses_an_unfinished_rl_choice(self):
+        import cpp_podem
+        fixture = Path(__file__).resolve().parents[1] / "sample_circuits/c432_binary.bench"
+        circuit = Path(self.temp.name) / fixture.name
+        fault_map = circuit.with_suffix(".faultmap")
+        shutil.copy2(fixture, circuit)
+        shutil.copy2(fixture.with_suffix(".faultmap"), fault_map)
+        fault_id = catalog_cpp_podem(circuit, fault_map)["faults"][0]["fault_id"]
+        decisions = []
+        backtrace_steps = []
+
+        def choose(request):
+            action = 0 if request["action_mask"][0] else 1
+            decisions.append({
+                "sequence": int(request["sequence"]),
+                "objective": request["objective_name"],
+                "mask": tuple(request["action_mask"]),
+                "action": action,
+            })
+            return action
+
+        def event(value):
+            if value["event"] == "backtrace_step":
+                backtrace_steps.append(int(value["decision_sequence"]))
+
+        cpp_podem.run_stuck_at(
+            str(circuit), choose, event, 20, 14, [fault_id], True,
+            "backtrace_rl", str(fault_map),
+        )
+        sequences = [request["sequence"] for request in decisions]
+        self.assertEqual(len(sequences), len(set(sequences)))
+        self.assertTrue(any(request["mask"] == (True, True) for request in decisions))
+        self.assertTrue(any(sum(request["mask"]) == 1 for request in decisions))
+        self.assertTrue(all(
+            request["mask"][request["action"]] for request in decisions
+        ))
+        self.assertGreater(max(Counter(backtrace_steps).values()), 1)
 
     def test_legacy_80d_smartatpg_artifact_is_rejected(self):
         import cpp_podem
@@ -328,6 +511,12 @@ class SmartATPGTests(unittest.TestCase):
                 str(legacy), str(actor), self.graph.circuit_hash,
                 list(self.graph.names), "smartatpg",
             )
+
+    def test_embedding_v1_artifact_is_rejected(self):
+        legacy = Path(self.temp.name) / "v1.emb"
+        legacy.write_text("SMARTATPG_EMBEDDINGS_V1\n", encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "Unsupported embedding format"):
+            _load_cpp_embedding_artifact(legacy)
 
 
 if __name__ == "__main__":

@@ -138,9 +138,9 @@ int main(int argc, char *argv[])
 		}
 		else if (strcmp(argv[i], "-rl-embedding-backend") == 0)
 		{
-			if (i + 1 >= argc || (string(argv[i + 1]) != "smartatpg" && string(argv[i + 1]) != "deepgate"))
+			if (i + 1 >= argc || string(argv[i + 1]) != "smartatpg")
 			{
-				fprintf(stderr, "-rl-embedding-backend requires smartatpg or deepgate\n");
+				fprintf(stderr, "-rl-embedding-backend requires smartatpg\n");
 				return EXIT_FAILURE;
 			}
 			rlEmbeddingBackend = string(argv[i + 1]);
@@ -276,8 +276,8 @@ void usage()
 	fprintf(stderr, "    -fsim <filename>: fault simulation only; filename provides vectors\n");
 	fprintf(stderr, "    -anum <num>: <num> specifies number of vectors per fault\n");
 	fprintf(stderr, "    -bt <num>: <num> specifies number of backtracks\n");
-	fprintf(stderr, "    -rl-emb <filename>: precomputed DeepGate or SmartATPG descriptors\n");
-	fprintf(stderr, "    -rl-embedding-backend <smartatpg|deepgate>: validate artifact backend\n");
+	fprintf(stderr, "    -rl-emb <filename>: precomputed SmartATPG descriptors\n");
+	fprintf(stderr, "    -rl-embedding-backend <smartatpg>: validate artifact backend\n");
 	fprintf(stderr, "    -rl-actor <filename>: exported PPO actor weights\n");
 	fprintf(stderr, "    -rl-mode <backtrace_rl|propagate_rl|both_rl>: RL decision scope (default: backtrace_rl)\n");
 	fprintf(stderr, "    -fault-map <filename>: preserve source collapsed faults on a transformed netlist\n");

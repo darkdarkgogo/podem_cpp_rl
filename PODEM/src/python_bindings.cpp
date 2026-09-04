@@ -245,38 +245,6 @@ py::dict catalog_stuck_at(const std::string &circuit_path,
   return result;
 }
 
-std::vector<float> score_actor(
-    const std::string &actor_path, const std::string &mode,
-    const std::vector<float> &objective,
-    const std::vector<std::vector<float> > &candidates) {
-  smartatpg::ActorModel actor;
-  actor.load(actor_path);
-  if (mode == "backtrace") {
-    return actor.backtrace_logits(objective, candidates);
-  }
-  if (mode == "propagation") {
-    return actor.propagation_logits(candidates);
-  }
-  throw std::runtime_error("Unknown actor mode: " + mode);
-}
-
-std::vector<float> score_actor_cached(
-    const std::string &actor_path, const std::string &mode,
-    const std::vector<float> &objective,
-    const std::vector<std::vector<float> > &candidates) {
-  smartatpg::ActorModel actor;
-  actor.load(actor_path);
-  if (mode == "backtrace") {
-    return actor.optimized_logits(smartatpg::DecisionMode::BACKTRACE,
-                                  objective, candidates);
-  }
-  if (mode == "propagation") {
-    return actor.optimized_logits(smartatpg::DecisionMode::PROPAGATION,
-                                  objective, candidates);
-  }
-  throw std::runtime_error("Unknown actor mode: " + mode);
-}
-
 std::vector<float> score_actor_v2(const std::string &actor_path,
                                   const std::vector<float> &objective,
                                   int objective_value) {
@@ -309,10 +277,6 @@ PYBIND11_MODULE(cpp_podem, module) {
              py::arg("seed") = 14, py::arg("fault_map_path") = "");
   module.def("catalog_stuck_at", &catalog_stuck_at,
              py::arg("circuit_path"), py::arg("fault_map_path") = "");
-  module.def("score_actor", &score_actor, py::arg("actor_path"),
-             py::arg("mode"), py::arg("objective"), py::arg("candidates"));
-  module.def("score_actor_cached", &score_actor_cached, py::arg("actor_path"),
-             py::arg("mode"), py::arg("objective"), py::arg("candidates"));
   module.def("score_actor_v2", &score_actor_v2, py::arg("actor_path"),
              py::arg("objective"), py::arg("objective_value"));
   module.def("validate_actor_artifacts", &validate_actor_artifacts,

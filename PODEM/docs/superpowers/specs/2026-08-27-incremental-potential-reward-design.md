@@ -89,7 +89,7 @@ semantics. The training configuration includes a reward-distribution version,
 causing an explicit compatibility failure if an old checkpoint path is reused.
 
 Fresh training uses a new checkpoint and actor output location. The existing
-manifest, teacher samples, DeepGate embeddings, and old successful artifacts are
+manifest, teacher samples, embedding artifacts, and old successful artifacts are
 retained.
 
 ## Verification
