@@ -10,9 +10,9 @@ from pathlib import Path
 
 import torch
 
-FEATURE_SCHEMA = "SMARTATPG_FEATURES_V2_11D"
+FEATURE_SCHEMA = "SMARTATPG_FEATURES_V3_12D_CO"
 GATE_TYPES = ("PI", "AND", "NAND", "OR", "NOR", "NOT", "BUF")
-FEATURE_DIM = len(GATE_TYPES) + 4
+FEATURE_DIM = len(GATE_TYPES) + 5
 COST_CAP = 10**9
 GRAPH_CONFIG = {
     "layers": 1,
@@ -20,7 +20,7 @@ GRAPH_CONFIG = {
     "output_dim": FEATURE_DIM,
     "aggregation": "fanin_mean",
 }
-GRAPH_CONFIG_ID = "fanin_mean_1x22x11"
+GRAPH_CONFIG_ID = "fanin_mean_1x24x12"
 PORT_RE = re.compile(r"^(INPUT|OUTPUT)\s*\(\s*([^()\s]+)\s*\)$", re.I)
 GATE_RE = re.compile(r"^([^\s=(),]+)\s*=\s*(\w+)\s*\(([^()]*)\)$")
 
@@ -48,6 +48,7 @@ class CircuitGraph:
     fanouts: tuple[int, ...]
     cc0: tuple[float, ...]
     cc1: tuple[float, ...]
+    co: tuple[float, ...]
 
     @property
     def name_to_index(self):
@@ -137,6 +138,18 @@ def load_circuit_graph(path):
             zero, one = one, zero
         cc0.append(_bounded(zero))
         cc1.append(_bounded(one))
+    co = [0 if name in outputs else math.inf for name in names]
+    # Reverse topology propagates output observability to each input pin.
+    for output in reversed(range(len(names))):
+        inputs = fanins[output]
+        kind = types[output]
+        for pin, source in enumerate(inputs):
+            side_cost = 0
+            if kind in ("AND", "NAND"):
+                side_cost = sum(cc1[v] for other, v in enumerate(inputs) if other != pin)
+            elif kind in ("OR", "NOR"):
+                side_cost = sum(cc0[v] for other, v in enumerate(inputs) if other != pin)
+            co[source] = min(co[source], _bounded(co[output] + side_cost + 1))
     fanout_indices = tuple(tuple(index[value] for value in children[name]) for name in names)
     fanouts = tuple(len(values) for values in fanout_indices)
     level_groups = tuple(
@@ -161,7 +174,7 @@ def load_circuit_graph(path):
     features = torch.zeros((len(names), FEATURE_DIM), dtype=torch.float32)
     features[torch.arange(len(names)), torch.tensor([GATE_TYPES.index(kind) for kind in types])] = 1
     features[:, 7] = torch.tensor(levels, dtype=torch.float32) / max(1, max(levels))
-    for column, values in enumerate((fanouts, cc0, cc1), 8):
+    for column, values in enumerate((fanouts, cc0, cc1, co), 8):
         maximum = max((v for v in values if math.isfinite(v)), default=0)
         scale = max(1.0, math.log1p(maximum))
         features[:, column] = torch.tensor([
@@ -172,5 +185,5 @@ def load_circuit_graph(path):
     return CircuitGraph(
         circuit_hash(path), tuple(names), types, fanins, fanout_indices,
         features, edge_index, tuple(levels), level_groups,
-        forward_level_edges, reverse_level_edges, fanouts, tuple(cc0), tuple(cc1)
+        forward_level_edges, reverse_level_edges, fanouts, tuple(cc0), tuple(cc1), tuple(co)
     )

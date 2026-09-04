@@ -15,6 +15,8 @@ def resolve_backend(metadata, requested=None):
     if requested is not None and requested != backend:
         raise ValueError(f"Requested backend {requested} conflicts with artifact backend {backend}")
     variant = metadata.get("encoder_variant", ENCODER_VARIANT)
+    actor_dim = ACTOR_INPUT_DIM + int(variant == "level_gat_gru")
+    state_dim = actor_dim + ACTION_MASK_DIM
     if variant == ENCODER_VARIANT:
         expected_graph_config = GRAPH_CONFIG
     elif variant == "level_gat_gru":
@@ -25,13 +27,13 @@ def resolve_backend(metadata, requested=None):
         raise ValueError("SmartATPG feature schema or graph configuration changed")
     if (
         int(metadata.get("gate_embedding_dim", -1)) != GATE_EMBEDDING_DIM
-        or int(metadata.get("policy_state_dim", -1)) != POLICY_STATE_DIM
+        or int(metadata.get("policy_state_dim", -1)) != state_dim
     ):
         raise ValueError("SmartATPG gate embedding or policy state dimension changed")
     optional_dimensions = {
-        "actor_input_dim": ACTOR_INPUT_DIM,
+        "actor_input_dim": actor_dim,
         "action_mask_dim": ACTION_MASK_DIM,
-        "decision_state_dim": DECISION_STATE_DIM,
+        "decision_state_dim": state_dim,
     }
     if any(
         key in metadata and int(metadata[key]) != expected
@@ -42,6 +44,7 @@ def resolve_backend(metadata, requested=None):
 
 
 def smartatpg_metadata(encoder_variant=ENCODER_VARIANT):
+    actor_dim = ACTOR_INPUT_DIM + int(encoder_variant == "level_gat_gru")
     if encoder_variant == ENCODER_VARIANT:
         graph_config, graph_config_id = GRAPH_CONFIG, GRAPH_CONFIG_ID
     elif encoder_variant == "level_gat_gru":
@@ -52,7 +55,7 @@ def smartatpg_metadata(encoder_variant=ENCODER_VARIANT):
             "feature_schema": FEATURE_SCHEMA,
             "graph_config": dict(graph_config), "graph_config_id": graph_config_id,
             "gate_embedding_dim": GATE_EMBEDDING_DIM,
-            "actor_input_dim": ACTOR_INPUT_DIM,
+            "actor_input_dim": actor_dim,
             "action_mask_dim": ACTION_MASK_DIM,
-            "decision_state_dim": DECISION_STATE_DIM,
-            "policy_state_dim": POLICY_STATE_DIM}
+            "decision_state_dim": actor_dim + ACTION_MASK_DIM,
+            "policy_state_dim": actor_dim + ACTION_MASK_DIM}

@@ -1,4 +1,4 @@
-"""Prepare the two-circuit, top-100-fault SmartATPG paper experiment."""
+"""Prepare the two-circuit, top-100-detected-fault SmartATPG experiment."""
 
 import argparse
 import hashlib
@@ -11,7 +11,8 @@ from rl_podem.backends import smartatpg_metadata
 from rl_podem.cpp_bridge import profile_cpp_podem
 
 
-MANIFEST_FORMAT = "SMARTATPG_PAPER_TRAINING_V1"
+MANIFEST_FORMAT = "SMARTATPG_PAPER_TRAINING_V2"
+FAULT_FILTER = "baseline_detected_only"
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -24,8 +25,10 @@ def sha256_file(path):
 
 
 def select_hard_faults(profiles, count):
+    if count <= 0:
+        raise ValueError("Detected fault count must be positive")
     ranked = sorted(
-        (dict(item) for item in profiles),
+        (dict(item) for item in profiles if int(item["outcome"]) == 1),
         key=lambda item: (
             -int(item["backtracks"]),
             -int(item.get("backtrace_steps", 0)),
@@ -34,7 +37,8 @@ def select_hard_faults(profiles, count):
     )
     if len(ranked) < count:
         raise RuntimeError(
-            f"Only {len(ranked)} faults are available; cannot select {count}."
+            f"Only {len(ranked)} baseline-detected faults are available; "
+            f"cannot select {count}. Undetected faults will not be used to fill the set."
         )
     return ranked[:count]
 
@@ -53,13 +57,17 @@ def _validate_resume(manifest_path, count, backtrack_limit, seed):
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     expected = {
         "format": MANIFEST_FORMAT,
+        "fault_filter": FAULT_FILTER,
         "fault_count_per_circuit": count,
         "backtrack_limit": backtrack_limit,
         "profile_seed": seed,
         **smartatpg_metadata(),
     }
     if any(manifest.get(key) != value for key, value in expected.items()):
-        raise ValueError("Existing SmartATPG manifest configuration changed")
+        raise ValueError(
+            "Existing SmartATPG manifest configuration changed; "
+            "use a new output directory to prepare the detected-only fault set"
+        )
     if [item.get("name") for item in manifest.get("circuits", [])] != [
         "c6288", "s38417"
     ]:
@@ -71,6 +79,13 @@ def _validate_resume(manifest_path, count, backtrack_limit, seed):
                 raise ValueError(f"Manifest artifact changed: {path}")
         if len(item.get("training_faults", [])) != count:
             raise ValueError(f"Circuit {item['name']} does not contain {count} faults")
+        profiles = json.loads(Path(item["profile"]).read_text(encoding="utf-8"))
+        selected = select_hard_faults(profiles, count)
+        if (
+            item["training_faults"] != selected
+            or item.get("training_fault_ids") != [row["fault_id"] for row in selected]
+        ):
+            raise ValueError(f"Circuit {item['name']} faults are not the baseline detected top {count}")
     return manifest
 
 
@@ -145,6 +160,7 @@ def prepare(output_dir, count=100, backtrack_limit=500, seed=14, resume=False):
 
     manifest = {
         "format": MANIFEST_FORMAT,
+        "fault_filter": FAULT_FILTER,
         **smartatpg_metadata(),
         "selection": ["backtracks_desc", "backtrace_steps_desc", "fault_id_asc"],
         "fault_count_per_circuit": count,

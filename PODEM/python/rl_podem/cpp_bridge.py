@@ -8,6 +8,7 @@ from typing import Any, Callable, Optional, Tuple, Union
 import torch
 
 from .ppo import BacktracePPOAgentV2
+from .smartatpg_features import FEATURE_DIM, FEATURE_SCHEMA, GRAPH_CONFIG_ID
 
 
 def _load_cpp_embedding_artifact(
@@ -27,7 +28,8 @@ def _load_cpp_embedding_artifact(
         header = handle.readline().strip()
         if header not in (
             "SMARTATPG_EMBEDDINGS_V2", "SMARTATPG_EMBEDDINGS_V3",
-            "SMARTATPG_EMBEDDINGS_V4",
+            "SMARTATPG_EMBEDDINGS_V4", "SMARTATPG_EMBEDDINGS_V5",
+            "SMARTATPG_EMBEDDINGS_V6",
         ):
             raise ValueError(f"Unsupported embedding format: {path}")
         if header == "SMARTATPG_EMBEDDINGS_V2":
@@ -44,30 +46,36 @@ def _load_cpp_embedding_artifact(
              "decision_state_dim", "snapshot")
         )
         metadata = {key: read_pair(handle, key) for key in keys}
+        has_co = header == "SMARTATPG_EMBEDDINGS_V6"
+        gate_dim = FEATURE_DIM if has_co else 11
+        expected_config = {
+            "fanin_mean": GRAPH_CONFIG_ID if has_co else "fanin_mean_1x22x11",
+            "level_gat_gru": "level_gat_gru_fwd_rev_12d_v2" if has_co else "level_gat_gru_fwd_rev_11d_v1",
+        }.get(metadata.get("encoder_variant"))
+        actor_dim = int(metadata.get("actor_input_dim", 13))
+        expected_actor_dim = gate_dim + int(metadata.get("encoder_variant") == "level_gat_gru")
         valid_graph = (
             metadata["graph_config"] == "fanin_mean_1x22x11"
             if header == "SMARTATPG_EMBEDDINGS_V3" else
-            metadata["graph_config"] in (
-                "fanin_mean_1x22x11", "level_gat_gru_fwd_rev_11d_v1"
-            )
+            metadata["graph_config"] == expected_config
         )
         dimensions_valid = (
             metadata.get("policy_state_dim") == "13"
             if header == "SMARTATPG_EMBEDDINGS_V3" else
-            metadata.get("actor_input_dim") == "11"
+            actor_dim == (expected_actor_dim if header in ("SMARTATPG_EMBEDDINGS_V5", "SMARTATPG_EMBEDDINGS_V6") else 11)
             and metadata.get("action_mask_dim") == "2"
-            and metadata.get("decision_state_dim") == "13"
+            and metadata.get("decision_state_dim") == str(actor_dim + 2)
         )
         if (
             metadata["backend"] != "smartatpg"
-            or metadata["feature_schema"] != "SMARTATPG_FEATURES_V2_11D"
+            or metadata["feature_schema"] != (FEATURE_SCHEMA if has_co else "SMARTATPG_FEATURES_V2_11D")
             or not valid_graph
-            or metadata["gate_embedding_dim"] != "11"
+            or metadata["gate_embedding_dim"] != str(gate_dim)
             or not dimensions_valid
             or len(metadata["snapshot"]) != 64
             or any(char not in "0123456789abcdef" for char in metadata["snapshot"])
         ):
-            raise ValueError("Invalid SmartATPG 11D embedding metadata")
+            raise ValueError("Invalid SmartATPG embedding metadata")
         if expected_backend is not None and expected_backend != metadata["backend"]:
             raise ValueError(f"Descriptor backend {metadata['backend']} conflicts with {expected_backend}")
         circuit_hash = read_pair(handle, "circuit_hash")
@@ -75,8 +83,8 @@ def _load_cpp_embedding_artifact(
         count = int(read_pair(handle, "count"))
         if dimension <= 0 or count < 0:
             raise ValueError(f"Invalid embedding dimensions in: {path}")
-        if dimension != 11:
-            raise ValueError("SmartATPG gate embedding dimension must be 11")
+        if dimension != gate_dim:
+            raise ValueError(f"SmartATPG gate embedding dimension must be {gate_dim}")
 
         for row in range(count):
             line = handle.readline()
@@ -175,15 +183,15 @@ def export_actor_v2_state_dict(
     if metadata is None:
         raise ValueError("SmartATPG weights require a snapshot-paired model export")
     actor_tensor_names = [
-        "gate_encoder.0.weight",
-        "gate_encoder.0.bias",
-        "objective_value_embedding.weight",
         "backtrace_actor.0.weight",
         "backtrace_actor.0.bias",
         "backtrace_actor.2.weight",
         "backtrace_actor.2.bias",
     ]
     variant = metadata.get("encoder_variant")
+    expected_actor_dim = FEATURE_DIM + int(variant == "level_gat_gru")
+    if any(key.startswith(("gate_encoder.", "objective_value_embedding.")) for key in state_dict):
+        raise ValueError("Direct Actor models must not contain a pre-encoder or objective embedding table")
     if variant == "fanin_mean":
         encoder_tensor_names = (
             "graph_encoder.layer.weight", "graph_encoder.layer.bias",
@@ -204,22 +212,58 @@ def export_actor_v2_state_dict(
     if missing:
         raise KeyError("Checkpoint is missing V2 actor tensors: " + ", ".join(missing))
 
-    gate_weight = state_dict["gate_encoder.0.weight"]
+    if variant == "fanin_mean":
+        graph_shapes = {
+            "graph_encoder.layer.weight": (FEATURE_DIM, 2 * FEATURE_DIM),
+            "graph_encoder.layer.bias": (FEATURE_DIM,),
+        }
+        graph_config = GRAPH_CONFIG_ID
+    else:
+        shapes = {
+            "attention": (2 * FEATURE_DIM,), "projection.weight": (FEATURE_DIM, FEATURE_DIM),
+            "gru.weight_ih": (3 * FEATURE_DIM, FEATURE_DIM),
+            "gru.weight_hh": (3 * FEATURE_DIM, FEATURE_DIM),
+            "gru.bias_ih": (3 * FEATURE_DIM,), "gru.bias_hh": (3 * FEATURE_DIM,),
+        }
+        graph_shapes = {
+            f"graph_encoder.{direction}.{name}": shape
+            for direction in ("forward_pass", "reverse_pass")
+            for name, shape in shapes.items()
+        }
+        graph_config = "level_gat_gru_fwd_rev_12d_v2"
+    for name, shape in graph_shapes.items():
+        if tuple(state_dict[name].shape) != shape:
+            raise ValueError(f"Invalid graph tensor shape for {name}: expected {shape}")
+
+    gate_weight = state_dict["backtrace_actor.0.weight"]
+    if gate_weight.ndim != 2 or gate_weight.shape[0] <= 0:
+        raise ValueError("Invalid Actor tensor shape for backtrace_actor.0.weight")
     hidden_dim, embedding_dim = gate_weight.shape
+    actor_shapes = {
+        "backtrace_actor.0.weight": (hidden_dim, expected_actor_dim),
+        "backtrace_actor.0.bias": (hidden_dim,),
+        "backtrace_actor.2.weight": (2, hidden_dim),
+        "backtrace_actor.2.bias": (2,),
+    }
+    for name, shape in actor_shapes.items():
+        if tuple(state_dict[name].shape) != shape:
+            raise ValueError(f"Invalid Actor tensor shape for {name}: expected {shape}")
     if (
         metadata.get("backend") != "smartatpg"
-        or int(metadata.get("gate_embedding_dim", -1)) != 11
-        or int(metadata.get("actor_input_dim", -1)) != 11
+        or metadata.get("graph_config") != graph_config
+        or metadata.get("feature_schema") != FEATURE_SCHEMA
+        or int(metadata.get("gate_embedding_dim", -1)) != FEATURE_DIM
+        or int(metadata.get("actor_input_dim", -1)) != expected_actor_dim
         or int(metadata.get("action_mask_dim", -1)) != 2
-        or int(metadata.get("decision_state_dim", -1)) != 13
-        or embedding_dim != 11
+        or int(metadata.get("decision_state_dim", -1)) != expected_actor_dim + 2
+        or embedding_dim != expected_actor_dim
     ):
-        raise ValueError("SmartATPG Actor requires an 11D input and a separate 2D mask")
+        raise ValueError("Actor input dimensions do not match the selected encoder variant")
     output_path = Path(path).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     temporary = output_path.with_suffix(output_path.suffix + ".tmp")
     with temporary.open("w", encoding="utf-8", newline="\n") as output:
-        output.write("SMARTATPG_MODEL_V6\n")
+        output.write("SMARTATPG_MODEL_V8\n")
         for key in (
             "backend", "feature_schema", "encoder_variant", "graph_config",
             "gate_embedding_dim", "actor_input_dim", "action_mask_dim",
@@ -278,7 +322,7 @@ class _CppPodemTrainerBase:
             raise ValueError("Circuit graph is not registered with this agent")
         self.gates = {name: GraphGate(name, self.circuit_hash, index)
                       for index, name in enumerate(graph.names)}
-        embedding_dim = ACTOR_INPUT_DIM
+        embedding_dim = ACTOR_INPUT_DIM + int(agent.encoder_variant == "level_gat_gru")
         self.agent = agent
         agent_input_dim = getattr(
             self.agent, "actor_input_dim", self.agent.gate_embedding_dim

@@ -1,4 +1,4 @@
-"""Benchmark heuristic PODEM against both trained 11D SmartATPG encoders."""
+"""Benchmark heuristic PODEM against both trained 12D SCOAP SmartATPG encoders."""
 
 import argparse
 import csv
@@ -26,7 +26,7 @@ from smartatpg_portable import (
 )
 
 
-MANIFEST_FORMAT = "SMARTATPG_BENCHMARK_BUNDLE_V3"
+MANIFEST_FORMAT = "SMARTATPG_BENCHMARK_BUNDLE_V5"
 
 
 PATTERNS = {
@@ -86,12 +86,10 @@ def _validate_manifest(manifest, bundle_root):
         "backend": "smartatpg",
         "feature_schema": FEATURE_SCHEMA,
         "gate_embedding_dim": GATE_EMBEDDING_DIM,
-        "actor_input_dim": ACTOR_INPUT_DIM,
         "action_mask_dim": ACTION_MASK_DIM,
-        "decision_state_dim": POLICY_STATE_DIM,
     }
     if any(manifest.get(key) != value for key, value in expected.items()):
-        raise ValueError("Benchmark manifest is incompatible with SmartATPG 11D")
+        raise ValueError("Benchmark manifest is incompatible with SmartATPG 12D CO")
     circuits = list(manifest.get("circuits", []))
     if [item.get("name") for item in circuits] != list(CIRCUITS):
         raise ValueError("Benchmark manifest must contain all 16 ISCAS circuits")
@@ -167,6 +165,9 @@ def _prepare_models(model_paths, manifest, output_dir):
             model.best_round != int(record["best_round"])
             or model.best_score != tuple(float(value) for value in record["best_score"])
             or model.encoder_variant != record["encoder_variant"]
+            or model.actor_input_dim != record["actor_input_dim"]
+            or model.decision_state_dim != record["decision_state_dim"]
+            or model.model_format != "SMARTATPG_MODEL_V8"
         ):
             raise ValueError(f"Model selection metadata does not match bundle: {name}")
         portable_models[name] = model
@@ -389,6 +390,7 @@ def _write_reports(output_dir, rows, totals, comparisons, portable_models):
         "models": {
             name: {
                 "encoder_variant": model.encoder_variant,
+                "actor_input_dim": model.actor_input_dim,
                 "best_round": model.best_round,
                 "best_score": list(model.best_score),
                 "parameter_count": sum(

@@ -67,7 +67,8 @@ class SplitLauncherTests(unittest.TestCase):
             flattened = " ".join(" ".join(map(str, command)) for command in commands)
             self.assertNotIn("build_native.py", flattened)
             self.assertNotIn("benchmark_smartatpg.py", flattened)
-            self.assertEqual(commands[1][commands[1].index("--rounds") + 1], "20")
+            for command in commands[1:3]:
+                self.assertEqual(command[command.index("--rounds") + 1], "30")
 
     def test_benchmark_launcher_only_builds_and_benchmarks(self):
         with tempfile.TemporaryDirectory() as directory:

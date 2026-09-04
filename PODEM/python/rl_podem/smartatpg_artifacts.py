@@ -34,9 +34,9 @@ def inference_metadata(state):
         "encoder_variant": variant,
         "graph_config": values["graph_config_id"],
         "gate_embedding_dim": GATE_EMBEDDING_DIM,
-        "actor_input_dim": ACTOR_INPUT_DIM,
+        "actor_input_dim": values["actor_input_dim"],
         "action_mask_dim": ACTION_MASK_DIM,
-        "decision_state_dim": DECISION_STATE_DIM,
+        "decision_state_dim": values["decision_state_dim"],
     }
 
 
@@ -73,7 +73,7 @@ def export_actor(state, path, best_round=0, best_score=None):
 
 
 def policy_from_state(state):
-    hidden_dim = state["gate_encoder.0.weight"].shape[0]
+    hidden_dim = state["backtrace_actor.0.weight"].shape[0]
     if encoder_variant(state) == ENCODER_VARIANT:
         policy = SmartATPGPolicy(hidden_dim)
     else:
@@ -97,16 +97,16 @@ def export_descriptors(state, graph, path, policy=None):
     temporary = path.with_suffix(path.suffix + ".tmp")
     with temporary.open("w", encoding="utf-8", newline="\n") as out:
         metadata = inference_metadata(state)
-        out.write("SMARTATPG_EMBEDDINGS_V4\n")
+        out.write("SMARTATPG_EMBEDDINGS_V6\n")
         out.write(
             f"backend {metadata['backend']}\n"
             f"feature_schema {metadata['feature_schema']}\n"
             f"encoder_variant {metadata['encoder_variant']}\n"
             f"graph_config {metadata['graph_config']}\n"
             f"gate_embedding_dim {GATE_EMBEDDING_DIM}\n"
-            f"actor_input_dim {ACTOR_INPUT_DIM}\n"
+            f"actor_input_dim {metadata['actor_input_dim']}\n"
             f"action_mask_dim {ACTION_MASK_DIM}\n"
-            f"decision_state_dim {DECISION_STATE_DIM}\n"
+            f"decision_state_dim {metadata['decision_state_dim']}\n"
             f"snapshot {identity}\n"
         )
         out.write(f"circuit_hash {graph.circuit_hash}\ndimension {GATE_EMBEDDING_DIM}\ncount {len(graph.names)}\n")

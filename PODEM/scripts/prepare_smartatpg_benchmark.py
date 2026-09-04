@@ -21,7 +21,7 @@ from smartatpg_portable import (
 )
 
 
-MANIFEST_FORMAT = "SMARTATPG_BENCHMARK_BUNDLE_V3"
+MANIFEST_FORMAT = "SMARTATPG_BENCHMARK_BUNDLE_V5"
 ROOT = Path(__file__).resolve().parents[1]
 def _atomic_json(path, value):
     path = Path(path)
@@ -51,9 +51,7 @@ def _validate_resume(path):
         "backend": "smartatpg",
         "feature_schema": FEATURE_SCHEMA,
         "gate_embedding_dim": GATE_EMBEDDING_DIM,
-        "actor_input_dim": ACTOR_INPUT_DIM,
         "action_mask_dim": ACTION_MASK_DIM,
-        "decision_state_dim": POLICY_STATE_DIM,
     }
     if any(manifest.get(key) != value for key, value in expected.items()):
         raise ValueError("Existing benchmark bundle has an incompatible format")
@@ -102,6 +100,9 @@ def prepare(output_dir, baseline_model_path, gat_gru_model_path, resume=False):
         variant, graph_config = expected_variants[name]
         if model.encoder_variant != variant or model.graph_config != graph_config:
             raise ValueError(f"Wrong encoder variant for benchmark model {name}")
+        expected_dim = ACTOR_INPUT_DIM + int(variant == "level_gat_gru")
+        if model.model_format != "SMARTATPG_MODEL_V8" or model.actor_input_dim != expected_dim:
+            raise ValueError(f"Benchmark requires a direct Actor model for {name}")
         if model.best_round <= 0 or model.best_score is None:
             raise ValueError(f"Benchmark requires a best checkpoint for {name}")
         bundled_model = output_dir / "models" / f"{name}.txt"
@@ -113,6 +114,8 @@ def prepare(output_dir, baseline_model_path, gat_gru_model_path, resume=False):
         model_records[name] = {
             "path": bundled_model.relative_to(output_dir).as_posix(),
             "encoder_variant": variant,
+            "actor_input_dim": model.actor_input_dim,
+            "decision_state_dim": model.decision_state_dim,
             "graph_config": graph_config,
             "snapshot": model.snapshot,
             "best_round": model.best_round,
@@ -157,9 +160,7 @@ def prepare(output_dir, baseline_model_path, gat_gru_model_path, resume=False):
         "backend": "smartatpg",
         "feature_schema": FEATURE_SCHEMA,
         "gate_embedding_dim": GATE_EMBEDDING_DIM,
-        "actor_input_dim": ACTOR_INPUT_DIM,
         "action_mask_dim": ACTION_MASK_DIM,
-        "decision_state_dim": POLICY_STATE_DIM,
         "models": model_records,
         "circuits": records,
     }

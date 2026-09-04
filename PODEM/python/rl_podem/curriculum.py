@@ -402,8 +402,8 @@ def _teacher_logits(policy, embeddings, values, circuits, tables):
     for circuit, indices in grouped.items():
         selected = torch.tensor(indices, dtype=torch.long, device=embeddings.device)
         graph = tables[circuit]
-        context = policy.context(graph, cached=not torch.is_grad_enabled())
-        descriptors = policy.descriptors(graph, embeddings[selected, 0].long(), context=context)
+        context = policy.graph_embeddings(graph, cached=not torch.is_grad_enabled())
+        descriptors = policy.descriptors(graph, embeddings[selected, 0].long(), embeddings=context)
         logits.append(policy.batch_logits(descriptors, values[selected])[0])
         positions.extend(indices)
     order = torch.tensor(positions, dtype=torch.long, device=embeddings.device).argsort()
@@ -453,11 +453,10 @@ def pretrain_actor(
     embeddings, values, targets, weights, circuits = _teacher_tensors(
         training_samples, embedding_tables
     )
-    actor_parameters = list(agent.policy.gate_encoder.parameters())
-    actor_parameters += list(agent.policy.objective_value_embedding.parameters())
-    actor_parameters += list(agent.policy.backtrace_actor.parameters())
-    if hasattr(agent.policy, "graph_encoder"):
-        actor_parameters += list(agent.policy.graph_encoder.parameters())
+    actor_parameters = [
+        parameter for name, parameter in agent.policy.named_parameters()
+        if not name.startswith("critic.")
+    ]
     optimizer = torch.optim.Adam(actor_parameters, lr=learning_rate)
     generator = torch.Generator().manual_seed(seed)
     best_state = None

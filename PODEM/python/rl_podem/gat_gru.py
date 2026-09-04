@@ -16,8 +16,9 @@ GRAPH_CONFIG = {
     "schedule": "forward_levels_then_reverse_levels",
     "directions": "independent",
 }
-GRAPH_CONFIG_ID = "level_gat_gru_fwd_rev_11d_v1"
-TRAINING_FORMAT = "RL_PODEM_SMARTATPG_GAT_GRU_PPO_V1_11D"
+GRAPH_CONFIG_ID = "level_gat_gru_fwd_rev_12d_v2"
+ACTOR_INPUT_DIM = FEATURE_DIM + 1
+TRAINING_FORMAT = "RL_PODEM_SMARTATPG_GAT_GRU_PPO_V4_CO"
 
 
 class DirectionalGATGRU(nn.Module):
@@ -39,13 +40,17 @@ class DirectionalGATGRU(nn.Module):
             torch.cat((target_states, source_states), dim=-1).matmul(self.attention),
             negative_slope=0.2,
         )
-        max_scores = torch.scatter_reduce(
-            scores, 0, target, reduce="amax", output_size=hidden.shape[0]
-        )
+        # PyTorch 1.11 used the older scatter_reduce signature.
+        if hasattr(torch.Tensor, "scatter_reduce_"):
+            max_scores = scores.new_full((hidden.shape[0],), -float("inf"))
+            max_scores.scatter_reduce_(0, target, scores.detach(), reduce="amax")
+        else:
+            # The 1.11 reduction is CPU-only; the softmax shift is detached.
+            max_scores = torch.scatter_reduce(
+                scores.detach().cpu(), 0, target.cpu(), reduce="amax", output_size=hidden.shape[0]
+            ).to(hidden.device)
         exponentials = torch.exp(scores - max_scores.index_select(0, target))
-        totals = torch.scatter_reduce(
-            exponentials, 0, target, reduce="sum", output_size=hidden.shape[0]
-        )
+        totals = scores.new_zeros(hidden.shape[0]).index_add(0, target, exponentials)
         weights = exponentials / totals.index_select(0, target).clamp_min(1e-16)
         messages = torch.zeros_like(hidden)
         messages.index_add_(0, target, weights.unsqueeze(-1) * source_states)
@@ -71,7 +76,7 @@ class LevelWiseGATGRUEncoder(nn.Module):
         for edges in reversed(graph.reverse_level_edges):
             hidden = self.reverse_pass.update_level(hidden, edges)
         if hidden.shape[1] != GATE_EMBEDDING_DIM:
-            raise ValueError("GAT-GRU must preserve the 11D gate embedding")
+            raise ValueError("GAT-GRU must preserve the 12D gate embedding")
         if not bool(torch.isfinite(hidden).all()):
             raise FloatingPointError("Non-finite GAT-GRU hidden state")
         return hidden
@@ -79,10 +84,27 @@ class LevelWiseGATGRUEncoder(nn.Module):
 
 class GATGRUSmartATPGPolicy(SmartATPGPolicy):
     def __init__(self, hidden_dim=32):
-        super().__init__(hidden_dim, graph_encoder=LevelWiseGATGRUEncoder())
+        super().__init__(hidden_dim, graph_encoder=LevelWiseGATGRUEncoder(), actor_input_dim=ACTOR_INPUT_DIM)
+
+    def batch_logits(self, descriptors, values):
+        model_device = self.backtrace_actor[0].weight.device
+        descriptors = descriptors.to(device=model_device, dtype=torch.float32)
+        if descriptors.ndim != 2 or descriptors.shape[1] != FEATURE_DIM:
+            raise ValueError("agentATPG requires 12D graph embeddings before objective concatenation")
+        values = torch.as_tensor(values, device=model_device).reshape(-1, 1)
+        if values.shape[0] != descriptors.shape[0] or not bool(((values == 0) | (values == 1)).all()):
+            raise ValueError("agentATPG requires one binary objective value per embedding")
+        state = torch.cat((descriptors, values.to(descriptors.dtype)), dim=-1)
+        return self.backtrace_actor(state), self.critic(state).squeeze(-1)
+
+    def backtrace_logits(self, objective_embedding, objective_value):
+        logits, values = self.batch_logits(objective_embedding.unsqueeze(0), [objective_value])
+        return logits[0], values[0]
 
 
 class GATGRUSmartATPGPPOAgent(SmartATPGPPOAgent):
+    actor_input_dim = ACTOR_INPUT_DIM
+    decision_state_dim = ACTOR_INPUT_DIM + 2
     encoder_variant = ENCODER_VARIANT
     graph_config = GRAPH_CONFIG
     training_format = TRAINING_FORMAT

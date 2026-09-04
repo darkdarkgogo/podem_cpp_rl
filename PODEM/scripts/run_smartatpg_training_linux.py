@@ -69,9 +69,9 @@ def main(argv=None):
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=ROOT / "artifacts/smartatpg_paper_11d",
+        default=ROOT / "artifacts/smartatpg_12d_co",
     )
-    parser.add_argument("--rounds", type=int, default=20)
+    parser.add_argument("--rounds", type=int, default=30)
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--profile-seed", type=int, default=14)
     parser.add_argument("--backtrack-limit", type=int, default=500)

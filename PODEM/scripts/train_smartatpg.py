@@ -1,4 +1,4 @@
-"""Train a selected 11D SmartATPG graph policy without BC or curriculum."""
+"""Train a selected 12D SCOAP SmartATPG graph policy without BC or curriculum."""
 
 import argparse
 import hashlib
@@ -9,7 +9,7 @@ from pathlib import Path
 import torch
 
 from prepare_smartatpg_training import (
-    MANIFEST_FORMAT, select_hard_faults, sha256_file,
+    FAULT_FILTER, MANIFEST_FORMAT, select_hard_faults, sha256_file,
 )
 from rl_podem.backends import smartatpg_metadata
 from rl_podem.cpp_bridge import (
@@ -23,8 +23,8 @@ from rl_podem.smartatpg_artifacts import export_actor
 from rl_podem.smartatpg_features import load_circuit_graph
 
 
-CHECKPOINT_FORMAT = "SMARTATPG_11D_TRAINING_V2"
-BEST_CHECKPOINT_FORMAT = "SMARTATPG_11D_BEST_V2"
+CHECKPOINT_FORMAT = "SMARTATPG_12D_CO_TRAINING_V3"
+BEST_CHECKPOINT_FORMAT = "SMARTATPG_12D_CO_BEST_V3"
 AGENT_TYPES = {
     "fanin_mean": SmartATPGPPOAgent,
     "level_gat_gru": GATGRUSmartATPGPPOAgent,
@@ -83,9 +83,12 @@ def validation_score(summary, round_number):
 
 
 def _validate_manifest(manifest):
-    expected = {"format": MANIFEST_FORMAT, **smartatpg_metadata()}
+    expected = {
+        "format": MANIFEST_FORMAT, "fault_filter": FAULT_FILTER,
+        **smartatpg_metadata(),
+    }
     if any(manifest.get(key) != value for key, value in expected.items()):
-        raise ValueError("Manifest is not compatible with SmartATPG 11D training")
+        raise ValueError("Manifest is not compatible with detected-only SmartATPG training; prepare a new fault set")
     circuits = list(manifest.get("circuits", []))
     if [item.get("name") for item in circuits] != ["c6288", "s38417"]:
         raise ValueError("Training requires exactly c6288 and s38417")
@@ -108,7 +111,7 @@ def _validate_manifest(manifest):
         selected = select_hard_faults(profiles, count)
         expected_ids = [row["fault_id"] for row in selected]
         if item["training_fault_ids"] != expected_ids:
-            raise ValueError(f"Circuit {item['name']} faults are not the baseline top 100")
+            raise ValueError(f"Circuit {item['name']} faults are not the baseline detected top 100")
         if item.get("training_faults") != selected:
             raise ValueError(f"Circuit {item['name']} ranking metadata changed")
     return circuits
@@ -214,7 +217,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("manifest", type=Path)
     parser.add_argument("output_dir", type=Path)
-    parser.add_argument("--rounds", type=int, default=20)
+    parser.add_argument("--rounds", type=int, default=30)
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--rnd-beta", type=float, default=0.05)
     parser.add_argument("--k-epochs", type=int, default=8)
@@ -288,7 +291,7 @@ def main(argv=None):
     if checkpoint_path.is_file():
         saved = torch.load(checkpoint_path, map_location="cpu")
         if saved.get("format") != CHECKPOINT_FORMAT:
-            raise ValueError("Legacy SmartATPG checkpoint is incompatible with 11D training")
+            raise ValueError("Legacy SmartATPG checkpoint is incompatible with 12D CO training")
         if saved.get("manifest_hash") != manifest_digest or saved.get("config") != config:
             raise ValueError("Training manifest or configuration changed since checkpoint")
         agent.load_training_state_dict(saved["agent"])

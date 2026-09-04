@@ -1,6 +1,6 @@
 # SmartATPG RL 使用入口
 
-当前对比包含11维 fanin-mean SmartATPG 和11维逐 level 双向 GAT-GRU。Actor 只接收11维 gate embedding；两位 action mask 是逻辑决策状态的一部分，仅在 logits 之后用于屏蔽，不进入 Actor。训练环境与 C++ 编译评测环境已经分离。
+当前对比包含12维 fanin-mean SmartATPG 基线和12维逐 level 双向 GAT-GRU（agentATPG）。节点特征包含静态 SCOAP CC0、CC1、CO。SmartATPG 的12维 embedding 直接进入 Actor/Critic；agentATPG 拼接1维目标值 object_val 后，以13维直接进入 Actor/Critic。两者都没有前置 gate_encoder 或目标值查表相加；mask 仅在 logits 后使用。训练环境与 C++ 编译评测环境已经分离。
 
 完整中文说明见 [`docs/SMARTATPG_11D_使用说明.md`](docs/SMARTATPG_11D_使用说明.md)。
 
@@ -8,7 +8,7 @@
 
 ```bash
 python scripts/run_smartatpg_training_linux.py \
-  --output-dir artifacts/smartatpg_paper_11d
+  --output-dir artifacts/smartatpg_12d_co
 ```
 
 编译评测环境：
