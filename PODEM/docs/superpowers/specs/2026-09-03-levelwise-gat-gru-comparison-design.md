@@ -42,8 +42,10 @@ level 内所有节点同时更新；只有当前 level 全部完成后，下一�
 - GRU input size：11。
 - GRU hidden size：11。
 
-最终 gate embedding 严格为 11 维。两位 action mask 不属于 embedding，
-只在构造决策描述符时追加，因此 Actor 接收的 policy state 仍为 13 维。
+最终 gate embedding 严格为 11 维，Actor 也只接收这 11 维 embedding。两位
+action mask 不属于 embedding，也不进入 Actor；它们仅作为决策状态的一部分，
+在 Actor 产生两路 logits 后用于屏蔽当前不可选的动作。因此逻辑决策状态为
+`11D embedding + 2D mask`，但 Actor input dimension 仍为 11。
 
 ## Attention 与更新语义
 
@@ -62,6 +64,33 @@ softmax 针对每个 target gate 的当前有效邻居独立归一化。正向�
 fanin 边；反向扫描将相同的边反转，使 fanout 信息向 primary input 传播。
 不额外添加 self-loop，因为 GRU 的 hidden 参数已经保留 gate 自身的旧状态。
 
+## Action Mask 与路线锁定
+
+Action mask 表示当前 gate 的两路 fanin 中哪些仍需要且允许继续回溯，不表示
+embedding 特征。Actor 先仅根据 11 维 gate embedding 和 objective value 生成
+两个 logits，随后才在动作分布上应用 mask：
+
+```text
+logits = Actor(gate_embedding, objective_value)
+masked_logits[k] = logits[k]       if action_mask[k]
+masked_logits[k] = -infinity       otherwise
+```
+
+Actor 第一次选择一路后不能立即 mask。现有 `BacktraceLock.selected_wire` 记录这条
+正在处理但尚未完成的路线；只要该 fanin 的仿真值仍为 `U`，后续 backtrace 必须
+继续沿同一路递归，不能再次调用 Actor 改选其他路线。
+
+每次 PI 赋值并执行电路仿真后，才根据所选 fanin 的实际值判断局部目标是否满足。
+只有当该值等于当前 gate 推导出的 required fanin value 时，才将对应动作置为
+masked 并释放路线锁。若 gate 仍需满足另一输入，下一次决策只能从剩余未屏蔽
+路线中选择。若仍为 `U`，mask 保持不变并继续当前路线；若发生冲突，则由 PODEM
+执行回退。
+
+回退撤销 PI 赋值后，mask 根据恢复后的 fanin 仿真值重新计算，相关路线锁按搜索
+路径 generation 失效。新故障开始和 objective value 改变时重置相应状态。PPO
+rollout 保存动作选择前的 mask，并在更新时将同一 mask 应用于重新计算的 logits，
+但不会把 mask 拼接到 Actor 输入。
+
 ## 软件边界
 
 新实现与基线编码器隔离：
@@ -71,12 +100,13 @@ fanin 边；反向扫描将相同的边反转，使 fanout 信息向 primary inp
 - 新建独立的 GAT-GRU 模块，负责 11 维编码器、Policy 和 PPO Agent 变体。
 - 训练命令必须显式选择编码器变体，并写入独立输出目录；现有基线 checkpoint
   兼容性保持不变。
-- Snapshot 导出记录编码器变体、图配置、embedding 维度、policy state 维度
-  以及全部编码器张量。
+- Snapshot 导出记录编码器变体、图配置、embedding 维度、Actor 输入维度、逻辑
+  决策状态维度以及全部编码器张量。
 - Portable Python inference 在不依赖 Torch runtime 的环境中实现相同的逐
   level 计算，并为原生 C++ 基准测试导出固定的逐 gate embedding。
-- 原生 C++ Actor loader 继续使用现有的 11 维 embedding 和 13 维 policy
-  state，并通过编码器变体及图配置标识防止工件混用。
+- 原生 C++ Actor loader 让新格式 Actor 只接收 11 维 embedding，在 logits 之后
+  应用两位 mask，并通过编码器变体及图配置标识防止工件混用。旧格式仅为已有
+  工件保留兼容读取，不用于新对比训练。
 
 新模型仍属于 SmartATPG 系列，不引入新的外部后端或 vendor 依赖。
 
@@ -89,7 +119,8 @@ fanin 边；反向扫描将相同的边反转，使 fanout 信息向 primary inp
 新模型与 embedding 工件必须验证：
 
 - encoder variant 与 graph configuration；
-- gate embedding 维度 11 和 policy state 维度 13；
+- gate embedding 与 Actor input 维度 11、action mask 维度 2，以及逻辑决策
+  state 维度 13；
 - circuit hash、tensor 名称、tensor 形状、有限数值和 snapshot ID；
 - Actor 参数与导出 embedding 的精确配对关系。
 
@@ -117,13 +148,17 @@ backtracks、backtrace steps、生成向量数量以及 C++ ATPG 区间耗时。
 
 图加载器继续拒绝环、缺失 driver、不支持的 gate type 和非法 level schedule。
 GAT 实现拒绝应当更新却没有有效邻居的 attention group、非有限 attention
-score 或 hidden state、错误维度及非法 action mask。Portable 与 Torch
+score 或 hidden state、错误维度及非法 action mask。路线锁必须拒绝已不属于
+当前 gate、objective 或搜索 generation 的选中 fanin。Portable 与 Torch
 实现遇到 metadata 或 tensor shape 不一致时必须直接失败，不允许使用猜测默认值。
 
 ## 测试与验收标准
 
 单元测试必须验证不存在输入升维、正反向参数互相独立、attention 归一化、
-同 level 同步更新、正向和反向信息流、11 维 embedding 以及 13 维决策描述符。
+同 level 同步更新、正向和反向信息流、11 维 embedding、11 维 Actor 输入以及
+独立的两位 action mask。Mask 测试必须验证选中动作不会立即被屏蔽、未满足时
+继续同一路且不重复调用 Actor、仿真满足后才屏蔽、回退后正确恢复，并验证 PPO
+更新使用选择前的 mask。
 梯度测试必须证明梯度能够到达两个方向的 GAT、两个 GRU cell 和 Actor。
 
 一致性测试需要在明确的浮点误差范围内对齐 Torch 与 portable embedding，
