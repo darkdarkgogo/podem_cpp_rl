@@ -21,6 +21,34 @@
 namespace smartatpg {
 namespace {
 
+template <std::size_t InputDim>
+void fixed_direct_actor_32x2(
+    const float *input,
+    const std::array<float, 13 * 32> &hidden_weight_by_input,
+    const std::array<float, 32> &hidden_bias,
+    const std::array<float, 2 * 32> &output_weight,
+    const std::array<float, 2> &output_bias, float *hidden, float *logits) {
+  static_assert(InputDim == 12 || InputDim == 13,
+                "Fixed SmartATPG Actor input must be 12D or 13D");
+  for (std::size_t row = 0; row < 32; ++row)
+    hidden[row] = hidden_bias[row];
+  for (std::size_t col = 0; col < InputDim; ++col) {
+    const float input_value = input[col];
+    const std::size_t offset = col * 32;
+    for (std::size_t row = 0; row < 32; ++row)
+      hidden[row] += hidden_weight_by_input[offset + row] * input_value;
+  }
+  for (std::size_t row = 0; row < 32; ++row)
+    hidden[row] = std::tanh(hidden[row]);
+  for (std::size_t row = 0; row < 2; ++row) {
+    float value = output_bias[row];
+    const std::size_t offset = row * 32;
+    for (std::size_t col = 0; col < 32; ++col)
+      value += output_weight[offset + col] * hidden[col];
+    logits[row] = value;
+  }
+}
+
 void require(bool condition, const std::string &message) {
   if (!condition) {
     throw std::runtime_error(message);
@@ -430,6 +458,27 @@ void ActorModel::load(const std::string &path) {
           "V2 backtrace output weight dimensions must be [2, hidden_dim]");
   require(tensor("backtrace_actor.2.bias").values.size() == 2,
           "V2 backtrace output bias dimensions must be [2]");
+
+  fixed_direct_kernel_ = version_ >= 7 && hidden_dim_ == 32 &&
+                         (embedding_dim_ == 12 || embedding_dim_ == 13);
+  if (fixed_direct_kernel_) {
+    const Tensor &hidden_weight = tensor("backtrace_actor.0.weight");
+    const Tensor &hidden_bias = tensor("backtrace_actor.0.bias");
+    const Tensor &output_weight = tensor("backtrace_actor.2.weight");
+    const Tensor &output_bias = tensor("backtrace_actor.2.bias");
+    for (std::size_t col = 0; col < embedding_dim_; ++col) {
+      for (std::size_t row = 0; row < 32; ++row) {
+        fixed_hidden_weight_by_input_[col * 32 + row] =
+            hidden_weight.values[row * embedding_dim_ + col];
+      }
+    }
+    std::copy(hidden_bias.values.begin(), hidden_bias.values.end(),
+              fixed_hidden_bias_.begin());
+    std::copy(output_weight.values.begin(), output_weight.values.end(),
+              fixed_output_weight_.begin());
+    std::copy(output_bias.values.begin(), output_bias.values.end(),
+              fixed_output_bias_.begin());
+  }
 }
 
 const ActorModel::Tensor &ActorModel::tensor(const std::string &name) const {
@@ -463,6 +512,18 @@ void ActorModel::backtrace_action_logits_into(
   require(objective != nullptr && state != nullptr && hidden != nullptr &&
               logits != nullptr,
           "V2 actor buffers must not be null");
+  if (fixed_direct_kernel_) {
+    if (embedding_dim_ == 12) {
+      fixed_direct_actor_32x2<12>(
+          objective, fixed_hidden_weight_by_input_, fixed_hidden_bias_,
+          fixed_output_weight_, fixed_output_bias_, hidden, logits);
+    } else {
+      fixed_direct_actor_32x2<13>(
+          objective, fixed_hidden_weight_by_input_, fixed_hidden_bias_,
+          fixed_output_weight_, fixed_output_bias_, hidden, logits);
+    }
+    return;
+  }
   if (version_ < 7) {
   require(gate_weight_ != nullptr && gate_bias_ != nullptr &&
               objective_value_embedding_ != nullptr,
@@ -544,6 +605,7 @@ NativeActorPolicy::NativeActorPolicy(
   v2_mask_is_actor_input_ =
       actor_.version_ == 5;
   use_logits_cache_ = actor_.encoder_variant() != "fanin_mean";
+  use_fixed_actor_buffers_ = actor_.fixed_direct_kernel_;
   v2_variants_per_gate_ = v2_mask_is_actor_input_ ? 8 : 2;
   v2_embedding_cache_.resize(gate_count_ * gate_embedding_dim);
   v2_logits_cache_.resize(gate_count_ * v2_variants_per_gate_ * 2);
@@ -555,9 +617,11 @@ NativeActorPolicy::NativeActorPolicy(
               v2_embedding_cache_.begin() + gate_id * gate_embedding_dim);
   }
   embeddings.clear();
-  v2_policy_input_buffer_.resize(actor_.embedding_dimension());
-  state_buffer_.resize(actor_.hidden_dimension());
-  hidden_buffer_.resize(actor_.hidden_dimension());
+  if (!use_fixed_actor_buffers_) {
+    v2_policy_input_buffer_.resize(actor_.embedding_dimension());
+    state_buffer_.resize(actor_.hidden_dimension());
+    hidden_buffer_.resize(actor_.hidden_dimension());
+  }
 }
 
 int NativeActorPolicy::select(const DecisionRequest &request) {
@@ -584,23 +648,28 @@ int NativeActorPolicy::select(const DecisionRequest &request) {
       request.objective_id * v2_variants_per_gate_ + variant;
   const std::size_t offset = cache_key * 2;
   if (!use_logits_cache_ || !v2_cache_valid_[cache_key]) {
+    float *policy_input = use_fixed_actor_buffers_ ?
+        fixed_policy_input_buffer_.data() : v2_policy_input_buffer_.data();
+    float *state = use_fixed_actor_buffers_ ?
+        fixed_state_buffer_.data() : state_buffer_.data();
+    float *hidden = use_fixed_actor_buffers_ ?
+        fixed_hidden_buffer_.data() : hidden_buffer_.data();
     const std::size_t gate_embedding_dim = actor_.gate_embedding_dimension();
     const float *embedding =
         &v2_embedding_cache_[request.objective_id * gate_embedding_dim];
-    std::copy(embedding, embedding + gate_embedding_dim,
-              v2_policy_input_buffer_.begin());
+    std::copy(embedding, embedding + gate_embedding_dim, policy_input);
     if (v2_mask_is_actor_input_) {
-      v2_policy_input_buffer_[gate_embedding_dim] =
+      policy_input[gate_embedding_dim] =
           request.action_mask[0] ? 1.0f : 0.0f;
-      v2_policy_input_buffer_[gate_embedding_dim + 1] =
+      policy_input[gate_embedding_dim + 1] =
           request.action_mask[1] ? 1.0f : 0.0f;
     } else if (actor_.version_ >= 7 && actor_.encoder_variant() == "level_gat_gru") {
-      v2_policy_input_buffer_[gate_embedding_dim] = static_cast<float>(request.objective_value);
+      policy_input[gate_embedding_dim] = static_cast<float>(request.objective_value);
     }
     const auto actor_started = std::chrono::steady_clock::now();
     actor_.backtrace_action_logits_into(
-        v2_policy_input_buffer_.data(), request.objective_value,
-        state_buffer_.data(), hidden_buffer_.data(), &v2_logits_cache_[offset]);
+        policy_input, request.objective_value, state, hidden,
+        &v2_logits_cache_[offset]);
     timing_stats_.actor_forward_nanoseconds +=
         static_cast<unsigned long long>(
             std::chrono::duration_cast<std::chrono::nanoseconds>(

@@ -22,7 +22,7 @@ def main():
     if os.name != "nt":
         compiler = os.environ.get("CXX", "g++")
         command = [
-            compiler, "-std=c++11", "-O2", "-Isrc", *sources,
+            compiler, "-std=c++11", "-O3", "-march=native", "-Isrc", *sources,
             "-o", str(args.output),
         ]
         subprocess.run(command, check=True)

@@ -25,7 +25,7 @@ class BuildExt(build_ext):
             compile_args = ["/std:c++14", "/EHsc", "/O2"]
             link_args = ["/MANIFEST:NO"]
         else:
-            compile_args = ["-std=c++11", "-Ofast"]
+            compile_args = ["-std=c++11", "-O3", "-march=native"]
             link_args = []
         for extension in self.extensions:
             extension.extra_compile_args = compile_args

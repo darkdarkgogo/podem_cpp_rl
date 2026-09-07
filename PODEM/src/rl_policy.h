@@ -1,6 +1,7 @@
 #ifndef SMARTATPG_RL_POLICY_H
 #define SMARTATPG_RL_POLICY_H
 
+#include <array>
 #include <cstddef>
 #include <memory>
 #include <string>
@@ -139,6 +140,11 @@ private:
   const Tensor *gate_weight_ = nullptr;
   const Tensor *gate_bias_ = nullptr;
   const Tensor *objective_value_embedding_ = nullptr;
+  bool fixed_direct_kernel_ = false;
+  std::array<float, 13 * 32> fixed_hidden_weight_by_input_{};
+  std::array<float, 32> fixed_hidden_bias_{};
+  std::array<float, 2 * 32> fixed_output_weight_{};
+  std::array<float, 2> fixed_output_bias_{};
 
   friend class NativeActorPolicy;
 };
@@ -164,6 +170,9 @@ private:
   std::size_t gate_count_ = 0;
   std::vector<float> state_buffer_;
   std::vector<float> hidden_buffer_;
+  std::array<float, 13> fixed_policy_input_buffer_{};
+  std::array<float, 32> fixed_state_buffer_{};
+  std::array<float, 32> fixed_hidden_buffer_{};
   std::vector<float> v2_embedding_cache_;
   std::vector<float> v2_policy_input_buffer_;
   std::vector<float> v2_logits_cache_;
@@ -171,6 +180,7 @@ private:
   std::size_t v2_variants_per_gate_ = 0;
   bool v2_mask_is_actor_input_ = false;
   bool use_logits_cache_ = true;
+  bool use_fixed_actor_buffers_ = false;
   DecisionTimingStats timing_stats_;
 };
 

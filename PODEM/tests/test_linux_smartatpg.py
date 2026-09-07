@@ -25,6 +25,14 @@ def sha256(path):
 
 
 class SplitLauncherTests(unittest.TestCase):
+    def test_native_linux_build_enables_local_cpu_optimization(self):
+        build_script = (SCRIPTS / "build_native.py").read_text(encoding="utf-8")
+        setup_script = (SCRIPTS.parent / "setup.py").read_text(encoding="utf-8")
+        for source in (build_script, setup_script):
+            self.assertIn('"-O3"', source)
+            self.assertIn('"-march=native"', source)
+            self.assertNotIn('"-Ofast"', source)
+
     def test_benchmark_defaults_to_2000_backtracks(self):
         self.assertEqual(run_benchmark.__defaults__, (5, 14, 2000))
 

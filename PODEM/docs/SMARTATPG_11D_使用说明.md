@@ -85,6 +85,8 @@ embedding 计算时间既单独写入 `preprocessing.json`，也按模型汇总�
 
 原生日志会额外打印 RL backtrace 的策略选择次数、Actor 实际前向次数、策略选择总时间、Actor 前向总时间及各自平均时间。最终报告使用各电路重复测量的中位时间汇总，并分别列出完整模型参数量和在线 Actor 参数量。fanin-mean 每次策略选择都会重新计算 Actor，因此其 Actor 前向次数应等于策略选择次数；GAT-GRU 保留按 gate 和目标值索引的 logit 缓存。
 
+当前 V8 Actor 的 `12→32→2` 和 `13→32→2` 前向在 C++ 中使用固定尺寸专用内核，第一层权重会在加载时转置成适合连续更新32个神经元的布局。Linux 原生程序及扩展使用 `-O3 -march=native` 编译，以便在评测机器上进行循环展开和 SIMD 自动向量化；没有启用会改变浮点结合顺序的 fast-math。
+
 ## 兼容性
 
 新工件为 V8 model / V6 embedding，特征标识为 `SMARTATPG_FEATURES_V3_12D_CO`，benchmark bundle 为 V5，分别记录每种模型的 Actor 输入维度（12或13）。旧11维 checkpoint 不能作为新结构的断点继续训练；请使用新的训练输出目录。旧 V5/V3、V6/V4、V7/V5 推理工件保留兼容读取，并使用原有前11列特征，不参与新对比。更早的14维特征、64/80维 descriptor 和缺少图权重的 V4 Actor 会被明确拒绝。
