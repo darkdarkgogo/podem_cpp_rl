@@ -7,16 +7,14 @@
 训练环境：
 
 ```bash
-python scripts/run_smartatpg_training_linux.py \
-  --output-dir artifacts/smartatpg_12d_co
+chmod +x train_smartatpg_linux.sh benchmark_smartatpg_linux.sh
+./train_smartatpg_linux.sh
 ```
 
 编译评测环境：
 
 ```bash
-python3 scripts/run_smartatpg_benchmark_linux.py \
-  /path/to/benchmark_bundle \
-  --output-dir benchmark_results
+./benchmark_smartatpg_linux.sh
 ```
 
 正式时间比较只使用 C++ PODEM 报告的 ATPG 区间时间，不包含图 embedding、编译和 Python 编排时间。

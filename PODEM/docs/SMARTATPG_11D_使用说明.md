@@ -23,8 +23,8 @@ conda activate d2l
 python -m pip install -r python-requirements.txt
 python -m pip install -e .
 
-python scripts/run_smartatpg_training_linux.py \
-  --output-dir artifacts/smartatpg_12d_co
+chmod +x train_smartatpg_linux.sh benchmark_smartatpg_linux.sh
+./train_smartatpg_linux.sh
 ```
 
 训练入口只完成以下工作：
@@ -60,10 +60,7 @@ tensorboard \
 把整个 `benchmark_bundle/` 复制到评测环境。该环境只需要 Python 3 标准库和支持 C++11 的 `g++`，不需要 PyTorch、CUDA、NumPy 或 `.pth` checkpoint。
 
 ```bash
-python3 scripts/run_smartatpg_benchmark_linux.py \
-  /path/to/benchmark_bundle \
-  --output-dir benchmark_results \
-  --repeats 5
+./benchmark_smartatpg_linux.sh
 ```
 
 评测入口会：
