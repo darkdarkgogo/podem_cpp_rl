@@ -7,8 +7,8 @@
 profile 两个训练电路，并在传统启发式于 2000 次回溯内检测到的故障中，每个电路
 选择回溯代价最高的 100 个。
 
-新的 mean 和 GAT-GRU 模型都从随机初始化开始训练。不读取、不转换，也不兼容
-原有 500-limit 模型或训练 checkpoint。
+新的 mean 和 GAT-GRU 模型都从随机初始化开始训练。新训练流程不读取或转换原有
+500-limit 模型或训练 checkpoint，也不新增旧模型续训接口。
 
 ## 方案
 
@@ -55,7 +55,8 @@ TensorBoard、导出模型、bundle 和 benchmark 结果均不会与旧 500-limi
 
 - 重新使用包含 500-limit manifest 的准备目录时，现有 resume 校验必须拒绝它。
 - 新实验必须使用新目录重新 profiling，并从随机参数开始训练。
-- benchmark 的回溯上限必须为正；生成的运行 metadata 必须记录实际值 2000。
+- 当前训练和 benchmark 流程只接受 2000；传入其他回溯上限时必须立即失败。生成
+  的运行 metadata 必须记录实际值 2000。
 - 训练、bundle 或 benchmark 的必要新工件缺失时，错误信息必须包含具体路径。
 
 ## 验证
