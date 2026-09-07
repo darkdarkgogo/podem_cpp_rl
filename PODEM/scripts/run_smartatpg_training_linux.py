@@ -12,6 +12,7 @@ import torch
 
 
 ROOT = Path(__file__).resolve().parents[1]
+BACKTRACK_LIMIT = 2000
 
 
 def _atomic_json(path, value):
@@ -69,17 +70,21 @@ def main(argv=None):
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=ROOT / "artifacts/smartatpg_12d_co",
+        default=ROOT / "artifacts/smartatpg_12d_co_bt2000",
     )
     parser.add_argument("--rounds", type=int, default=30)
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--profile-seed", type=int, default=14)
-    parser.add_argument("--backtrack-limit", type=int, default=500)
+    parser.add_argument("--backtrack-limit", type=int, default=BACKTRACK_LIMIT)
     args = parser.parse_args(argv)
     if not sys.platform.startswith("linux"):
         raise RuntimeError("This training launcher is intended for Linux")
     if args.rounds <= 0 or args.backtrack_limit <= 0:
         raise ValueError("Rounds and backtrack limit must be positive")
+    if args.backtrack_limit != BACKTRACK_LIMIT:
+        raise ValueError(
+            f"SmartATPG training requires backtrack limit {BACKTRACK_LIMIT}"
+        )
     _check_cpp_extension()
 
     output_dir = args.output_dir.resolve()

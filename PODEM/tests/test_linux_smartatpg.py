@@ -3,6 +3,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 
@@ -10,7 +11,10 @@ SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-from benchmark_smartatpg import _stage_circuit_copy, _summarize, percentage_change
+from benchmark_smartatpg import (
+    _parse_native_output, _stage_circuit_copy, _summarize,
+    _summarize_preprocessing, _write_reports, percentage_change, run_benchmark,
+)
 from run_smartatpg_benchmark_linux import main as run_benchmark_main
 from run_smartatpg_training_linux import main as run_training_main
 from smartatpg_portable import CIRCUITS
@@ -21,6 +25,21 @@ def sha256(path):
 
 
 class SplitLauncherTests(unittest.TestCase):
+    def test_benchmark_defaults_to_2000_backtracks(self):
+        self.assertEqual(run_benchmark.__defaults__, (5, 14, 2000))
+
+    def test_launchers_reject_500_backtracks(self):
+        with (
+            patch("run_smartatpg_training_linux.sys.platform", "linux"),
+            self.assertRaisesRegex(ValueError, "requires backtrack limit 2000"),
+        ):
+            run_training_main(["--backtrack-limit", "500"])
+        with (
+            patch("run_smartatpg_benchmark_linux.sys.platform", "linux"),
+            self.assertRaisesRegex(ValueError, "requires backtrack limit 2000"),
+        ):
+            run_benchmark_main(["unused", "--backtrack-limit", "500"])
+
     def test_scripts_directory_contains_only_current_workflow(self):
         self.assertEqual(
             {path.name for path in SCRIPTS.glob("*.py")},
@@ -69,6 +88,10 @@ class SplitLauncherTests(unittest.TestCase):
             self.assertNotIn("benchmark_smartatpg.py", flattened)
             for command in commands[1:3]:
                 self.assertEqual(command[command.index("--rounds") + 1], "30")
+            prepare = commands[0]
+            self.assertEqual(
+                prepare[prepare.index("--backtrack-limit") + 1], "2000"
+            )
 
     def test_benchmark_launcher_only_builds_and_benchmarks(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -93,6 +116,10 @@ class SplitLauncherTests(unittest.TestCase):
             flattened = " ".join(" ".join(map(str, command)) for command in commands)
             self.assertNotIn("train_smartatpg.py", flattened)
             self.assertNotIn(".pth", flattened)
+            benchmark = commands[1]
+            self.assertEqual(
+                benchmark[benchmark.index("--backtrack-limit") + 1], "2000"
+            )
 
     def test_benchmark_runtime_has_no_torch_dependency(self):
         for name in (
@@ -139,6 +166,10 @@ class BenchmarkSummaryTests(unittest.TestCase):
         self.assertEqual(percentage_change(0, 0), 0.0)
         self.assertIsNone(percentage_change(0, 1))
 
+    def test_benchmark_rejects_any_other_backtrack_limit(self):
+        with self.assertRaisesRegex(ValueError, "requires backtrack limit 2000"):
+            run_benchmark("unused", "unused", "unused", backtrack_limit=500)
+
     def test_summary_compares_atpg_time_only(self):
         models = ("heuristic", "smartatpg_mean", "smartatpg_gat_gru")
         records = []
@@ -162,6 +193,17 @@ class BenchmarkSummaryTests(unittest.TestCase):
                     "backtrace_steps": backtracks * 10,
                     "test_vectors": 2,
                     "atpg_seconds": atpg_seconds,
+                    "rl_select_calls": 0 if model == "heuristic" else backtracks,
+                    "actor_forward_calls": (
+                        0 if model == "heuristic"
+                        else backtracks if model == "smartatpg_mean" else 10
+                    ),
+                    "rl_select_seconds": (
+                        0.0 if model == "heuristic" else atpg_seconds / 1000
+                    ),
+                    "actor_forward_seconds": (
+                        0.0 if model == "heuristic" else atpg_seconds / 2000
+                    ),
                     "native_total_seconds": atpg_seconds + 100,
                     "wall_seconds": atpg_seconds + 200,
                 })
@@ -176,6 +218,107 @@ class BenchmarkSummaryTests(unittest.TestCase):
         })
         self.assertEqual(
             comparisons["smartatpg_mean"]["backtracks"]["reduction_percent"], 10.0
+        )
+        self.assertEqual(totals["smartatpg_mean"]["actor_forward_calls"], 90)
+        self.assertEqual(totals["smartatpg_gat_gru"]["actor_forward_calls"], 10)
+        self.assertAlmostEqual(
+            totals["smartatpg_mean"]["average_rl_select_microseconds"],
+            2.0 / 1000 * 1.0e6 / 90,
+        )
+
+    def test_native_actor_timing_is_parsed(self):
+        output = """
+#total number of detected faults = 10
+#total number of gate faults (uncollapsed) = 12
+#number of equivalent detected faults = 5
+#number of equivalent gate faults (collapsed) = 6
+#number of aborted faults = 1
+#number of redundant faults = 1
+#total number of backtracks = 20
+#total number of backtrace steps = 30
+#number of test vectors = 4
+#number of RL backtrace policy selections = 40
+#number of Actor forward evaluations = 10
+#total RL backtrace policy selection time = 0.004000000s
+#total Actor forward time = 0.003000000s
+cputime for test pattern generation (one circuit): 1.250000s 1.500000s
+"""
+        parsed = _parse_native_output(output, Path("native.log"))
+        self.assertEqual(parsed["rl_select_calls"], 40)
+        self.assertEqual(parsed["actor_forward_calls"], 10)
+        self.assertEqual(parsed["rl_select_seconds"], 0.004)
+        self.assertEqual(parsed["actor_forward_seconds"], 0.003)
+
+    def test_preprocessing_summary_separates_both_embeddings(self):
+        summary = _summarize_preprocessing([
+            {"operation": "graph_feature_build", "seconds": 1.0},
+            {"operation": "graph_feature_build", "seconds": 2.0},
+            {"operation": "graph_embedding", "model": "smartatpg_mean", "seconds": 3.0},
+            {"operation": "graph_embedding", "model": "smartatpg_mean", "seconds": 4.0},
+            {"operation": "graph_embedding", "model": "smartatpg_gat_gru", "seconds": 5.0},
+        ])
+        self.assertEqual(summary["graph_feature_build_seconds"], 3.0)
+        self.assertEqual(summary["embedding_seconds"]["smartatpg_mean"], 7.0)
+        self.assertEqual(summary["embedding_seconds"]["smartatpg_gat_gru"], 5.0)
+
+    def test_final_report_contains_actor_and_embedding_timing(self):
+        base = {
+            "detected": 10, "total_faults": 12, "aborted": 1,
+            "redundant": 1, "test_vectors": 2, "backtracks": 20,
+            "backtrace_steps": 30, "atpg_seconds": 1.0,
+            "fault_coverage": 10 / 12, "rl_select_calls": 0,
+            "actor_forward_calls": 0, "average_rl_select_microseconds": 0.0,
+            "average_actor_forward_microseconds": 0.0,
+        }
+        totals = {
+            "heuristic": dict(base),
+            "smartatpg_mean": dict(
+                base, rl_select_calls=100, actor_forward_calls=100,
+                average_rl_select_microseconds=1.5,
+                average_actor_forward_microseconds=1.0,
+            ),
+            "smartatpg_gat_gru": dict(
+                base, rl_select_calls=80, actor_forward_calls=20,
+                average_rl_select_microseconds=0.5,
+                average_actor_forward_microseconds=1.1,
+            ),
+        }
+        comparisons = {
+            name: {
+                key: {"reduction_percent": 0.0, "improvement_percent": 0.0}
+                for key in ("backtracks", "backtrace_steps", "atpg_seconds")
+            }
+            for name in ("smartatpg_mean", "smartatpg_gat_gru")
+        }
+        model = SimpleNamespace(
+            encoder_variant="test", actor_input_dim=12, best_round=1,
+            best_score=(1.0,), tensors={
+                "backtrace_actor.0.weight": SimpleNamespace(rows=2, cols=3),
+                "graph_encoder.weight": SimpleNamespace(rows=4, cols=5),
+            },
+        )
+        preprocessing = [
+            {"operation": "graph_feature_build", "seconds": 1.0},
+            {"operation": "graph_embedding", "model": "smartatpg_mean", "seconds": 2.0},
+            {"operation": "graph_embedding", "model": "smartatpg_gat_gru", "seconds": 3.0},
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            result = _write_reports(
+                Path(directory), [{"circuit": "test", "model": "heuristic"}],
+                totals, comparisons,
+                {"smartatpg_mean": model, "smartatpg_gat_gru": model},
+                preprocessing,
+            )
+            report = (Path(directory) / "FINAL_RESULTS.md").read_text(encoding="utf-8")
+        self.assertIn("| smartatpg_mean | 100 | 100 | 0 |", report)
+        self.assertIn("| smartatpg_gat_gru | 80 | 20 | 60 |", report)
+        self.assertIn("| smartatpg_gat_gru embedding | 3.000000 |", report)
+        self.assertEqual(
+            result["preprocessing"]["embedding_seconds"]["smartatpg_mean"], 2.0
+        )
+        self.assertEqual(result["models"]["smartatpg_mean"]["parameter_count"], 26)
+        self.assertEqual(
+            result["models"]["smartatpg_mean"]["actor_parameter_count"], 6
         )
 
 

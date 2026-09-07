@@ -9,7 +9,8 @@ from pathlib import Path
 import torch
 
 from prepare_smartatpg_training import (
-    FAULT_FILTER, MANIFEST_FORMAT, select_hard_faults, sha256_file,
+    BACKTRACK_LIMIT, FAULT_FILTER, MANIFEST_FORMAT, select_hard_faults,
+    sha256_file,
 )
 from rl_podem.backends import smartatpg_metadata
 from rl_podem.cpp_bridge import (
@@ -89,6 +90,10 @@ def _validate_manifest(manifest):
     }
     if any(manifest.get(key) != value for key, value in expected.items()):
         raise ValueError("Manifest is not compatible with detected-only SmartATPG training; prepare a new fault set")
+    if int(manifest.get("backtrack_limit", -1)) != BACKTRACK_LIMIT:
+        raise ValueError(
+            f"SmartATPG training requires a {BACKTRACK_LIMIT}-backtrack manifest"
+        )
     circuits = list(manifest.get("circuits", []))
     if [item.get("name") for item in circuits] != ["c6288", "s38417"]:
         raise ValueError("Training requires exactly c6288 and s38417")
@@ -229,6 +234,10 @@ def main(argv=None):
     if args.rounds <= 0 or args.k_epochs <= 0:
         raise ValueError("Rounds and PPO epochs must be positive")
 
+    torch.manual_seed(args.seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(args.seed)
+
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
     circuits = _validate_manifest(manifest)
     backtrack_limit = int(manifest["backtrack_limit"])
@@ -285,9 +294,6 @@ def main(argv=None):
         "best_round": None,
         "best_agent": None,
     }
-    torch.manual_seed(args.seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(args.seed)
     if checkpoint_path.is_file():
         saved = torch.load(checkpoint_path, map_location="cpu")
         if saved.get("format") != CHECKPOINT_FORMAT:

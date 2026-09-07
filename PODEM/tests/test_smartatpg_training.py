@@ -10,13 +10,19 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from prepare_smartatpg_training import (
-    FAULT_FILTER, MANIFEST_FORMAT, _validate_resume, select_hard_faults, sha256_file,
+    FAULT_FILTER, MANIFEST_FORMAT, _validate_resume, prepare, select_hard_faults,
+    sha256_file,
 )
 from rl_podem.backends import smartatpg_metadata
 from train_smartatpg import _episode_order, _validate_manifest, validation_score
 
 
 class SmartATPGTrainingTests(unittest.TestCase):
+    def test_training_preparation_defaults_to_2000_backtracks(self):
+        self.assertEqual(prepare.__defaults__, (100, 2000, 14, False))
+        with self.assertRaisesRegex(ValueError, "requires backtrack limit 2000"):
+            prepare("unused", backtrack_limit=500)
+
     def test_hard_fault_ranking_uses_all_three_keys(self):
         profiles = [
             {"fault_id": "z", "backtracks": 9, "backtrace_steps": 10, "outcome": 1},
@@ -51,13 +57,13 @@ class SmartATPGTrainingTests(unittest.TestCase):
             manifest = {
                 **smartatpg_metadata(), "format": MANIFEST_FORMAT,
                 "fault_filter": FAULT_FILTER, "fault_count_per_circuit": 100,
-                "backtrack_limit": 500, "profile_seed": 14, "circuits": [],
+                "backtrack_limit": 2000, "profile_seed": 14, "circuits": [],
             }
             for name in ("c6288", "s38417"):
                 profiles = [
                     {"fault_id": f"{name}_{i}", "backtracks": i, "outcome": 1}
                     for i in range(105)
-                ] + [{"fault_id": f"{name}_aborted", "backtracks": 500, "outcome": 2}]
+                ] + [{"fault_id": f"{name}_aborted", "backtracks": 2000, "outcome": 2}]
                 selected = select_hard_faults(profiles, 100)
                 item = {
                     "name": name, "training_faults": selected,
@@ -77,10 +83,16 @@ class SmartATPGTrainingTests(unittest.TestCase):
 
             def check_resume():
                 manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-                return _validate_resume(manifest_path, 100, 500, 14)
+                return _validate_resume(manifest_path, 100, 2000, 14)
 
             self.assertEqual(_validate_manifest(manifest), manifest["circuits"])
             self.assertEqual(check_resume(), manifest)
+            manifest["backtrack_limit"] = 500
+            with self.assertRaisesRegex(ValueError, "2000-backtrack manifest"):
+                _validate_manifest(manifest)
+            with self.assertRaisesRegex(ValueError, "new output directory"):
+                check_resume()
+            manifest["backtrack_limit"] = 2000
             manifest["circuits"][0]["training_fault_ids"][0] = "c6288_aborted"
             with self.assertRaisesRegex(ValueError, "baseline detected top 100"):
                 _validate_manifest(manifest)

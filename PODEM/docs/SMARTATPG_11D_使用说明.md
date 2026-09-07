@@ -23,13 +23,13 @@ conda activate d2l
 python -m pip install -r python-requirements.txt
 python -m pip install -e .
 
-chmod +x train_smartatpg_linux.sh benchmark_smartatpg_linux.sh
+chmod +x train_smartatpg_linux.sh benchmark_smartatpg_linux.sh tensorboard_smartatpg_linux.sh
 ./train_smartatpg_linux.sh
 ```
 
 训练入口只完成以下工作：
 
-1. 使用基础 PODEM（默认 backtrack 上限500）测试 c6288 和 full-scan s38417 的完整 fault catalog。只保留成功检出（`outcome == 1`）的 fault，再按 backtracks、backtrace_steps 降序及 fault_id 升序，各选择最困难的100个；不包含达到上限未解决或已判不可测的 fault。任一电路成功检出不足100个时直接报错，不用未检出故障补齐。
+1. 使用基础 PODEM（backtrack 上限2000）测试 c6288 和 full-scan s38417 的完整 fault catalog。只保留成功检出（`outcome == 1`）的 fault，再按 backtracks、backtrace_steps 降序及 fault_id 升序，各选择最困难的100个；不包含达到上限未解决或已判不可测的 fault。任一电路成功检出不足100个时直接报错，不用未检出故障补齐。
 2. 使用完全相同的 episode 顺序和共享超参数，分别训练30轮 fanin-mean 与 GAT-GRU；每轮各200个 episode。
 3. 每轮确定性评估并保存 backtrack 表现最好的完整参数。
 4. 分别导出包含完整图编码器和 Actor 参数的 `SMARTATPG_MODEL_V8`。
@@ -42,10 +42,7 @@ chmod +x train_smartatpg_linux.sh benchmark_smartatpg_linux.sh
 TensorBoard：
 
 ```bash
-tensorboard \
-  --logdir artifacts/smartatpg_12d_co \
-  --host 0.0.0.0 \
-  --port 6006
+./tensorboard_smartatpg_linux.sh
 ```
 
 主要输出：
@@ -84,7 +81,9 @@ tensorboard \
 - Python 启动、进程启动和报告汇总；
 - whole-process wall time。
 
-embedding 计算时间单独写入 `preprocessing.json`，wall time 只保留在 `raw_results.json` 中用于排障。
+embedding 计算时间既单独写入 `preprocessing.json`，也按模型汇总到 `FINAL_RESULTS.md`；wall time 只保留在 `raw_results.json` 中用于排障。
+
+原生日志会额外打印 RL backtrace 的策略选择次数、Actor 实际前向次数、策略选择总时间、Actor 前向总时间及各自平均时间。最终报告使用各电路重复测量的中位时间汇总，并分别列出完整模型参数量和在线 Actor 参数量。fanin-mean 每次策略选择都会重新计算 Actor，因此其 Actor 前向次数应等于策略选择次数；GAT-GRU 保留按 gate 和目标值索引的 logit 缓存。
 
 ## 兼容性
 

@@ -1,5 +1,6 @@
 #include "rl_policy.h"
 
+#include <chrono>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -542,6 +543,7 @@ NativeActorPolicy::NativeActorPolicy(
   const std::size_t gate_embedding_dim = actor_.gate_embedding_dimension();
   v2_mask_is_actor_input_ =
       actor_.version_ == 5;
+  use_logits_cache_ = actor_.encoder_variant() != "fanin_mean";
   v2_variants_per_gate_ = v2_mask_is_actor_input_ ? 8 : 2;
   v2_embedding_cache_.resize(gate_count_ * gate_embedding_dim);
   v2_logits_cache_.resize(gate_count_ * v2_variants_per_gate_ * 2);
@@ -559,6 +561,8 @@ NativeActorPolicy::NativeActorPolicy(
 }
 
 int NativeActorPolicy::select(const DecisionRequest &request) {
+  const auto select_started = std::chrono::steady_clock::now();
+  ++timing_stats_.select_calls;
   require(request.candidate_ids != nullptr && request.candidate_count > 1,
           "Policy should only be called for multi-candidate decisions");
   require(request.mode == DecisionMode::BACKTRACE,
@@ -579,7 +583,7 @@ int NativeActorPolicy::select(const DecisionRequest &request) {
   const std::size_t cache_key =
       request.objective_id * v2_variants_per_gate_ + variant;
   const std::size_t offset = cache_key * 2;
-  if (!v2_cache_valid_[cache_key]) {
+  if (!use_logits_cache_ || !v2_cache_valid_[cache_key]) {
     const std::size_t gate_embedding_dim = actor_.gate_embedding_dimension();
     const float *embedding =
         &v2_embedding_cache_[request.objective_id * gate_embedding_dim];
@@ -593,18 +597,33 @@ int NativeActorPolicy::select(const DecisionRequest &request) {
     } else if (actor_.version_ >= 7 && actor_.encoder_variant() == "level_gat_gru") {
       v2_policy_input_buffer_[gate_embedding_dim] = static_cast<float>(request.objective_value);
     }
+    const auto actor_started = std::chrono::steady_clock::now();
     actor_.backtrace_action_logits_into(
         v2_policy_input_buffer_.data(), request.objective_value,
         state_buffer_.data(), hidden_buffer_.data(), &v2_logits_cache_[offset]);
-    v2_cache_valid_[cache_key] = 1;
+    timing_stats_.actor_forward_nanoseconds +=
+        static_cast<unsigned long long>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - actor_started)
+                .count());
+    ++timing_stats_.actor_forward_calls;
+    if (use_logits_cache_)
+      v2_cache_valid_[cache_key] = 1;
   }
+  int selected = 0;
   if (!request.action_mask[0]) {
-    return 1;
+    selected = 1;
+  } else if (!request.action_mask[1]) {
+    selected = 0;
+  } else {
+    selected = v2_logits_cache_[offset + 1] > v2_logits_cache_[offset] ? 1 : 0;
   }
-  if (!request.action_mask[1]) {
-    return 0;
-  }
-  return v2_logits_cache_[offset + 1] > v2_logits_cache_[offset] ? 1 : 0;
+  timing_stats_.select_nanoseconds +=
+      static_cast<unsigned long long>(
+          std::chrono::duration_cast<std::chrono::nanoseconds>(
+              std::chrono::steady_clock::now() - select_started)
+              .count());
+  return selected;
 }
 
 std::string fnv1a_file_hash(const std::string &path) {

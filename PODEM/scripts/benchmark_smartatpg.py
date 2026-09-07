@@ -27,6 +27,7 @@ from smartatpg_portable import (
 
 
 MANIFEST_FORMAT = "SMARTATPG_BENCHMARK_BUNDLE_V5"
+BACKTRACK_LIMIT = 2000
 
 
 PATTERNS = {
@@ -39,6 +40,16 @@ PATTERNS = {
     "backtracks": r"#total number of backtracks = (\d+)",
     "backtrace_steps": r"#total number of backtrace steps = (\d+)",
     "test_vectors": r"#number of test vectors = (\d+)",
+}
+RL_COUNTER_PATTERNS = {
+    "rl_select_calls": r"#number of RL backtrace policy selections = (\d+)",
+    "actor_forward_calls": r"#number of Actor forward evaluations = (\d+)",
+}
+RL_DURATION_PATTERNS = {
+    "rl_select_seconds": (
+        r"#total RL backtrace policy selection time = ([0-9.]+)s"
+    ),
+    "actor_forward_seconds": r"#total Actor forward time = ([0-9.]+)s",
 }
 TIMING_PATTERN = re.compile(
     r"cputime for test pattern generation .*: ([0-9.]+)s ([0-9.]+)s"
@@ -123,6 +134,16 @@ def _parse_native_output(output, log_path):
         if not match:
             raise RuntimeError(f"Missing {key} in native benchmark log: {log_path}")
         record[key] = int(match.group(1))
+    for key, pattern in RL_COUNTER_PATTERNS.items():
+        match = re.search(pattern, output)
+        if not match:
+            raise RuntimeError(f"Missing {key} in native benchmark log: {log_path}")
+        record[key] = int(match.group(1))
+    for key, pattern in RL_DURATION_PATTERNS.items():
+        match = re.search(pattern, output)
+        if not match:
+            raise RuntimeError(f"Missing {key} in native benchmark log: {log_path}")
+        record[key] = float(match.group(1))
     timing = TIMING_PATTERN.search(output)
     if not timing:
         raise RuntimeError(f"Missing native timing in benchmark log: {log_path}")
@@ -320,15 +341,23 @@ def _summarize(records, manifest, model_names, repeats):
                     f"Incomplete benchmark samples for {item['name']}/{model}."
                 )
             row = {"circuit": item["name"], "model": model}
-            for key in PATTERNS:
+            for key in (*PATTERNS, *RL_COUNTER_PATTERNS):
                 values = {sample[key] for sample in samples}
                 if len(values) != 1:
                     raise RuntimeError(
                         f"Nondeterministic {key} for {item['name']}/{model}."
                     )
                 row[key] = samples[0][key]
-            row["atpg_seconds"] = statistics.median(
-                sample["atpg_seconds"] for sample in samples
+            for key in ("atpg_seconds", *RL_DURATION_PATTERNS):
+                row[key] = statistics.median(sample[key] for sample in samples)
+            row["average_rl_select_microseconds"] = (
+                row["rl_select_seconds"] * 1.0e6 / row["rl_select_calls"]
+                if row["rl_select_calls"] else 0.0
+            )
+            row["average_actor_forward_microseconds"] = (
+                row["actor_forward_seconds"] * 1.0e6
+                / row["actor_forward_calls"]
+                if row["actor_forward_calls"] else 0.0
             )
             row["fault_coverage"] = (
                 row["detected"] / row["total_faults"]
@@ -337,7 +366,10 @@ def _summarize(records, manifest, model_names, repeats):
             )
             rows.append(row)
 
-    numeric_keys = list(PATTERNS) + ["atpg_seconds"]
+    numeric_keys = (
+        list(PATTERNS) + list(RL_COUNTER_PATTERNS)
+        + ["atpg_seconds"] + list(RL_DURATION_PATTERNS)
+    )
     totals = {
         model: {
             key: sum(row[key] for row in rows if row["model"] == model)
@@ -350,6 +382,16 @@ def _summarize(records, manifest, model_names, repeats):
             totals[model]["detected"] / totals[model]["total_faults"]
             if totals[model]["total_faults"]
             else 0.0
+        )
+        totals[model]["average_rl_select_microseconds"] = (
+            totals[model]["rl_select_seconds"] * 1.0e6
+            / totals[model]["rl_select_calls"]
+            if totals[model]["rl_select_calls"] else 0.0
+        )
+        totals[model]["average_actor_forward_microseconds"] = (
+            totals[model]["actor_forward_seconds"] * 1.0e6
+            / totals[model]["actor_forward_calls"]
+            if totals[model]["actor_forward_calls"] else 0.0
         )
     comparisons = {}
     heuristic = totals["heuristic"]
@@ -364,7 +406,26 @@ def _summarize(records, manifest, model_names, repeats):
     return rows, totals, comparisons
 
 
-def _write_reports(output_dir, rows, totals, comparisons, portable_models):
+def _summarize_preprocessing(preprocessing):
+    summary = {
+        "graph_feature_build_seconds": sum(
+            item["seconds"] for item in preprocessing
+            if item["operation"] == "graph_feature_build"
+        ),
+        "embedding_seconds": {},
+    }
+    for model in ("smartatpg_mean", "smartatpg_gat_gru"):
+        summary["embedding_seconds"][model] = sum(
+            item["seconds"] for item in preprocessing
+            if item["operation"] == "graph_embedding"
+            and item.get("model") == model
+        )
+    return summary
+
+
+def _write_reports(
+    output_dir, rows, totals, comparisons, portable_models, preprocessing
+):
     direct = {}
     baseline = totals["smartatpg_mean"]
     candidate = totals["smartatpg_gat_gru"]
@@ -383,6 +444,7 @@ def _write_reports(output_dir, rows, totals, comparisons, portable_models):
         "redundant_delta": candidate["redundant"] - baseline["redundant"],
         "test_vectors_delta": candidate["test_vectors"] - baseline["test_vectors"],
     })
+    preprocessing_summary = _summarize_preprocessing(preprocessing)
     result = {
         "totals": totals,
         "relative_to_heuristic": comparisons,
@@ -396,9 +458,15 @@ def _write_reports(output_dir, rows, totals, comparisons, portable_models):
                 "parameter_count": sum(
                     tensor.rows * tensor.cols for tensor in model.tensors.values()
                 ),
+                "actor_parameter_count": sum(
+                    tensor.rows * tensor.cols
+                    for tensor_name, tensor in model.tensors.items()
+                    if tensor_name.startswith("backtrace_actor.")
+                ),
             }
             for name, model in portable_models.items()
         },
+        "preprocessing": preprocessing_summary,
         "timing_scope": "C++ ATPG interval only; embedding and orchestration excluded",
     }
     _atomic_json_save(output_dir / "final_comparison.json", result)
@@ -459,14 +527,41 @@ def _write_reports(output_dir, rows, totals, comparisons, portable_models):
     )
     lines.extend([
         "",
-        "| Model | Encoder | Parameters | Best round | Best score |",
-        "|---|---|---:|---:|---|",
+        "## Native Actor timing",
+        "",
+        "`smartatpg_mean` evaluates the Actor on every selection; `smartatpg_gat_gru` retains its native logit cache.",
+        "",
+        "| Model | RL selections | Actor forwards | Cache hits | Avg selection (us) | Avg Actor forward (us) |",
+        "|---|---:|---:|---:|---:|---:|",
+    ])
+    for name in ("smartatpg_mean", "smartatpg_gat_gru"):
+        item = totals[name]
+        lines.append(
+            f"| {name} | {item['rl_select_calls']} | "
+            f"{item['actor_forward_calls']} | "
+            f"{item['rl_select_calls'] - item['actor_forward_calls']} | "
+            f"{item['average_rl_select_microseconds']:.6f} | "
+            f"{item['average_actor_forward_microseconds']:.6f} |"
+        )
+    lines.extend([
+        "",
+        "## Embedding preparation timing",
+        "",
+        "| Operation | Time (s) |",
+        "|---|---:|",
+        f"| Shared graph feature build | {preprocessing_summary['graph_feature_build_seconds']:.6f} |",
+        f"| smartatpg_mean embedding | {preprocessing_summary['embedding_seconds']['smartatpg_mean']:.6f} |",
+        f"| smartatpg_gat_gru embedding | {preprocessing_summary['embedding_seconds']['smartatpg_gat_gru']:.6f} |",
+        "",
+        "| Model | Encoder | Total parameters | Actor parameters | Best round | Best score |",
+        "|---|---|---:|---:|---:|---|",
     ])
     for name in ("smartatpg_mean", "smartatpg_gat_gru"):
         model = result["models"][name]
         lines.append(
             f"| {name} | {model['encoder_variant']} | "
-            f"{model['parameter_count']} | {model['best_round']} | "
+            f"{model['parameter_count']} | {model['actor_parameter_count']} | "
+            f"{model['best_round']} | "
             f"{model['best_score']} |"
         )
     lines.extend([
@@ -485,10 +580,14 @@ def run_benchmark(
     output_dir,
     repeats=5,
     seed=14,
-    backtrack_limit=500,
+    backtrack_limit=BACKTRACK_LIMIT,
 ):
     if repeats <= 0:
         raise ValueError("Benchmark repeats must be positive.")
+    if backtrack_limit != BACKTRACK_LIMIT:
+        raise ValueError(
+            f"SmartATPG benchmark requires backtrack limit {BACKTRACK_LIMIT}."
+        )
     manifest_path = Path(manifest_path).resolve()
     bundle_root = manifest_path.parent
     manifest = _load_json(manifest_path)
@@ -535,7 +634,7 @@ def run_benchmark(
         records, runtime_manifest, list(models), repeats
     )
     return _write_reports(
-        output_dir, rows, totals, comparisons, portable_models
+        output_dir, rows, totals, comparisons, portable_models, preprocessing
     )
 
 
@@ -546,7 +645,7 @@ def main(argv=None):
     parser.add_argument("output_dir", type=Path)
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--seed", type=int, default=14)
-    parser.add_argument("--backtrack-limit", type=int, default=500)
+    parser.add_argument("--backtrack-limit", type=int, default=BACKTRACK_LIMIT)
     args = parser.parse_args(argv)
     run_benchmark(
         args.manifest,

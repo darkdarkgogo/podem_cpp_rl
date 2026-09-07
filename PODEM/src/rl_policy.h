@@ -44,6 +44,13 @@ struct EpisodeResult {
   unsigned long decisions;
 };
 
+struct DecisionTimingStats {
+  unsigned long long select_calls = 0;
+  unsigned long long actor_forward_calls = 0;
+  unsigned long long select_nanoseconds = 0;
+  unsigned long long actor_forward_nanoseconds = 0;
+};
+
 class DecisionPolicy {
 public:
   virtual ~DecisionPolicy() {}
@@ -51,6 +58,9 @@ public:
   virtual bool needs_gate_names() const { return true; }
   virtual bool wants_training_events() const { return false; }
   virtual bool supports(DecisionMode mode) const { return true; }
+  virtual DecisionTimingStats timing_stats() const {
+    return DecisionTimingStats();
+  }
   virtual void on_episode_start(const std::string &fault_id) {}
   virtual void on_backtrack(unsigned long decision_sequence) {}
   virtual void on_backtrace_step(unsigned long decision_sequence) {}
@@ -143,6 +153,7 @@ public:
   NativeActorPolicy(const NativeActorPolicy &) = delete;
   NativeActorPolicy &operator=(const NativeActorPolicy &) = delete;
   int select(const DecisionRequest &request) override;
+  DecisionTimingStats timing_stats() const override { return timing_stats_; }
   bool needs_gate_names() const override { return false; }
   bool supports(DecisionMode mode) const override {
     return mode == DecisionMode::BACKTRACE;
@@ -159,6 +170,8 @@ private:
   std::vector<unsigned char> v2_cache_valid_;
   std::size_t v2_variants_per_gate_ = 0;
   bool v2_mask_is_actor_input_ = false;
+  bool use_logits_cache_ = true;
+  DecisionTimingStats timing_stats_;
 };
 
 std::string fnv1a_file_hash(const std::string &path);

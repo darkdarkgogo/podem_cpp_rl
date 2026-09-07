@@ -10,6 +10,7 @@ import time
 
 
 ROOT = Path(__file__).resolve().parents[1]
+BACKTRACK_LIMIT = 2000
 
 
 def _atomic_json(path, value):
@@ -53,15 +54,21 @@ def _run(command, log_path, environment):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("bundle", type=Path)
-    parser.add_argument("--output-dir", type=Path, default=Path("benchmark_results"))
+    parser.add_argument(
+        "--output-dir", type=Path, default=Path("benchmark_results_bt2000")
+    )
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--seed", type=int, default=14)
-    parser.add_argument("--backtrack-limit", type=int, default=500)
+    parser.add_argument("--backtrack-limit", type=int, default=BACKTRACK_LIMIT)
     args = parser.parse_args(argv)
     if not sys.platform.startswith("linux"):
         raise RuntimeError("This benchmark launcher is intended for Linux")
     if args.repeats <= 0 or args.backtrack_limit <= 0:
         raise ValueError("Repeats and backtrack limit must be positive")
+    if args.backtrack_limit != BACKTRACK_LIMIT:
+        raise ValueError(
+            f"SmartATPG benchmark requires backtrack limit {BACKTRACK_LIMIT}"
+        )
 
     bundle = args.bundle.resolve()
     manifest = bundle / "bundle_manifest.json" if bundle.is_dir() else bundle

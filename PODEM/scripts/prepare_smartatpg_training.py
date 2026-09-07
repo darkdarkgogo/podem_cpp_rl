@@ -13,6 +13,7 @@ from rl_podem.cpp_bridge import profile_cpp_podem
 
 MANIFEST_FORMAT = "SMARTATPG_PAPER_TRAINING_V2"
 FAULT_FILTER = "baseline_detected_only"
+BACKTRACK_LIMIT = 2000
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -89,7 +90,14 @@ def _validate_resume(manifest_path, count, backtrack_limit, seed):
     return manifest
 
 
-def prepare(output_dir, count=100, backtrack_limit=500, seed=14, resume=False):
+def prepare(
+    output_dir, count=100, backtrack_limit=BACKTRACK_LIMIT, seed=14, resume=False
+):
+    if backtrack_limit != BACKTRACK_LIMIT:
+        raise ValueError(
+            f"SmartATPG training preparation requires backtrack limit "
+            f"{BACKTRACK_LIMIT}"
+        )
     output_dir = Path(output_dir).resolve()
     manifest_path = output_dir / "training_manifest.json"
     if resume and manifest_path.is_file():
@@ -177,7 +185,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output_dir", type=Path)
     parser.add_argument("--count", type=int, default=100)
-    parser.add_argument("--backtrack-limit", type=int, default=500)
+    parser.add_argument("--backtrack-limit", type=int, default=BACKTRACK_LIMIT)
     parser.add_argument("--seed", type=int, default=14)
     parser.add_argument("--resume", action="store_true")
     args = parser.parse_args(argv)

@@ -7,6 +7,38 @@
 
 #include "atpg.h"
 
+namespace {
+
+void print_rl_policy_timing(
+		const shared_ptr<smartatpg::DecisionPolicy> &decision_policy)
+{
+	const smartatpg::DecisionTimingStats stats = decision_policy ?
+			decision_policy->timing_stats() : smartatpg::DecisionTimingStats();
+	const double select_seconds =
+			static_cast<double>(stats.select_nanoseconds) / 1.0e9;
+	const double actor_seconds =
+			static_cast<double>(stats.actor_forward_nanoseconds) / 1.0e9;
+	const double average_select_microseconds = stats.select_calls ?
+			static_cast<double>(stats.select_nanoseconds) /
+					static_cast<double>(stats.select_calls) / 1.0e3 : 0.0;
+	const double average_actor_microseconds = stats.actor_forward_calls ?
+			static_cast<double>(stats.actor_forward_nanoseconds) /
+					static_cast<double>(stats.actor_forward_calls) / 1.0e3 : 0.0;
+	fprintf(stdout, "\n#number of RL backtrace policy selections = %llu\n",
+			stats.select_calls);
+	fprintf(stdout, "#number of Actor forward evaluations = %llu\n",
+			stats.actor_forward_calls);
+	fprintf(stdout, "#total RL backtrace policy selection time = %.9fs\n",
+			select_seconds);
+	fprintf(stdout, "#total Actor forward time = %.9fs\n", actor_seconds);
+	fprintf(stdout, "#average RL backtrace policy selection time = %.6fus\n",
+			average_select_microseconds);
+	fprintf(stdout, "#average Actor forward time = %.6fus\n",
+			average_actor_microseconds);
+}
+
+} // namespace
+
 void ATPG::test()
 {
 	string vec;
@@ -125,6 +157,7 @@ void ATPG::test()
 			fprintf(stdout, "#total number of backtrace steps = %lu\n", total_backtrace_steps);
 			fprintf(stdout, "\n");
 			fprintf(stdout, "#total number of backtracks = %d\n", total_no_of_backtracks);
+			print_rl_policy_timing(decision_policy);
 		}
 		return;
 	}
@@ -320,6 +353,7 @@ void ATPG::test()
 	fprintf(stdout, "#total number of backtrace steps = %lu\n", total_backtrace_steps);
 	fprintf(stdout, "\n");
 	fprintf(stdout, "#total number of backtracks = %d\n", total_no_of_backtracks);
+	print_rl_policy_timing(decision_policy);
 } /* end of test */
 
 /* constructor of ATPG */

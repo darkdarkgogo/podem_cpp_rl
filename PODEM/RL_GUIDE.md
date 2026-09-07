@@ -7,8 +7,14 @@
 训练环境：
 
 ```bash
-chmod +x train_smartatpg_linux.sh benchmark_smartatpg_linux.sh
+chmod +x train_smartatpg_linux.sh benchmark_smartatpg_linux.sh tensorboard_smartatpg_linux.sh
 ./train_smartatpg_linux.sh
+```
+
+TensorBoard：
+
+```bash
+./tensorboard_smartatpg_linux.sh
 ```
 
 编译评测环境：
