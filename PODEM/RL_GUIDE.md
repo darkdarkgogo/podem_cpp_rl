@@ -11,6 +11,8 @@ chmod +x train_smartatpg_linux.sh benchmark_smartatpg_linux.sh tensorboard_smart
 ./train_smartatpg_linux.sh
 ```
 
+训练脚本先生成共享 fault 清单，再将 fanin-mean 固定到物理 GPU 0、GAT-GRU 固定到物理 GPU 1 并行训练；两者完成后生成对比包。
+
 TensorBoard：
 
 ```bash

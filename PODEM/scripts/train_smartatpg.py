@@ -218,11 +218,32 @@ def _save_state(path, agent, state):
     _atomic_torch_save(path, payload)
 
 
+def _validate_resume_config(saved, current):
+    saved = dict(saved or {})
+    current = dict(current)
+    saved_rounds = saved.pop("rounds", None)
+    current_rounds = current.pop("rounds")
+    if saved != current or not isinstance(saved_rounds, int) or saved_rounds <= 0:
+        raise ValueError("Training configuration changed since checkpoint")
+    return current_rounds
+
+
+def _validate_round_target(current_round, episode_index, target_rounds):
+    if current_round <= 0 or episode_index < 0:
+        raise ValueError("Checkpoint training position is invalid")
+    last_started_round = current_round if episode_index else current_round - 1
+    if last_started_round > target_rounds:
+        raise ValueError(
+            f"Checkpoint has already started round {last_started_round}; "
+            f"cannot reduce the target to {target_rounds} rounds"
+        )
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("manifest", type=Path)
     parser.add_argument("output_dir", type=Path)
-    parser.add_argument("--rounds", type=int, default=30)
+    parser.add_argument("--rounds", type=int, default=20)
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--rnd-beta", type=float, default=0.05)
     parser.add_argument("--k-epochs", type=int, default=8)
@@ -298,10 +319,15 @@ def main(argv=None):
         saved = torch.load(checkpoint_path, map_location="cpu")
         if saved.get("format") != CHECKPOINT_FORMAT:
             raise ValueError("Legacy SmartATPG checkpoint is incompatible with 12D CO training")
-        if saved.get("manifest_hash") != manifest_digest or saved.get("config") != config:
-            raise ValueError("Training manifest or configuration changed since checkpoint")
+        if saved.get("manifest_hash") != manifest_digest:
+            raise ValueError("Training manifest changed since checkpoint")
+        target_rounds = _validate_resume_config(saved.get("config"), config)
+        current_round = int(saved.get("current_round", 0))
+        episode_index = int(saved.get("episode_index", 0))
+        _validate_round_target(current_round, episode_index, target_rounds)
         agent.load_training_state_dict(saved["agent"])
         state.update({key: saved[key] for key in state})
+        state["config"] = config
         torch.set_rng_state(saved["torch_random_state"])
         if saved.get("torch_cuda_random_state") is not None and torch.cuda.is_available():
             torch.cuda.set_rng_state_all(saved["torch_cuda_random_state"])

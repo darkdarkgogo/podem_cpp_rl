@@ -1,6 +1,8 @@
 import hashlib
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -16,8 +18,9 @@ from benchmark_smartatpg import (
     _summarize_preprocessing, _write_reports, percentage_change, run_benchmark,
 )
 from run_smartatpg_benchmark_linux import main as run_benchmark_main
-from run_smartatpg_training_linux import main as run_training_main
+from run_smartatpg_training_linux import _run_parallel, main as run_training_main
 from smartatpg_portable import CIRCUITS
+from train_smartatpg import _validate_resume_config, _validate_round_target
 
 
 def sha256(path):
@@ -69,7 +72,7 @@ class SplitLauncherTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "training"
 
-            def fake_command(command, log_path, environment):
+            def fake_command(command, log_path, environment, prefix="", on_start=None):
                 if str(command[2]).endswith("train_smartatpg.py"):
                     model_dir = Path(command[4])
                     model_dir.mkdir(parents=True, exist_ok=True)
@@ -79,6 +82,7 @@ class SplitLauncherTests(unittest.TestCase):
             with (
                 patch("run_smartatpg_training_linux.sys.platform", "linux"),
                 patch("run_smartatpg_training_linux._check_cpp_extension"),
+                patch("run_smartatpg_training_linux.torch.cuda.device_count", return_value=4),
                 patch(
                     "run_smartatpg_training_linux._tee_command",
                     side_effect=fake_command,
@@ -88,18 +92,92 @@ class SplitLauncherTests(unittest.TestCase):
             commands = [call.args[0] for call in tee.call_args_list]
             self.assertEqual(len(commands), 4)
             self.assertTrue(str(commands[0][2]).endswith("prepare_smartatpg_training.py"))
-            self.assertTrue(str(commands[1][2]).endswith("train_smartatpg.py"))
-            self.assertTrue(str(commands[2][2]).endswith("train_smartatpg.py"))
             self.assertTrue(str(commands[3][2]).endswith("prepare_smartatpg_benchmark.py"))
+            train_calls = [
+                call for call in tee.call_args_list
+                if str(call.args[0][2]).endswith("train_smartatpg.py")
+            ]
+            self.assertEqual(len(train_calls), 2)
+            gpu_by_encoder = {
+                call.args[0][call.args[0].index("--encoder") + 1]:
+                call.args[2]["CUDA_VISIBLE_DEVICES"]
+                for call in train_calls
+            }
+            self.assertEqual(gpu_by_encoder, {"fanin_mean": "0", "level_gat_gru": "1"})
+            self.assertEqual({call.args[3] for call in train_calls}, {"[mean] ", "[gat-gru] "})
             flattened = " ".join(" ".join(map(str, command)) for command in commands)
             self.assertNotIn("build_native.py", flattened)
             self.assertNotIn("benchmark_smartatpg.py", flattened)
-            for command in commands[1:3]:
-                self.assertEqual(command[command.index("--rounds") + 1], "30")
+            for command in (call.args[0] for call in train_calls):
+                self.assertEqual(command[command.index("--rounds") + 1], "20")
             prepare = commands[0]
             self.assertEqual(
                 prepare[prepare.index("--backtrack-limit") + 1], "2000"
             )
+
+    def test_training_launcher_requires_two_visible_gpus(self):
+        with (
+            patch("run_smartatpg_training_linux.sys.platform", "linux"),
+            patch("run_smartatpg_training_linux._check_cpp_extension"),
+            patch("run_smartatpg_training_linux.torch.cuda.device_count", return_value=1),
+            self.assertRaisesRegex(RuntimeError, "only 1 CUDA device"),
+        ):
+            run_training_main([])
+        with (
+            patch("run_smartatpg_training_linux.sys.platform", "linux"),
+            self.assertRaisesRegex(ValueError, "two distinct"),
+        ):
+            run_training_main(["--mean-gpu", "0", "--gat-gpu", "0"])
+
+    def test_training_round_target_can_change_without_changing_other_config(self):
+        saved = {"rounds": 30, "seed": 2026, "encoder_variant": "fanin_mean"}
+        current = {"rounds": 20, "seed": 2026, "encoder_variant": "fanin_mean"}
+        self.assertEqual(_validate_resume_config(saved, current), 20)
+        current["seed"] = 14
+        with self.assertRaisesRegex(ValueError, "Training configuration changed"):
+            _validate_resume_config(saved, current)
+        _validate_round_target(20, 99, 20)
+        _validate_round_target(21, 0, 20)
+        with self.assertRaisesRegex(ValueError, "already started round 21"):
+            _validate_round_target(21, 1, 20)
+        with self.assertRaisesRegex(ValueError, "already started round 21"):
+            _validate_round_target(22, 0, 20)
+
+    def test_parallel_training_terminates_peer_after_failure(self):
+        barrier = threading.Barrier(2)
+        processes = {}
+
+        class FakeProcess:
+            def __init__(self):
+                self.terminated = False
+
+            def poll(self):
+                return 143 if self.terminated else None
+
+            def terminate(self):
+                self.terminated = True
+
+        def fake_command(command, log_path, environment, prefix="", on_start=None):
+            process = processes.setdefault(command[0], FakeProcess())
+            on_start(process)
+            barrier.wait(timeout=2)
+            if command[0] == "failed":
+                return 2
+            deadline = time.monotonic() + 2
+            while not process.terminated and time.monotonic() < deadline:
+                time.sleep(0.001)
+            return 143 if process.terminated else 0
+
+        jobs = {
+            "failed": (["failed"], Path("failed.log"), {}, "[failed] "),
+            "peer": (["peer"], Path("peer.log"), {}, "[peer] "),
+        }
+        with (
+            patch("run_smartatpg_training_linux._tee_command", side_effect=fake_command),
+            self.assertRaisesRegex(RuntimeError, "failed training failed"),
+        ):
+            _run_parallel(jobs)
+        self.assertTrue(processes["peer"].terminated)
 
     def test_benchmark_launcher_only_builds_and_benchmarks(self):
         with tempfile.TemporaryDirectory() as directory:

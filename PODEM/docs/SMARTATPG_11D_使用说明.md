@@ -27,10 +27,14 @@ chmod +x train_smartatpg_linux.sh benchmark_smartatpg_linux.sh tensorboard_smart
 ./train_smartatpg_linux.sh
 ```
 
+脚本先完成共享 fault 筛选，再同时启动两个独立训练进程：fanin-mean 使用物理 GPU 0，GAT-GRU 使用物理 GPU 1。每个子进程内部只看见自己的 GPU，因此代码中均显示为 `cuda:0`；实际物理卡分配记录在 `training_run_metadata.json`。任一子进程失败时，启动器会终止另一个训练进程，不会继续生成不完整的对比包。
+
+默认训练目标为20轮。若旧的 `30rounds` 输出目录已经存在而新的 `20rounds` 目录不存在，根目录训练、TensorBoard 和对比脚本会自动沿用旧目录，避免丢失 checkpoint。只要尚未开始第21轮，就可以从原 checkpoint 续训并在第20轮结束；已经开始第21轮时会明确拒绝降到20轮。
+
 训练入口只完成以下工作：
 
 1. 使用基础 PODEM（backtrack 上限2000）测试 c6288 和 full-scan s38417 的完整 fault catalog。只保留成功检出（`outcome == 1`）的 fault，再按 backtracks、backtrace_steps 降序及 fault_id 升序，各选择最困难的100个；不包含达到上限未解决或已判不可测的 fault。任一电路成功检出不足100个时直接报错，不用未检出故障补齐。
-2. 使用完全相同的 episode 顺序和共享超参数，分别训练30轮 fanin-mean 与 GAT-GRU；每轮各200个 episode。
+2. 使用完全相同的 episode 顺序和共享超参数，分别训练20轮 fanin-mean 与 GAT-GRU；每轮各200个 episode。
 3. 每轮确定性评估并保存 backtrack 表现最好的完整参数。
 4. 分别导出包含完整图编码器和 Actor 参数的 `SMARTATPG_MODEL_V8`。
 5. 准备16个评测电路和 faultmap，生成同时包含两个 best model 的 `benchmark_bundle/`。
