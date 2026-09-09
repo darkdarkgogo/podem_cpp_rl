@@ -72,10 +72,14 @@ class ExpandedXorFaninFaultTests(unittest.TestCase):
         return directory, binary, fault_map, stats, catalog
 
     def test_single_logical_load_keeps_inputs_collapsed(self):
-        directory, _, _, stats, catalog = self.convert(
+        directory, _, fault_map, stats, catalog = self.convert(
             expanded_xor(False, False)
         )
         self.addCleanup(directory.cleanup)
+        self.assertEqual(
+            fault_map.read_text(encoding="utf-8").splitlines()[0],
+            "SMARTATPG_FAULT_MAP_V2",
+        )
         xor_input_faults = [
             fault for fault in catalog["faults"]
             if fault["fault_id"].startswith("G1:GI")
@@ -114,9 +118,42 @@ class ExpandedXorFaninFaultTests(unittest.TestCase):
             str(binary), choose, None, 97, 14, None, True,
             "backtrace_rl", str(fault_map),
         )
-        self.assertGreater(summary["detected"], 0)
+        self.assertEqual(summary["episodes"], 3)
+        self.assertEqual(summary["detected"], 3)
         self.assertEqual(summary["redundant"], 0)
         self.assertEqual(summary["aborted"], 0)
+
+    def test_invalid_v3_logical_xor_markers_are_rejected(self):
+        directory, binary, fault_map, _, _ = self.convert(
+            expanded_xor(True, False)
+        )
+        self.addCleanup(directory.cleanup)
+        original_lines = fault_map.read_text(encoding="utf-8").splitlines()
+        logical_index = next(
+            index for index, line in enumerate(original_lines)
+            if line.startswith("fault G1:GI0:sa0 ")
+        )
+        regular_index = next(
+            index for index, line in enumerate(original_lines)
+            if line.startswith("fault ") and line.endswith(" 0 -1")
+        )
+        cases = (
+            (logical_index, ("2", "0")),
+            (logical_index, ("1", "2")),
+            (regular_index, ("0", "0")),
+        )
+        for case, (line_index, marker) in enumerate(cases):
+            with self.subTest(marker=marker):
+                lines = list(original_lines)
+                fields = lines[line_index].split()
+                fields[-2:] = marker
+                lines[line_index] = " ".join(fields)
+                malformed = Path(directory.name) / f"malformed_{case}.faultmap"
+                malformed.write_text("\n".join(lines) + "\n", encoding="utf-8")
+                with self.assertRaisesRegex(
+                    RuntimeError, "Invalid V3 logical XOR marker"
+                ):
+                    catalog_cpp_podem(binary, malformed)
 
     def test_both_inputs_are_checked_independently(self):
         directory, _, _, stats, catalog = self.convert(
