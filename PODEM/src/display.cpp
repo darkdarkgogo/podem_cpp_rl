@@ -136,7 +136,10 @@ void ATPG::display_undetect() {
       default:
         file << "gate: " << f->node->name << " ;";
         if (f->io == GI) {
-          file << "input wire name: " << f->node->iwire[f->index]->name << endl;
+          file << "input wire name: "
+               << (f->logical_xor_input ? f->logical_input_wire->name
+                                        : f->node->iwire[f->index]->name)
+               << endl;
         } else {
           file << "output wire name: " << f->node->owire.front()->name << endl;
         }
@@ -182,7 +185,8 @@ void ATPG::display_fault(fptr f) {
       fprintf(stdout, "gate: %s ;", f->node->name.c_str());
       if (f->io == GI) {
         fprintf(stdout, "input wire name: %s\n",
-                f->node->iwire[f->index]->name.c_str());
+                (f->logical_xor_input ? f->logical_input_wire->name
+                                      : f->node->iwire[f->index]->name).c_str());
       } else {
         fprintf(stdout, "output wire name: %s\n",
                 f->node->owire.front()->name.c_str());

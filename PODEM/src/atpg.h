@@ -509,5 +509,9 @@ private:
 		int detected_time{}; /* for N-detect */
 		bool tried_dtc;			 // for DTC flag
 		string external_id; // original fault ID when using a mapped binary netlist
+		bool logical_xor_input; // logical XOR input branch on an expanded XOR cell
+		wptr logical_input_wire;
+		short logical_input_index;
+		short logical_input_occurrence;
 	};										 // class FAULT
 };											 // class ATPG

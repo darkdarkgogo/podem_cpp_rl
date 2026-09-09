@@ -247,6 +247,20 @@ ATPG::wptr ATPG::fault_evaluate(const fptr fault)
 	int temp1;
 	wptr w;
 
+	if (fault->logical_xor_input)
+	{
+		wptr input_wire = fault->logical_input_wire;
+		w = fault->node->owire.front();
+		if (input_wire->value == U || w->value == U ||
+				input_wire->value == fault->fault_type)
+			return (nullptr);
+		if (w->value == 1)
+			w->value = D;
+		else if (w->value == 0)
+			w->value = D_bar;
+		return (w);
+	}
+
 	if (fault->io == GO)
 	{																	// if fault is on GUT gate output
 		w = fault->node->owire.front(); // w is GUT output wire
@@ -356,8 +370,27 @@ ATPG::wptr ATPG::test_possible(const fptr fault)
 			if (!(trace_unknown_path(fault->node->owire.front())))
 				return (nullptr);
 
+			if (fault->logical_xor_input)
+			{
+				if (fault->logical_input_wire->value == U)
+				{
+					object_level = !fault->fault_type;
+					object_wire = fault->logical_input_wire;
+				}
+				else if (fault->logical_input_wire->value == fault->fault_type)
+				{
+					return (nullptr);
+				}
+				else
+				{
+					/* Either XOR output value can expose an activated input fault. */
+					object_level = 0;
+					object_wire = fault->node->owire.front();
+				}
+			}
+
 			/* if fault is on GUT otuput,  Fig 8.2*/
-			if (fault->io)
+			else if (fault->io)
 			{
 				/* objective_level is opposite to stuck fault  Fig 8.3 */
 				if (fault->fault_type)
@@ -757,7 +790,9 @@ int ATPG::set_uniquely_implied_value(const fptr fault)
 	int i, nin;
 
 	nin = fault->node->iwire.size();
-	if (fault->io)
+	if (fault->logical_xor_input)
+		w = fault->logical_input_wire;
+	else if (fault->io)
 		w = fault->node->owire.front(); //  gate output fault, Fig.8.3
 	else
 	{ // gate input fault.  Fig. 8.4

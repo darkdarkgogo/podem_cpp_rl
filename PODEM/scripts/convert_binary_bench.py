@@ -1,12 +1,10 @@
 import argparse
+import os
 import random
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
-
-from rl_podem.cpp_bridge import catalog_cpp_podem
-
 
 PORT_RE = re.compile(
     r"^\s*(INPUT|OUTPUT)\s*\(\s*([^()]+?)\s*\)\s*(?:#.*)?$",
@@ -28,6 +26,28 @@ EXPANDED_XOR_CANDIDATE_RE = re.compile(
 SUPPORTED_TYPES = {"AND", "OR", "NAND", "NOR", "NOT", "BUF", "XOR", "EQV"}
 ASSOCIATIVE_TYPES = {"AND", "OR", "NAND", "NOR"}
 SYNTHETIC_PREFIX = "__smartatpg_bin_"
+
+
+def _native_circuit_path(path: Path) -> str:
+    resolved = path.resolve()
+    if os.name != "nt":
+        return str(resolved)
+    try:
+        relative = os.path.relpath(resolved, Path.cwd())
+    except ValueError:
+        return str(resolved)
+    return relative if relative.isascii() else str(resolved)
+
+
+def catalog_cpp_podem(
+    circuit_path: Path, fault_map_path: Optional[Path] = None
+) -> dict[str, Any]:
+    import cpp_podem
+
+    return dict(cpp_podem.catalog_stuck_at(
+        _native_circuit_path(circuit_path),
+        _native_circuit_path(fault_map_path) if fault_map_path else "",
+    ))
 
 
 @dataclass(frozen=True)
@@ -199,8 +219,9 @@ def _expanded_xor_cells(
 
 
 def _filter_expanded_xor_faults(
-    catalog: dict[str, Any], cells: list[ExpandedXorCell], gates: list[Gate]
-) -> tuple[dict[str, Any], int, int]:
+    catalog: dict[str, Any], cells: list[ExpandedXorCell], gates: list[Gate],
+    ports: list[str],
+) -> tuple[dict[str, Any], int, int, int]:
     private_outputs = {
         output for cell in cells for output in cell.private_outputs
     }
@@ -210,6 +231,27 @@ def _filter_expanded_xor_faults(
     for gate in gates:
         for input_name in gate.inputs:
             fanouts.setdefault(input_name, []).append(gate)
+
+    private_gate_outputs = private_outputs | xor_outputs
+    logical_fanout_count: dict[str, int] = {}
+
+    def add_logical_fanout(wire_name: str) -> None:
+        logical_fanout_count[wire_name] = (
+            logical_fanout_count.get(wire_name, 0) + 1
+        )
+
+    for gate in gates:
+        if gate.output in private_gate_outputs:
+            continue
+        for input_name in gate.inputs:
+            add_logical_fanout(input_name)
+    for cell in cells:
+        for input_name in cell.inputs:
+            add_logical_fanout(input_name)
+    for port in ports:
+        match = PORT_RE.fullmatch(port)
+        if match and match.group(1).upper() == "OUTPUT":
+            add_logical_fanout(match.group(2))
 
     def find_output_fault(output: str, fault_type: int) -> Optional[int]:
         return next(
@@ -312,6 +354,30 @@ def _filter_expanded_xor_faults(
             fault["eqv_fault_num"] = 1
         filtered_faults.append(fault)
 
+    retained_input_faults = 0
+    for cell in cells:
+        input_occurrences: dict[str, int] = {}
+        for input_index, input_name in enumerate(cell.inputs):
+            input_occurrence = input_occurrences.get(input_name, 0)
+            input_occurrences[input_name] = input_occurrence + 1
+            if logical_fanout_count.get(input_name, 0) <= 1:
+                continue
+            for fault_type in (0, 1):
+                filtered_faults.append({
+                    "fault_id": (
+                        f"{cell.output}:GI{input_index}:sa{fault_type}"
+                    ),
+                    "node_name": cell.output,
+                    "input_wire_name": input_name,
+                    "io": 0,
+                    "input_index": input_index,
+                    "input_occurrence": input_occurrence,
+                    "fault_type": fault_type,
+                    "eqv_fault_num": 1,
+                    "logical_xor_input": True,
+                })
+                retained_input_faults += 1
+
     for output in xor_outputs:
         output_faults = [
             fault
@@ -336,6 +402,7 @@ def _filter_expanded_xor_faults(
         },
         removed,
         added_output_faults,
+        retained_input_faults,
     )
 
 
@@ -416,6 +483,9 @@ def _write_fault_map(
     records: list[str] = []
     expected_records: list[tuple[Any, ...]] = []
     faults = list(catalog["faults"])
+    has_logical_xor_inputs = any(
+        bool(fault.get("logical_xor_input", False)) for fault in faults
+    )
     for fault in faults:
         node_name = str(fault["node_name"])
         input_name = str(fault["input_wire_name"])
@@ -436,15 +506,28 @@ def _write_fault_map(
                 int(fault["eqv_fault_num"]),
             )
         )
-        records.append(
+        record = (
             "fault "
             f"{fault['fault_id']} {node_name} {input_name} {int(fault['io'])} "
             f"{input_occurrence} "
             f"{int(fault['fault_type'])} {int(fault['eqv_fault_num'])}"
         )
+        if has_logical_xor_inputs:
+            is_logical_xor_input = int(
+                bool(fault.get("logical_xor_input", False))
+            )
+            logical_input_index = (
+                int(fault["input_index"]) if is_logical_xor_input else -1
+            )
+            record += f" {is_logical_xor_input} {logical_input_index}"
+        records.append(record)
 
     lines = [
-        "SMARTATPG_FAULT_MAP_V2",
+        (
+            "SMARTATPG_FAULT_MAP_V3"
+            if has_logical_xor_inputs
+            else "SMARTATPG_FAULT_MAP_V2"
+        ),
         f"source_hash {_fnv1a_file_hash(source)}",
         f"circuit_hash {_fnv1a_file_hash(destination)}",
         f"count {len(records)}",
@@ -586,8 +669,15 @@ def convert_binary_bench(
     _verify_equivalence(ports, gates, binary_ports, binary_gates)
 
     source_catalog = catalog_cpp_podem(source)
-    catalog, removed_xor_faults, added_xor_output_faults = (
-        _filter_expanded_xor_faults(source_catalog, expanded_xor_cells, gates)
+    (
+        catalog,
+        removed_xor_faults,
+        added_xor_output_faults,
+        retained_xor_input_faults,
+    ) = (
+        _filter_expanded_xor_faults(
+            source_catalog, expanded_xor_cells, gates, ports
+        )
     )
     expected_records = _write_fault_map(
         source, destination, fault_map_path, catalog, gi_mapping
@@ -617,6 +707,7 @@ def convert_binary_bench(
         "expanded_xor_cells": len(expanded_xor_cells),
         "removed_xor_faults": removed_xor_faults,
         "added_xor_output_faults": added_xor_output_faults,
+        "retained_xor_input_faults": retained_xor_input_faults,
         "source_collapsed_faults": len(source_catalog["faults"]),
         "source_uncollapsed_faults": int(source_catalog["uncollapsed_total"]),
         "collapsed_faults": len(catalog["faults"]),
@@ -645,6 +736,7 @@ def main() -> None:
         f"xor_cells={stats['expanded_xor_cells']} "
         f"xor_faults_removed={stats['removed_xor_faults']} "
         f"xor_output_faults_added={stats['added_xor_output_faults']} "
+        f"xor_input_faults_retained={stats['retained_xor_input_faults']} "
         f"faults={stats['collapsed_faults']}/{stats['uncollapsed_faults']}"
     )
     print(f"Circuit: {destination.resolve()}")

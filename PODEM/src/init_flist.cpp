@@ -214,13 +214,17 @@ vector<ATPG::FaultCatalogEntry> ATPG::get_fault_catalog() const {
     FaultCatalogEntry entry;
     entry.fault_id = fault_identifier(fault);
     entry.node_name = fault->node->name;
-    entry.input_wire_name = fault->io == GI
-        ? fault->node->iwire[fault->index]->name
-        : "-";
+    entry.input_wire_name = fault->logical_xor_input
+        ? fault->logical_input_wire->name
+        : (fault->io == GI ? fault->node->iwire[fault->index]->name : "-");
     entry.io = fault->io;
-    entry.input_index = fault->io == GI ? fault->index : -1;
+    entry.input_index = fault->logical_xor_input
+        ? fault->logical_input_index
+        : (fault->io == GI ? fault->index : -1);
     entry.input_occurrence = -1;
-    if (fault->io == GI) {
+    if (fault->logical_xor_input) {
+      entry.input_occurrence = fault->logical_input_occurrence;
+    } else if (fault->io == GI) {
       entry.input_occurrence = 0;
       for (int index = 0; index < fault->index; ++index) {
         if (fault->node->iwire[index]->name == entry.input_wire_name) {
@@ -241,8 +245,10 @@ void ATPG::load_mapped_fault_list() {
 
   string token;
   require_fault_map(static_cast<bool>(input >> token) &&
-                        token == "SMARTATPG_FAULT_MAP_V2",
+                        (token == "SMARTATPG_FAULT_MAP_V2" ||
+                         token == "SMARTATPG_FAULT_MAP_V3"),
                     "Unsupported fault map format: " + fault_map_path);
+  const bool has_logical_xor_inputs = token == "SMARTATPG_FAULT_MAP_V3";
   string source_hash;
   string circuit_hash;
   size_t count = 0;
@@ -276,12 +282,24 @@ void ATPG::load_mapped_fault_list() {
     int mapped_input_occurrence = -1;
     int fault_type = -1;
     int eqv_fault_num = 0;
+    int logical_xor_input = 0;
+    int logical_input_index = -1;
     require_fault_map(
         static_cast<bool>(input >> token >> external_id >> node_name >>
                           input_wire_name >> io >> mapped_input_occurrence >>
                           fault_type >> eqv_fault_num) &&
             token == "fault",
         "Truncated fault map record in: " + fault_map_path);
+    if (has_logical_xor_inputs) {
+      require_fault_map(
+          static_cast<bool>(input >> logical_xor_input >> logical_input_index),
+          "Truncated V3 fault map record in: " + fault_map_path);
+      require_fault_map(
+          (logical_xor_input == 0 && logical_input_index == -1) ||
+              (logical_xor_input == 1 && logical_input_index >= 0 &&
+               logical_input_index < 2),
+          "Invalid V3 logical XOR marker for: " + external_id);
+    }
     require_fault_map(fault_ids.insert(external_id).second,
                       "Duplicate fault ID in fault map: " + external_id);
     require_fault_map((io == GI || io == GO) &&
@@ -294,7 +312,18 @@ void ATPG::load_mapped_fault_list() {
                       "Unknown mapped fault node: " + node_name);
     int input_index = 0;
     wptr target_wire = nullptr;
-    if (io == GI) {
+    wptr logical_input_wire = nullptr;
+    if (logical_xor_input != 0) {
+      require_fault_map(
+          logical_xor_input == 1 && io == GI && logical_input_index >= 0 &&
+              mapped_input_occurrence >= 0 && node->type == NAND &&
+              !node->owire.empty(),
+          "Invalid logical XOR input fault: " + external_id);
+      logical_input_wire = wfind(input_wire_name);
+      require_fault_map(logical_input_wire != nullptr,
+                        "Unknown logical XOR input wire: " + input_wire_name);
+      target_wire = logical_input_wire;
+    } else if (io == GI) {
       require_fault_map(mapped_input_occurrence >= 0,
                         "Mapped input occurrence is invalid on node " +
                             node_name);
@@ -331,6 +360,11 @@ void ATPG::load_mapped_fault_list() {
     fault->to_swlist = target_wire->wlist_index;
     fault->fault_no = static_cast<int>(fault_no);
     fault->external_id = external_id;
+    fault->logical_xor_input = logical_xor_input != 0;
+    fault->logical_input_wire = logical_input_wire;
+    fault->logical_input_index = static_cast<short>(logical_input_index);
+    fault->logical_input_occurrence =
+        static_cast<short>(mapped_input_occurrence);
     uncollapsed_total += eqv_fault_num;
     flist_undetect.push_front(fault.get());
     flist.push_front(move(fault));
@@ -374,7 +408,9 @@ void ATPG::compute_fault_coverage() {
           default:
             fprintf(stdout, "gate: %s ;", f->node->name.c_str());
             if (f->io == GI) {
-              fprintf(stdout, "input wire name: %s\n", f->node->iwire[f->index]->name.c_str());
+              fprintf(stdout, "input wire name: %s\n",
+                      (f->logical_xor_input ? f->logical_input_wire->name
+                                            : f->node->iwire[f->index]->name).c_str());
             } else {
               fprintf(stdout, "output wire name: %s\n", f->node->owire.front()->name.c_str());
             }

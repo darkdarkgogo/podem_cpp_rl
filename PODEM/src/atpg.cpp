@@ -410,4 +410,8 @@ ATPG::FAULT::FAULT()
 	this->fault_no = 0;
 	this->detected_time = 0;
 	this->tried_dtc = false;
+	this->logical_xor_input = false;
+	this->logical_input_wire = nullptr;
+	this->logical_input_index = -1;
+	this->logical_input_occurrence = -1;
 }

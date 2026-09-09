@@ -407,6 +407,15 @@ ATPG::wptr ATPG::get_faulty_wire(const fptr f, int &fault_type)
 	int i, nin;
 	bool is_faulty;
 
+	if (f->logical_xor_input)
+	{
+		wptr output_wire = f->node->owire.front();
+		if (output_wire->value != 0 && output_wire->value != 1)
+			return (nullptr);
+		fault_type = output_wire->value ^ 1;
+		return (output_wire);
+	}
+
 	is_faulty = true;
 	nin = f->node->iwire.size();
 	switch (f->node->type)
