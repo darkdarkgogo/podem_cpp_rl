@@ -1,44 +1,39 @@
-# GAT Failure-Fault Reinforcement Design
+# GAT 失败 Fault 强化训练设计
 
-## Scope
+## 范围
 
-After the normal 20-round training finishes, reinforce only the `level_gat_gru`
-model. The `fanin_mean` model and its artifacts remain unchanged.
+正常的 20 轮训练结束后，仅对 `level_gat_gru` 模型进行强化训练。
+`fanin_mean` 模型及其产物保持不变。
 
-The reinforcement candidates are restricted to the original 200 training faults.
-Every candidate was detected by the heuristic baseline within the configured
-backtrack limit, but is not detected by the best GAT checkpoint under the same
-limit. Benchmark faults outside this training set must not enter reinforcement.
+强化候选仅限原来的 200 个训练 fault。这些 fault 都能被启发式算法在规定的
+backtrack 上限内检出，但最佳 GAT checkpoint 在相同上限内仍无法检出。
+训练集以外的测试 fault 不得进入强化训练，以免测试集泄漏。
 
-## Training Flow
+## 训练流程
 
-1. Restore the full best GAT training state, including policy, critic, PPO
-   optimizer, RND model, RND optimizer, and normalization statistics.
-2. Evaluate the restored model on all 200 training faults and form the current
-   unresolved set.
-3. Run five reinforcement rounds. In each round, train each fault in the current
-   unresolved set exactly once, in a deterministic shuffled order.
-4. After each round, evaluate all 200 faults again. The next round uses only the
-   faults that remain unresolved in that evaluation.
-5. If no faults remain unresolved, stop early because subsequent rounds would
-   contain no training episodes.
+1. 恢复最佳 GAT 的完整训练状态，包括 Actor、Critic、PPO 优化器、RND
+   网络、RND 优化器及归一化统计量。
+2. 使用恢复后的模型评估全部 200 个训练 fault，得到当前未检出集合。
+3. 最多执行 5 个强化轮。每轮只训练当前未检出集合，每个 fault 恰好训练
+   一次，并按固定随机种子打乱顺序。
+4. 每个强化轮结束后重新评估全部 200 个训练 fault。下一轮只训练此次评估后
+   仍未检出的 fault。
+5. 如果已经没有未检出的 fault，则提前结束，因为后续强化轮已无训练样本。
 
-## Model Selection And Artifacts
+## 模型选择与产物
 
-Select the reinforced checkpoint by the existing validation order: maximize the
-number of detected faults first, then minimize total backtracks, backtrace steps,
-and finally maximize return. Compare every reinforced candidate with the original
-best GAT model, so reinforcement cannot replace it with a worse all-200 result.
+沿用现有的模型选择顺序：首先最大化检出 fault 数量；检出数量相同时，依次
+最小化总 backtrack、总 backtrace step，并最大化总回报。每个强化候选都要与
+强化前的最佳 GAT 比较，因此强化训练不会用全量 200 个 fault 表现更差的模型
+覆盖原最佳模型。
 
-Keep the normal GAT artifacts intact. Write the best reinforced full checkpoint,
-portable actor, per-round metrics, and unresolved-fault lists as separate files.
-The benchmark bundle uses the reinforced actor when reinforcement completed
-successfully; otherwise it falls back to the original best GAT actor.
+正常 GAT 训练产物保持不变。强化阶段单独保存最佳完整 checkpoint、可移植
+Actor、逐轮指标及未检出 fault 列表。强化成功完成后，benchmark bundle 使用
+强化后的最佳 Actor；若强化阶段未得到更好的模型，则继续使用原最佳 GAT Actor。
 
-## Resume And Verification
+## 断点续训与验证
 
-The reinforcement stage is resumable at fault granularity and validates the
-manifest hash, encoder type, backtrack limit, and source best-checkpoint identity.
-Automated tests cover residual-set extraction, one-visit-per-round scheduling,
-dynamic shrinking, all-200 checkpoint selection, early completion, and the rule
-that mean training is never reinforced.
+强化训练支持 fault 粒度的断点续训，并校验 manifest 哈希、编码器类型、
+backtrack 上限以及来源最佳 checkpoint 的身份。自动化测试覆盖：失败集合提取、
+每轮每个 fault 只训练一次、失败集合动态缩小、依据全量 200 个 fault 选择最佳
+checkpoint、全部检出后提前结束，以及 mean 模型绝不参与强化。
