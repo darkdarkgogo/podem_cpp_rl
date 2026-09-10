@@ -27,7 +27,7 @@ chmod +x train_smartatpg_linux.sh benchmark_smartatpg_linux.sh tensorboard_smart
 ./train_smartatpg_linux.sh
 ```
 
-脚本先完成共享 fault 筛选，再同时启动两个独立训练进程：fanin-mean 使用物理 GPU 0，GAT-GRU 使用物理 GPU 1。每个子进程内部只看见自己的 GPU，因此代码中均显示为 `cuda:0`；实际物理卡分配记录在 `training_run_metadata.json`。任一子进程失败时，启动器会终止另一个训练进程，不会继续生成不完整的对比包。
+脚本先完成共享 fault 筛选，再同时启动两个独立训练进程：fanin-mean 使用物理 GPU 0，GAT-GRU 使用物理 GPU 1。每个子进程内部只看见自己的 GPU，因此代码中均显示为 `cuda:0`；实际物理卡分配记录在 `training_run_metadata.json`。任一子进程失败时，启动器会终止另一个训练进程，不会继续生成不完整的对比包。正常20轮结束后，fanin-mean 直接结束，只有 GAT-GRU 继续在原 GPU 上执行5轮失败 fault 强化训练。
 
 默认训练目标为20轮。若旧的 `30rounds` 输出目录已经存在而新的 `20rounds` 目录不存在，根目录训练、TensorBoard 和对比脚本会自动沿用旧目录，避免丢失 checkpoint。只要尚未开始第21轮，就可以从原 checkpoint 续训并在第20轮结束；已经开始第21轮时会明确拒绝降到20轮。
 
@@ -36,10 +36,12 @@ chmod +x train_smartatpg_linux.sh benchmark_smartatpg_linux.sh tensorboard_smart
 1. 使用基础 PODEM（backtrack 上限2000）测试 c6288 和 full-scan s38417 的完整 fault catalog。只保留成功检出（`outcome == 1`）的 fault，再按 backtracks、backtrace_steps 降序及 fault_id 升序，各选择最困难的100个；不包含达到上限未解决或已判不可测的 fault。任一电路成功检出不足100个时直接报错，不用未检出故障补齐。
 2. 使用完全相同的 episode 顺序和共享超参数，分别训练20轮 fanin-mean 与 GAT-GRU；每轮各200个 episode。
 3. 每轮确定性评估并保存 backtrack 表现最好的完整参数。
-4. 分别导出包含完整图编码器和 Actor 参数的 `SMARTATPG_MODEL_V8`。
-5. 准备16个评测电路和 faultmap，生成同时包含两个 best model 的 `benchmark_bundle/`。
+4. 从最佳 GAT-GRU 完整 checkpoint 恢复参数，找出原200个训练 fault 中仍未检出的 fault；强化阶段每轮只训练当前仍失败的 fault，每个 fault 一次，共执行5轮。每轮结束后仍评估全部200个训练 fault，已经检出的 fault 不进入下一轮强化；若全部检出则提前结束。
+5. 强化候选只有在全量200个训练 fault 上优于强化前的最佳 GAT 时才会成为新最佳，避免失败 fault 提升却造成原有能力整体退化。fanin-mean 不参与强化。
+6. 分别导出包含完整图编码器和 Actor 参数的 `SMARTATPG_MODEL_V8`。
+7. 准备16个评测电路和 faultmap，生成同时包含 mean best model 和强化后 GAT best model 的 `benchmark_bundle/`。
 
-训练入口不会编译独立 C++ 可执行文件，也不会运行最终 heuristic/RL 比较。中断后重新执行同一命令，会从 `training_state.pth` 继续。
+训练入口不会编译独立 C++ 可执行文件，也不会运行最终 heuristic/RL 比较。普通训练中断后重新执行同一命令，会从 `training_state.pth` 继续；GAT 强化中断后会从 `reinforcement_state.pth` 的当前 fault 继续。
 
 训练清单已升级为 `SMARTATPG_PAPER_TRAINING_V2`，两种模型共享同一份200个 hard-detected fault。旧清单可能混有未检出故障，不能直接复用；请使用新的 `--output-dir` 重新准备和训练，不覆盖旧结果。本次不改变 PPO 的失败更新规则；启发式能检出的故障不保证当前 RL 策略也能在预算内检出。
 
@@ -52,7 +54,7 @@ TensorBoard：
 主要输出：
 
 - `smartatpg_mean/`：基线训练状态、V8 模型、每轮指标和 TensorBoard；
-- `smartatpg_gat_gru/`：逐 level 双向 GAT-GRU 的对应训练输出；
+- `smartatpg_gat_gru/`：逐 level 双向 GAT-GRU 的普通训练和强化训练输出；其中 `model_best.txt` 是强化前模型，`model_best_reinforced.txt` 是最终打包模型，`reinforcement_metrics.json` 和 `reinforcement_unresolved_faults.json` 记录逐轮结果；
 - `preparation/`：两种模型共享且固定的训练 manifest、转换电路和 fault profile；
 - `benchmark_bundle/`：交给环境二的自包含目录。
 
@@ -70,7 +72,7 @@ TensorBoard：
 2. 对每个电路重新计算包含 CO 的12维原始特征；
 3. 分别使用两个 V8 模型重新计算该电路每个 gate 的12维 embedding；
 4. 使用 `g++` 重新编译 C++ PODEM；
-5. 通过同一可执行文件分别运行 heuristic、fanin-mean 和 GAT-GRU；
+5. 通过同一可执行文件分别运行 heuristic、fanin-mean 和强化后的 GAT-GRU；
 6. 输出 JSON、CSV、Markdown 汇总和每次原生运行日志。
 
 新电路必须分别用两个 V8 模型重新计算 embedding，不能复用其他电路的 embedding。C++ 为 agentATPG 在推理时拼接目标值；mask 不写入 embedding，也不送入 Actor，而在 logits 之后动态应用。

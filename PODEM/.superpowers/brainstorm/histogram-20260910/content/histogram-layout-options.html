@@ -1,0 +1,64 @@
+<style>
+  .chart { height: 170px; display: flex; align-items: end; gap: 8px; padding: 18px 14px 10px; border-left: 1px solid #94a3b8; border-bottom: 1px solid #94a3b8; background: linear-gradient(#ffffffcc, #f8fafccc); }
+  .bar { flex: 1; min-width: 10px; border-radius: 4px 4px 0 0; opacity: .82; }
+  .blue { background: #2563eb; } .orange { background: #f97316; } .green { background: #16a34a; }
+  .pair { flex: 1; display: flex; align-items: end; gap: 3px; height: 100%; }
+  .mini-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .mini { border: 1px solid #dbe3ef; border-radius: 8px; padding: 8px; }
+  .mini-title { font-size: 12px; color: #475569; margin-bottom: 5px; }
+  .mini-bars { height: 58px; display:flex; align-items:end; gap:4px; border-bottom:1px solid #cbd5e1; }
+  .mini-bars span { flex:1; background:#2563eb; border-radius:2px 2px 0 0; }
+  .delta { background: #16a34a !important; } .negative { background: #dc2626 !important; }
+  .legend { display:flex; gap:14px; margin-top:9px; font-size:12px; color:#475569; }
+  .dot { display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:4px; }
+</style>
+
+<h2>最终比较结果适合怎样呈现？</h2>
+<p class="subtitle">示意图使用 final_comparison.csv 的结构：每个电路各有 heuristic、smartatpg_mean、smartatpg_gat_gru 三组结果。</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="chart">
+        <span class="bar blue" style="height:35%"></span><span class="bar blue" style="height:52%"></span><span class="bar blue" style="height:68%"></span><span class="bar blue" style="height:78%"></span><span class="bar blue" style="height:58%"></span><span class="bar blue" style="height:42%"></span><span class="bar blue" style="height:25%"></span>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A　单指标分布直方图</h3>
+      <p>每张图展示一个数值指标在所有电路中的分布，可叠加三种模型。适合观察整体分布、偏态和异常值。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="chart">
+        <div class="pair"><span class="bar blue" style="height:82%"></span><span class="bar orange" style="height:65%"></span><span class="bar green" style="height:48%"></span></div>
+        <div class="pair"><span class="bar blue" style="height:60%"></span><span class="bar orange" style="height:42%"></span><span class="bar green" style="height:35%"></span></div>
+        <div class="pair"><span class="bar blue" style="height:74%"></span><span class="bar orange" style="height:55%"></span><span class="bar green" style="height:40%"></span></div>
+        <div class="pair"><span class="bar blue" style="height:48%"></span><span class="bar orange" style="height:38%"></span><span class="bar green" style="height:28%"></span></div>
+      </div>
+      <div class="legend"><span><i class="dot blue"></i>heuristic</span><span><i class="dot orange"></i>mean</span><span><i class="dot green"></i>gat_gru</span></div>
+    </div>
+    <div class="card-body">
+      <h3>B　按电路分组柱状图</h3>
+      <p>横轴直接列出电路，三种模型并排比较。最容易回答“哪个模型在某个电路上更好”。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="mini-grid">
+        <div class="mini"><div class="mini-title">Backtracks</div><div class="mini-bars"><span style="height:88%"></span><span style="height:61%"></span><span style="height:35%"></span><span style="height:24%"></span></div></div>
+        <div class="mini"><div class="mini-title">ATPG time</div><div class="mini-bars"><span style="height:70%"></span><span style="height:53%"></span><span style="height:31%"></span><span style="height:18%"></span></div></div>
+        <div class="mini"><div class="mini-title">Coverage</div><div class="mini-bars"><span class="delta" style="height:65%"></span><span class="delta" style="height:78%"></span><span class="delta" style="height:82%"></span><span class="delta" style="height:90%"></span></div></div>
+        <div class="mini"><div class="mini-title">Relative change</div><div class="mini-bars"><span class="negative" style="height:42%"></span><span class="delta" style="height:58%"></span><span class="delta" style="height:74%"></span><span class="delta" style="height:90%"></span></div></div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C　多指标总览</h3>
+      <p>一次输出 2×2 小图：回溯、步骤、耗时、覆盖率或相对改进。适合论文、汇报和快速总览。</p>
+    </div>
+  </div>
+</div>
+
+<p class="subtitle">可以点击一个方案。若你说“都要”，我会把三类图拆成几个独立脚本，并提供统一入口。</p>

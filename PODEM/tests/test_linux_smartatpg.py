@@ -77,6 +77,10 @@ class SplitLauncherTests(unittest.TestCase):
                     model_dir = Path(command[4])
                     model_dir.mkdir(parents=True, exist_ok=True)
                     (model_dir / "model_best.txt").write_text("model", encoding="utf-8")
+                    if "level_gat_gru" in command:
+                        (model_dir / "model_best_reinforced.txt").write_text(
+                            "model", encoding="utf-8"
+                        )
                 return 0
 
             with (
@@ -110,6 +114,21 @@ class SplitLauncherTests(unittest.TestCase):
             self.assertNotIn("benchmark_smartatpg.py", flattened)
             for command in (call.args[0] for call in train_calls):
                 self.assertEqual(command[command.index("--rounds") + 1], "20")
+            mean_command = next(
+                command for command in (call.args[0] for call in train_calls)
+                if "fanin_mean" in command
+            )
+            gat_command = next(
+                command for command in (call.args[0] for call in train_calls)
+                if "level_gat_gru" in command
+            )
+            self.assertNotIn("--reinforcement-rounds", mean_command)
+            self.assertEqual(
+                gat_command[gat_command.index("--reinforcement-rounds") + 1], "5"
+            )
+            self.assertTrue(
+                str(commands[3][5]).endswith("model_best_reinforced.txt")
+            )
             prepare = commands[0]
             self.assertEqual(
                 prepare[prepare.index("--backtrack-limit") + 1], "2000"
@@ -128,6 +147,16 @@ class SplitLauncherTests(unittest.TestCase):
             self.assertRaisesRegex(ValueError, "two distinct"),
         ):
             run_training_main(["--mean-gpu", "0", "--gat-gpu", "0"])
+        with (
+            patch("run_smartatpg_training_linux.sys.platform", "linux"),
+            self.assertRaisesRegex(ValueError, "between 1 and 5"),
+        ):
+            run_training_main(["--gat-reinforcement-rounds", "6"])
+        with (
+            patch("run_smartatpg_training_linux.sys.platform", "linux"),
+            self.assertRaisesRegex(ValueError, "exactly 20"),
+        ):
+            run_training_main(["--rounds", "19"])
 
     def test_training_round_target_can_change_without_changing_other_config(self):
         saved = {"rounds": 30, "seed": 2026, "encoder_variant": "fanin_mean"}

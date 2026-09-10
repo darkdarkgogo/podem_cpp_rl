@@ -26,6 +26,10 @@ from rl_podem.smartatpg_features import load_circuit_graph
 
 CHECKPOINT_FORMAT = "SMARTATPG_12D_CO_TRAINING_V3"
 BEST_CHECKPOINT_FORMAT = "SMARTATPG_12D_CO_BEST_V3"
+REINFORCEMENT_CHECKPOINT_FORMAT = "SMARTATPG_GAT_REINFORCEMENT_V1"
+REINFORCEMENT_BEST_FORMAT = "SMARTATPG_GAT_REINFORCEMENT_BEST_V1"
+NORMAL_TRAINING_ROUNDS = 20
+MAX_REINFORCEMENT_ROUNDS = 5
 AGENT_TYPES = {
     "fanin_mean": SmartATPGPPOAgent,
     "level_gat_gru": GATGRUSmartATPGPPOAgent,
@@ -128,6 +132,59 @@ def _episode_order(circuits, seed, round_number):
         for item in circuits
         for fault_id in item["training_fault_ids"]
     ]
+    random.Random(seed + round_number).shuffle(episodes)
+    return episodes
+
+
+def unresolved_faults(evaluation):
+    return [
+        (circuit["circuit"], episode["fault_id"])
+        for circuit in evaluation["circuits"]
+        for episode in circuit["episodes"]
+        if not int(episode["detected"])
+    ]
+
+
+def _training_fault_set(circuits):
+    return {
+        (item["name"], fault_id)
+        for item in circuits
+        for fault_id in item["training_fault_ids"]
+    }
+
+
+def _validate_reinforcement_evaluation(evaluation, circuits):
+    expected = _training_fault_set(circuits)
+    evaluated = [
+        (circuit["circuit"], episode["fault_id"])
+        for circuit in evaluation["circuits"]
+        for episode in circuit["episodes"]
+    ]
+    if len(evaluated) != len(expected) or set(evaluated) != expected:
+        raise ValueError(
+            "GAT reinforcement evaluation must cover every training fault exactly once"
+        )
+    return unresolved_faults(evaluation)
+
+
+def _validate_reinforcement_faults(faults, circuits):
+    expected = _training_fault_set(circuits)
+    normalized = []
+    for fault in faults:
+        if not isinstance(fault, (list, tuple)) or len(fault) != 2:
+            raise ValueError("Invalid fault entry in GAT reinforcement checkpoint")
+        normalized.append(tuple(fault))
+    if len(normalized) != len(set(normalized)):
+        raise ValueError("Duplicate fault in GAT reinforcement checkpoint")
+    if not set(normalized).issubset(expected):
+        raise ValueError(
+            "GAT reinforcement checkpoint contains a non-training fault"
+        )
+    return normalized
+
+
+def _reinforcement_order(faults, seed, round_number):
+    episodes = [tuple(fault) for fault in faults]
     random.Random(seed + round_number).shuffle(episodes)
     return episodes
 
@@ -239,14 +296,311 @@ def _validate_round_target(current_round, episode_index, target_rounds):
         )
 
 
+def _validate_reinforcement_state(state, normal_rounds):
+    required = {
+        "current_round", "episode_index", "completed_episodes",
+        "current_unresolved", "round_metrics", "best_score", "best_round",
+        "best_validation_round", "best_agent", "best_evaluation", "agent",
+        "torch_random_state", "torch_cuda_random_state",
+    }
+    if not required.issubset(state):
+        raise ValueError("GAT reinforcement checkpoint is incomplete")
+    current_round = int(state["current_round"])
+    best_round = int(state["best_round"])
+    round_metrics = state["round_metrics"]
+    if not isinstance(round_metrics, list) or len(round_metrics) != current_round:
+        raise ValueError("GAT reinforcement checkpoint metrics are inconsistent")
+    if not 0 <= best_round < current_round:
+        raise ValueError("GAT reinforcement checkpoint best round is invalid")
+    if round_metrics[best_round] != state["best_evaluation"]:
+        raise ValueError("GAT reinforcement checkpoint best evaluation is inconsistent")
+    validation_round = int(state["best_validation_round"])
+    if best_round and validation_round != normal_rounds + best_round:
+        raise ValueError("GAT reinforcement checkpoint validation round is inconsistent")
+    expected_score = validation_score(state["best_evaluation"], validation_round)
+    if tuple(state["best_score"]) != expected_score:
+        raise ValueError("GAT reinforcement checkpoint best score is inconsistent")
+    if not isinstance(state["best_agent"], dict) or not isinstance(state["agent"], dict):
+        raise ValueError("GAT reinforcement checkpoint agent state is invalid")
+
+
+def _save_reinforcement_best(
+    path, model_path, state, manifest_digest, config, evaluation,
+):
+    validation_round = int(state["best_validation_round"])
+    payload = {
+        "format": REINFORCEMENT_BEST_FORMAT,
+        "manifest_hash": manifest_digest,
+        "source_best_checkpoint_hash": state["source_best_checkpoint_hash"],
+        "config": config,
+        "round": validation_round,
+        "reinforcement_round": int(state["best_round"]),
+        "score": list(state["best_score"]),
+        "evaluation": evaluation,
+        "agent": state["best_agent"],
+    }
+    _atomic_torch_save(path, payload)
+    export_actor(
+        state["best_agent"]["policy_old"], model_path,
+        best_round=validation_round, best_score=state["best_score"],
+    )
+
+
+def _run_gat_reinforcement(
+    *, agent, circuits, trainers, evaluators, output_dir, best_checkpoint_path,
+    manifest_digest, normal_rounds, reinforcement_rounds, backtrack_limit, seed,
+    writer,
+):
+    if normal_rounds != NORMAL_TRAINING_ROUNDS:
+        raise ValueError(
+            f"GAT reinforcement requires exactly {NORMAL_TRAINING_ROUNDS} "
+            "normal training rounds"
+        )
+    if not 1 <= reinforcement_rounds <= MAX_REINFORCEMENT_ROUNDS:
+        raise ValueError(
+            f"GAT reinforcement rounds must be between 1 and "
+            f"{MAX_REINFORCEMENT_ROUNDS}"
+        )
+    checkpoint_path = output_dir / "reinforcement_state.pth"
+    best_path = output_dir / "best_reinforced_training_state.pth"
+    model_path = output_dir / "model_best_reinforced.txt"
+    metrics_path = output_dir / "reinforcement_metrics.json"
+    unresolved_path = output_dir / "reinforcement_unresolved_faults.json"
+    source_hash = _manifest_hash(best_checkpoint_path)
+    config = {
+        "rounds": reinforcement_rounds,
+        "seed": seed,
+        "normal_rounds": normal_rounds,
+        "backtrack_limit": backtrack_limit,
+        "encoder_variant": "level_gat_gru",
+        "device": str(device),
+        "faults_per_episode": 1,
+        "training_scope": "current_unresolved_training_faults",
+    }
+
+    if checkpoint_path.is_file():
+        state = torch.load(checkpoint_path, map_location="cpu")
+        if state.get("format") != REINFORCEMENT_CHECKPOINT_FORMAT:
+            raise ValueError("Unsupported GAT reinforcement checkpoint format")
+        if state.get("manifest_hash") != manifest_digest:
+            raise ValueError("Training manifest changed since GAT reinforcement")
+        if state.get("source_best_checkpoint_hash") != source_hash:
+            raise ValueError("Best GAT checkpoint changed since reinforcement started")
+        if state.get("config") != config:
+            raise ValueError("GAT reinforcement configuration changed since checkpoint")
+        _validate_reinforcement_state(state, normal_rounds)
+        current_round = int(state.get("current_round", 0))
+        episode_index = int(state.get("episode_index", -1))
+        if not 1 <= current_round <= reinforcement_rounds + 1:
+            raise ValueError("GAT reinforcement checkpoint round is invalid")
+        if episode_index < 0 or int(state.get("completed_episodes", -1)) < 0:
+            raise ValueError("GAT reinforcement checkpoint episode is invalid")
+        current_unresolved = _validate_reinforcement_faults(
+            state.get("current_unresolved", []), circuits
+        )
+        state["current_unresolved"] = [list(fault) for fault in current_unresolved]
+        saved_cuda_state = state["torch_cuda_random_state"]
+        if str(device).startswith("cuda") != (saved_cuda_state is not None):
+            raise ValueError(
+                "GAT reinforcement checkpoint RNG state does not match the device"
+            )
+        agent.load_training_state_dict(state["agent"])
+        torch.set_rng_state(state["torch_random_state"])
+        if saved_cuda_state is not None:
+            torch.cuda.set_rng_state_all(saved_cuda_state)
+        print(
+            f"REINFORCEMENT_RESUME round={state['current_round']} "
+            f"episode={state['episode_index']} "
+            f"unresolved={len(state['current_unresolved'])}",
+            flush=True,
+        )
+    else:
+        source = torch.load(best_checkpoint_path, map_location="cpu")
+        if source.get("format") != BEST_CHECKPOINT_FORMAT:
+            raise ValueError("GAT reinforcement requires the current best checkpoint")
+        if source.get("manifest_hash") != manifest_digest:
+            raise ValueError("Best GAT checkpoint uses a different training manifest")
+        if source.get("config", {}).get("encoder_variant") != "level_gat_gru":
+            raise ValueError("Only the level_gat_gru model can be reinforced")
+        if source.get("config", {}).get("device") != str(device):
+            raise ValueError(
+                "Best GAT checkpoint device does not match reinforcement device"
+            )
+        agent.load_training_state_dict(source["agent"])
+        initial_evaluation = evaluate_round(
+            circuits, evaluators, 0, backtrack_limit, seed
+        )
+        initial_unresolved = _validate_reinforcement_evaluation(
+            initial_evaluation, circuits
+        )
+        initial_evaluation.update({
+            "reinforcement_round": 0,
+            "trained_faults": [],
+            "unresolved_faults": [list(fault) for fault in initial_unresolved],
+            "is_best": True,
+        })
+        source_round = int(source["round"])
+        initial_score = validation_score(initial_evaluation, source_round)
+        state = {
+            "format": REINFORCEMENT_CHECKPOINT_FORMAT,
+            "manifest_hash": manifest_digest,
+            "source_best_checkpoint_hash": source_hash,
+            "config": config,
+            "current_round": 1,
+            "episode_index": 0,
+            "completed_episodes": 0,
+            "current_unresolved": [list(fault) for fault in initial_unresolved],
+            "round_metrics": [initial_evaluation],
+            "best_score": list(initial_score),
+            "best_round": 0,
+            "best_validation_round": source_round,
+            "best_agent": _clone(agent.training_state_dict()),
+            "best_evaluation": initial_evaluation,
+        }
+        _save_state(checkpoint_path, agent, state)
+
+    circuit_by_name = {item["name"]: item for item in circuits}
+    _save_reinforcement_best(
+        best_path, model_path, state, manifest_digest, config,
+        state["best_evaluation"],
+    )
+    _atomic_json(metrics_path, state["round_metrics"])
+    _atomic_json(unresolved_path, {
+        "reinforcement_round": int(state["current_round"]) - 1,
+        "faults": state["current_unresolved"],
+    })
+    while state["current_round"] <= reinforcement_rounds:
+        round_number = int(state["current_round"])
+        if not state["current_unresolved"]:
+            print(
+                f"REINFORCEMENT_COMPLETE round={round_number - 1} "
+                "unresolved=0 reason=all_detected",
+                flush=True,
+            )
+            break
+        order = _reinforcement_order(
+            state["current_unresolved"], seed, round_number
+        )
+        episode_index = int(state["episode_index"])
+        if episode_index > len(order):
+            raise ValueError("GAT reinforcement checkpoint episode is out of range")
+        for index in range(episode_index, len(order)):
+            circuit_name, fault_id = order[index]
+            item = circuit_by_name[circuit_name]
+            trainer = trainers[circuit_name]
+            trainer.run(
+                item["circuit"],
+                backtrack_limit=backtrack_limit,
+                seed=seed + normal_rounds + round_number,
+                fault_ids=[fault_id],
+                fault_map_path=item["fault_map"],
+            )
+            metrics = trainer.episode_metrics[0]
+            state["episode_index"] = index + 1
+            state["completed_episodes"] += 1
+            step = int(state["completed_episodes"])
+            writer.add_scalar(
+                "reinforcement/episode_backtracks", metrics["backtracks"], step
+            )
+            writer.add_scalar(
+                "reinforcement/episode_backtrace_steps",
+                metrics["backtrace_steps"], step,
+            )
+            writer.add_scalar(
+                "reinforcement/episode_return", metrics["combined_reward_sum"], step
+            )
+            writer.add_scalar(
+                "reinforcement/episode_detected", metrics["detected"], step
+            )
+            writer.flush()
+            _save_state(checkpoint_path, agent, state)
+            print(
+                f"REINFORCEMENT_EPISODE round={round_number}/{reinforcement_rounds} "
+                f"index={index + 1}/{len(order)} circuit={circuit_name} "
+                f"fault={fault_id} detected={metrics['detected']} "
+                f"backtracks={metrics['backtracks']}",
+                flush=True,
+            )
+
+        evaluation = evaluate_round(
+            circuits, evaluators, round_number, backtrack_limit, seed
+        )
+        next_unresolved = _validate_reinforcement_evaluation(
+            evaluation, circuits
+        )
+        evaluation.update({
+            "reinforcement_round": round_number,
+            "trained_faults": [list(fault) for fault in order],
+            "unresolved_faults": [list(fault) for fault in next_unresolved],
+        })
+        validation_round = normal_rounds + round_number
+        score = validation_score(evaluation, validation_round)
+        is_best = score < tuple(state["best_score"])
+        evaluation["is_best"] = bool(is_best)
+        state["round_metrics"].append(evaluation)
+        if is_best:
+            state["best_score"] = list(score)
+            state["best_round"] = round_number
+            state["best_validation_round"] = validation_round
+            state["best_agent"] = _clone(agent.training_state_dict())
+            state["best_evaluation"] = evaluation
+            _save_reinforcement_best(
+                best_path, model_path, state, manifest_digest, config, evaluation
+            )
+        state["current_unresolved"] = [list(fault) for fault in next_unresolved]
+        state["current_round"] = round_number + 1
+        state["episode_index"] = 0
+        writer.add_scalar(
+            "reinforcement/round_detected_faults",
+            evaluation["detected_faults"], round_number,
+        )
+        writer.add_scalar(
+            "reinforcement/round_unresolved_faults",
+            len(next_unresolved), round_number,
+        )
+        writer.add_scalar(
+            "reinforcement/round_backtracks_total",
+            evaluation["backtracks_total"], round_number,
+        )
+        writer.add_scalar(
+            "reinforcement/round_is_best", int(is_best), round_number
+        )
+        writer.flush()
+        _atomic_json(metrics_path, state["round_metrics"])
+        _atomic_json(unresolved_path, {
+            "reinforcement_round": round_number,
+            "faults": state["current_unresolved"],
+        })
+        _save_state(checkpoint_path, agent, state)
+        print(
+            f"REINFORCEMENT_ROUND round={round_number}/{reinforcement_rounds} "
+            f"trained={len(order)} detected={evaluation['detected_faults']}/200 "
+            f"unresolved={len(next_unresolved)} best={int(is_best)}",
+            flush=True,
+        )
+
+    print(
+        f"REINFORCEMENT_FINISHED rounds={state['current_round'] - 1} "
+        f"episodes={state['completed_episodes']} "
+        f"best_round={state['best_round']} "
+        f"unresolved={len(state['current_unresolved'])}",
+        flush=True,
+    )
+    return state
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("manifest", type=Path)
     parser.add_argument("output_dir", type=Path)
-    parser.add_argument("--rounds", type=int, default=20)
+    parser.add_argument("--rounds", type=int, default=NORMAL_TRAINING_ROUNDS)
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--rnd-beta", type=float, default=0.05)
     parser.add_argument("--k-epochs", type=int, default=8)
+    parser.add_argument(
+        "--reinforcement-rounds", type=int, default=0,
+        help="Extra unresolved-fault rounds; supported only by level_gat_gru.",
+    )
     parser.add_argument(
         "--encoder", choices=tuple(AGENT_TYPES), default="fanin_mean",
         help="Graph encoder variant; use separate output directories per variant.",
@@ -254,6 +608,22 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.rounds <= 0 or args.k_epochs <= 0:
         raise ValueError("Rounds and PPO epochs must be positive")
+    if args.reinforcement_rounds < 0:
+        raise ValueError("Reinforcement rounds cannot be negative")
+    if args.reinforcement_rounds > MAX_REINFORCEMENT_ROUNDS:
+        raise ValueError(
+            f"Reinforcement rounds cannot exceed {MAX_REINFORCEMENT_ROUNDS}"
+        )
+    if args.encoder != "level_gat_gru" and args.reinforcement_rounds:
+        raise ValueError("Only level_gat_gru supports reinforcement training")
+    if (
+        args.reinforcement_rounds
+        and args.rounds != NORMAL_TRAINING_ROUNDS
+    ):
+        raise ValueError(
+            f"GAT reinforcement requires exactly {NORMAL_TRAINING_ROUNDS} "
+            "normal training rounds"
+        )
 
     torch.manual_seed(args.seed)
     if torch.cuda.is_available():
@@ -437,12 +807,31 @@ def main(argv=None):
                 f"best={int(is_best)}",
                 flush=True,
             )
+        if args.reinforcement_rounds:
+            if not best_checkpoint_path.is_file():
+                raise RuntimeError("GAT training completed without a best checkpoint")
+            _run_gat_reinforcement(
+                agent=agent,
+                circuits=circuits,
+                trainers=trainers,
+                evaluators=evaluators,
+                output_dir=output_dir,
+                best_checkpoint_path=best_checkpoint_path,
+                manifest_digest=manifest_digest,
+                normal_rounds=args.rounds,
+                reinforcement_rounds=args.reinforcement_rounds,
+                backtrack_limit=backtrack_limit,
+                seed=args.seed,
+                writer=writer,
+            )
     finally:
         writer.close()
 
-    export_actor(agent.policy_old.state_dict(), model_latest_path)
+    if not args.reinforcement_rounds:
+        export_actor(agent.policy_old.state_dict(), model_latest_path)
     print(
         f"TRAINING_COMPLETE rounds={args.rounds} "
+        f"reinforcement_rounds={args.reinforcement_rounds} "
         f"episodes={state['completed_episodes']} best_round={state['best_round']} "
         f"device={device}",
         flush=True,

@@ -15,6 +15,8 @@ import torch
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKTRACK_LIMIT = 2000
+NORMAL_TRAINING_ROUNDS = 20
+GAT_REINFORCEMENT_ROUNDS = 5
 
 
 def _atomic_json(path, value):
@@ -113,17 +115,35 @@ def main(argv=None):
         type=Path,
         default=ROOT / "artifacts/smartatpg_12d_co_bt2000",
     )
-    parser.add_argument("--rounds", type=int, default=20)
+    parser.add_argument("--rounds", type=int, default=NORMAL_TRAINING_ROUNDS)
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--profile-seed", type=int, default=14)
     parser.add_argument("--backtrack-limit", type=int, default=BACKTRACK_LIMIT)
+    parser.add_argument(
+        "--gat-reinforcement-rounds",
+        type=int,
+        default=GAT_REINFORCEMENT_ROUNDS,
+    )
     parser.add_argument("--mean-gpu", type=int, default=0)
     parser.add_argument("--gat-gpu", type=int, default=1)
     args = parser.parse_args(argv)
     if not sys.platform.startswith("linux"):
         raise RuntimeError("This training launcher is intended for Linux")
-    if args.rounds <= 0 or args.backtrack_limit <= 0:
-        raise ValueError("Rounds and backtrack limit must be positive")
+    if (
+        args.rounds <= 0
+        or args.backtrack_limit <= 0
+        or args.gat_reinforcement_rounds <= 0
+        or args.gat_reinforcement_rounds > GAT_REINFORCEMENT_ROUNDS
+    ):
+        raise ValueError(
+            "Rounds and backtrack limit must be positive; GAT reinforcement "
+            f"rounds must be between 1 and {GAT_REINFORCEMENT_ROUNDS}"
+        )
+    if args.rounds != NORMAL_TRAINING_ROUNDS:
+        raise ValueError(
+            f"GAT reinforcement requires exactly {NORMAL_TRAINING_ROUNDS} "
+            "normal training rounds"
+        )
     if args.mean_gpu < 0 or args.gat_gpu < 0 or args.mean_gpu == args.gat_gpu:
         raise ValueError("Mean and GAT-GRU training require two distinct non-negative GPU IDs")
     if args.backtrack_limit != BACKTRACK_LIMIT:
@@ -184,6 +204,7 @@ def main(argv=None):
         "--rounds", str(args.rounds),
         "--seed", str(args.seed),
         "--encoder", "level_gat_gru",
+        "--reinforcement-rounds", str(args.gat_reinforcement_rounds),
     ]
     bundle_command = [
         sys.executable,
@@ -191,7 +212,7 @@ def main(argv=None):
         str(ROOT / "scripts/prepare_smartatpg_benchmark.py"),
         str(output_dir / "benchmark_bundle"),
         str(baseline_dir / "model_best.txt"),
-        str(gat_gru_dir / "model_best.txt"),
+        str(gat_gru_dir / "model_best_reinforced.txt"),
         "--resume",
     ]
     metadata = {
@@ -205,6 +226,7 @@ def main(argv=None):
             "smartatpg_gat_gru": args.gat_gpu,
         },
         "rounds": args.rounds,
+        "gat_reinforcement_rounds": args.gat_reinforcement_rounds,
         "seed": args.seed,
         "profile_seed": args.profile_seed,
         "backtrack_limit": args.backtrack_limit,
@@ -236,9 +258,14 @@ def main(argv=None):
         f"{name}_training_seconds": seconds
         for name, seconds in parallel_timings.items()
     })
-    for model_dir in (baseline_dir, gat_gru_dir):
-        if not (model_dir / "model_best.txt").is_file():
-            raise RuntimeError(f"Training completed without {model_dir / 'model_best.txt'}")
+    required_models = (
+        baseline_dir / "model_best.txt",
+        gat_gru_dir / "model_best.txt",
+        gat_gru_dir / "model_best_reinforced.txt",
+    )
+    for model_path in required_models:
+        if not model_path.is_file():
+            raise RuntimeError(f"Training completed without {model_path}")
     timings["bundle_seconds"] = _run(
         bundle_command, output_dir / "prepare_bundle.log", environment
     )

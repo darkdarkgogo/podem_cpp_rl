@@ -1,0 +1,62 @@
+<style>
+  .dashboard { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-top:18px; }
+  .metric { border:1px solid #dbe3ef; border-radius:12px; padding:14px; background:#fff; }
+  .metric h3 { margin:0 0 3px; font-size:16px; }
+  .unit { font-size:12px; color:#64748b; margin-bottom:8px; }
+  .plot { height:155px; display:flex; align-items:end; gap:13px; padding:12px 10px 0; border-left:1px solid #94a3b8; border-bottom:1px solid #94a3b8; background:repeating-linear-gradient(to top,#fff 0,#fff 38px,#e8edf4 39px); }
+  .circuit { flex:1; height:100%; display:flex; align-items:end; justify-content:center; gap:3px; position:relative; }
+  .circuit::after { content:attr(data-name); position:absolute; bottom:-20px; font-size:10px; color:#64748b; }
+  .bar { width:24%; min-width:6px; border-radius:3px 3px 0 0; }
+  .h { background:#64748b; } .m { background:#f59e0b; } .g { background:#2563eb; }
+  .legend { display:flex; justify-content:center; gap:18px; margin-top:28px; font-size:12px; color:#475569; }
+  .dot { display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:4px; }
+  @media (max-width:850px) { .dashboard { grid-template-columns:1fr; } }
+</style>
+
+<h2>四个指标，分别按电路比较</h2>
+<p class="subtitle">每个指标输出一张独立图片；图中每个电路包含 heuristic、smartatpg_mean、smartatpg_gat_gru 三根并排柱。</p>
+
+<div class="dashboard">
+  <div class="metric">
+    <h3>Backtrace steps</h3><div class="unit">回溯搜索步骤数</div>
+    <div class="plot">
+      <div class="circuit" data-name="circuit 1"><i class="bar h" style="height:83%"></i><i class="bar m" style="height:61%"></i><i class="bar g" style="height:46%"></i></div>
+      <div class="circuit" data-name="circuit 2"><i class="bar h" style="height:66%"></i><i class="bar m" style="height:53%"></i><i class="bar g" style="height:39%"></i></div>
+      <div class="circuit" data-name="circuit 3"><i class="bar h" style="height:92%"></i><i class="bar m" style="height:69%"></i><i class="bar g" style="height:57%"></i></div>
+      <div class="circuit" data-name="circuit 4"><i class="bar h" style="height:58%"></i><i class="bar m" style="height:45%"></i><i class="bar g" style="height:32%"></i></div>
+    </div>
+  </div>
+  <div class="metric">
+    <h3>Backtracks</h3><div class="unit">回溯次数</div>
+    <div class="plot">
+      <div class="circuit" data-name="circuit 1"><i class="bar h" style="height:76%"></i><i class="bar m" style="height:54%"></i><i class="bar g" style="height:41%"></i></div>
+      <div class="circuit" data-name="circuit 2"><i class="bar h" style="height:58%"></i><i class="bar m" style="height:48%"></i><i class="bar g" style="height:35%"></i></div>
+      <div class="circuit" data-name="circuit 3"><i class="bar h" style="height:87%"></i><i class="bar m" style="height:62%"></i><i class="bar g" style="height:50%"></i></div>
+      <div class="circuit" data-name="circuit 4"><i class="bar h" style="height:51%"></i><i class="bar m" style="height:37%"></i><i class="bar g" style="height:28%"></i></div>
+    </div>
+  </div>
+  <div class="metric">
+    <h3>Runtime</h3><div class="unit">ATPG runtime (seconds)</div>
+    <div class="plot">
+      <div class="circuit" data-name="circuit 1"><i class="bar h" style="height:88%"></i><i class="bar m" style="height:72%"></i><i class="bar g" style="height:52%"></i></div>
+      <div class="circuit" data-name="circuit 2"><i class="bar h" style="height:62%"></i><i class="bar m" style="height:50%"></i><i class="bar g" style="height:38%"></i></div>
+      <div class="circuit" data-name="circuit 3"><i class="bar h" style="height:80%"></i><i class="bar m" style="height:67%"></i><i class="bar g" style="height:45%"></i></div>
+      <div class="circuit" data-name="circuit 4"><i class="bar h" style="height:49%"></i><i class="bar m" style="height:39%"></i><i class="bar g" style="height:27%"></i></div>
+    </div>
+  </div>
+  <div class="metric">
+    <h3>Fault coverage</h3><div class="unit">检测故障数 ÷ 总故障数 (%)</div>
+    <div class="plot">
+      <div class="circuit" data-name="circuit 1"><i class="bar h" style="height:78%"></i><i class="bar m" style="height:86%"></i><i class="bar g" style="height:91%"></i></div>
+      <div class="circuit" data-name="circuit 2"><i class="bar h" style="height:81%"></i><i class="bar m" style="height:88%"></i><i class="bar g" style="height:93%"></i></div>
+      <div class="circuit" data-name="circuit 3"><i class="bar h" style="height:73%"></i><i class="bar m" style="height:84%"></i><i class="bar g" style="height:90%"></i></div>
+      <div class="circuit" data-name="circuit 4"><i class="bar h" style="height:85%"></i><i class="bar m" style="height:91%"></i><i class="bar g" style="height:96%"></i></div>
+    </div>
+  </div>
+</div>
+
+<div class="legend"><span><i class="dot h"></i>heuristic</span><span><i class="dot m"></i>smartatpg_mean</span><span><i class="dot g"></i>smartatpg_gat_gru</span></div>
+
+<div class="option" data-choice="approve-four-metrics" onclick="toggleSelect(this)" style="margin-top:22px">
+  <div class="letter">✓</div><div class="content"><h3>采用这个设计</h3><p>四个独立脚本，共享一致的颜色、模型顺序、输入检查和输出格式。</p></div>
+</div>
