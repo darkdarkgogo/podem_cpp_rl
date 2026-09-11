@@ -1,35 +1,30 @@
-# Undetected Fault File Overwrite Design
+# 未检出故障文件覆盖写入设计
 
-## Goal
+## 目标
 
-Ensure every ATPG run writes a fresh `<circuit>.uf` undetected-fault report. A
-previous run's records must not remain in the file, because accumulated records
-can be mistaken for the current run's aborted or redundant fault counts.
+确保每次 ATPG 运行都生成一份全新的 `<电路>.uf` 未检出故障报告。以前运行的
+记录不得残留在文件中，否则累积记录容易被误认为本次运行的中止故障数或冗余故障数。
 
-## Scope
+## 修改范围
 
-Change only `PODEM/src/display.cpp`, in `ATPG::display_undetect()`. Open the
-output file in truncate/output mode instead of append mode. The report name,
-record format, fault classification, and all other outputs remain unchanged.
+只修改 `PODEM/src/display.cpp` 中的 `ATPG::display_undetect()`：将输出文件的
+打开方式由追加模式改为截断写入模式。报告文件名、记录格式、故障分类以及其他输出
+均保持不变。
 
-This behavior applies uniformly to every path that calls `display_undetect()`,
-including stuck-at ATPG, transition-delay ATPG, and fault-simulation output.
+这一行为统一适用于所有调用 `display_undetect()` 的执行路径，包括固定故障 ATPG、
+转换延迟故障 ATPG 和故障仿真输出。
 
-## Behavior
+## 预期行为
 
-When `display_undetect()` opens `<circuit>.uf`, an existing file is truncated
-before current undetected faults are written. If the current run has no
-undetected faults, the result is an empty `.uf` file rather than stale content
-from an earlier run. Existing file-open failure handling is retained.
+`display_undetect()` 打开 `<电路>.uf` 时，如果文件已经存在，先清空原内容，再写入
+本次运行的未检出故障。如果本次没有未检出故障，最终应得到一个空的 `.uf` 文件，
+而不是保留上一次运行的旧内容。现有的文件打开失败处理保持不变。
 
-## Verification
+## 验证方式
 
-Add a regression test that exercises the file-open behavior twice and verifies
-that the second report replaces the first instead of appending to it. Also run
-the relevant automated tests and inspect the source to confirm no other output
-stream was changed.
+增加回归测试，连续执行两次报告写入，并确认第二次内容会替换第一次内容而非追加。
+同时运行相关自动化测试，并检查源码，确认没有改变其他输出流的行为。
 
-After this change, coverage diagnosis must use either the current run's native
-summary or its freshly overwritten `.uf` file. Formal SmartATPG comparison
-continues to use `-bt 2000`, converted binary/full-scan netlists, and the
-corresponding source-preserving fault maps.
+修改完成后，覆盖率排查必须使用当前运行的原生汇总，或本次运行新覆盖生成的 `.uf`
+文件。正式 SmartATPG 对比仍固定采用 `-bt 2000`、转换后的二值化/全扫描网表，以及
+对应的、保留原始故障口径的 fault map。
