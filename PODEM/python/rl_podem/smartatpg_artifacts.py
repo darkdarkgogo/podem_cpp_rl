@@ -56,18 +56,32 @@ def snapshot_id(state):
     return digest.hexdigest()
 
 
-def export_actor(state, path, best_round=0, best_score=None):
+def export_actor(
+    state, path, best_round=0, best_score=None, training_protocol=None,
+):
     identity = snapshot_id(state)
     metadata = inference_metadata(state)
     score_text = (
         "none" if best_score is None
         else ",".join(format(float(value), ".17g") for value in best_score)
     )
+    protocol_metadata = {}
+    if training_protocol is not None:
+        protocol_metadata = {
+            "heuristic": training_protocol["heuristic"],
+            "circuit_order": ",".join(training_protocol["circuit_order"]),
+            "faults_per_circuit": int(training_protocol["faults_per_circuit"]),
+            "normal_rounds": int(training_protocol["normal_rounds"]),
+            "reinforcement_rounds": int(
+                training_protocol["reinforcement_rounds"]
+            ),
+        }
     export_actor_v2_state_dict(state, path, metadata={
         **metadata,
         "snapshot": identity,
         "best_round": int(best_round),
         "best_score": score_text,
+        **protocol_metadata,
     })
     return identity
 

@@ -13,9 +13,10 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from prepare_smartatpg_training import (
-    FAULT_FILTER, MANIFEST_FORMAT, _validate_resume, prepare, select_hard_faults,
-    sha256_file,
+    FAULTS_PER_CIRCUIT, FAULT_FILTER, HEURISTIC, MANIFEST_FORMAT, SELECTION,
+    _validate_resume, prepare, select_hard_faults, sha256_file,
 )
+from smartatpg_portable import CIRCUITS
 from rl_podem.backends import smartatpg_metadata
 from train_smartatpg import (
     BEST_CHECKPOINT_FORMAT, REINFORCEMENT_BEST_FORMAT, _episode_order,
@@ -80,7 +81,7 @@ def _reinforcement_circuits():
             "name": name,
             "circuit": f"{name}.bench",
             "fault_map": f"{name}.faultmap",
-            "training_fault_ids": [f"{prefix}{index}" for index in range(100)],
+            "training_fault_ids": [f"{prefix}{index}" for index in range(50)],
         }
         for name, prefix in (("c6288", "c"), ("s38417", "s"))
     ]
@@ -97,24 +98,39 @@ def _reinforcement_evaluation(circuits, unresolved, backtracks):
             detected += is_detected
             episodes.append({"fault_id": fault_id, "detected": is_detected})
         circuit_records.append({"circuit": item["name"], "episodes": episodes})
+    episode_count = sum(len(item["training_fault_ids"]) for item in circuits)
     return {
         "round": 0,
-        "episodes": 200,
+        "episodes": episode_count,
         "detected_faults": detected,
         "backtracks_total": backtracks,
         "backtrace_steps_total": backtracks * 2,
         "return_total": float(detected),
-        "fault_coverage": detected / 200,
-        "backtracks_mean": backtracks / 200,
-        "backtrace_steps_mean": backtracks * 2 / 200,
-        "return_mean": detected / 200,
+        "fault_coverage": detected / episode_count,
+        "backtracks_mean": backtracks / episode_count,
+        "backtrace_steps_mean": backtracks * 2 / episode_count,
+        "return_mean": detected / episode_count,
         "circuits": circuit_records,
+    }
+
+
+def _source_config(circuits, reinforcement_rounds):
+    return {
+        "encoder_variant": "level_gat_gru",
+        "device": str(device),
+        "heuristic": HEURISTIC,
+        "circuit_order": [item["name"] for item in circuits],
+        "faults_per_circuit": FAULTS_PER_CIRCUIT,
+        "normal_rounds": 8,
+        "reinforcement_rounds": reinforcement_rounds,
     }
 
 
 class SmartATPGTrainingTests(unittest.TestCase):
     def test_training_preparation_defaults_to_2000_backtracks(self):
-        self.assertEqual(prepare.__defaults__, (100, 2000, 14, False))
+        self.assertEqual(prepare.__defaults__, (50, 2000, 14, 8, 5, False))
+        with self.assertRaisesRegex(ValueError, "exactly 50 faults"):
+            prepare("unused", count=49)
         with self.assertRaisesRegex(ValueError, "requires backtrack limit 2000"):
             prepare("unused", backtrack_limit=500)
 
@@ -151,22 +167,28 @@ class SmartATPGTrainingTests(unittest.TestCase):
             root = Path(directory)
             manifest = {
                 **smartatpg_metadata(), "format": MANIFEST_FORMAT,
-                "fault_filter": FAULT_FILTER, "fault_count_per_circuit": 100,
-                "backtrack_limit": 2000, "profile_seed": 14, "circuits": [],
+                "fault_filter": FAULT_FILTER,
+                "fault_count_per_circuit": FAULTS_PER_CIRCUIT,
+                "backtrack_limit": 2000, "profile_seed": 14,
+                "heuristic": HEURISTIC,
+                "circuit_order": list(CIRCUITS),
+                "normal_rounds": 8, "reinforcement_rounds": 5,
+                "selection": SELECTION,
+                "circuits": [],
             }
-            for name in ("c6288", "s38417"):
+            for name in CIRCUITS:
                 profiles = [
                     {"fault_id": f"{name}_{i}", "backtracks": i, "outcome": 1}
-                    for i in range(105)
+                    for i in range(55)
                 ] + [{"fault_id": f"{name}_aborted", "backtracks": 2000, "outcome": 2}]
-                selected = select_hard_faults(profiles, 100)
+                selected = select_hard_faults(profiles, FAULTS_PER_CIRCUIT)
                 item = {
                     "name": name, "training_faults": selected,
                     "training_fault_ids": [row["fault_id"] for row in selected],
                     "artifact_sha256": {},
                 }
                 keys = ["source_circuit", "circuit", "fault_map", "profile"]
-                if name == "s38417":
+                if name.startswith("s"):
                     keys.append("scan_circuit")
                 for key in keys:
                     path = root / f"{name}_{key}"
@@ -178,7 +200,9 @@ class SmartATPGTrainingTests(unittest.TestCase):
 
             def check_resume():
                 manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-                return _validate_resume(manifest_path, 100, 2000, 14)
+                return _validate_resume(
+                    manifest_path, FAULTS_PER_CIRCUIT, 2000, 14, 8, 5
+                )
 
             self.assertEqual(_validate_manifest(manifest), manifest["circuits"])
             self.assertEqual(check_resume(), manifest)
@@ -188,10 +212,10 @@ class SmartATPGTrainingTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "new output directory"):
                 check_resume()
             manifest["backtrack_limit"] = 2000
-            manifest["circuits"][0]["training_fault_ids"][0] = "c6288_aborted"
-            with self.assertRaisesRegex(ValueError, "baseline detected top 100"):
+            manifest["circuits"][0]["training_fault_ids"][0] = "c432_aborted"
+            with self.assertRaisesRegex(ValueError, "baseline detected top 50"):
                 _validate_manifest(manifest)
-            with self.assertRaisesRegex(ValueError, "baseline detected top 100"):
+            with self.assertRaisesRegex(ValueError, "baseline detected top 50"):
                 check_resume()
             manifest["format"] = "SMARTATPG_PAPER_TRAINING_V1"
             with self.assertRaisesRegex(ValueError, "detected-only"):
@@ -199,16 +223,32 @@ class SmartATPGTrainingTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "new output directory"):
                 check_resume()
 
-    def test_round_order_is_deterministic_and_contains_200_faults(self):
+    def test_manifest_rejects_duplicate_faults(self):
         circuits = [
-            {"name": "c6288", "training_fault_ids": [f"c{i}" for i in range(100)]},
-            {"name": "s38417", "training_fault_ids": [f"s{i}" for i in range(100)]},
+            {
+                "name": name,
+                "training_fault_ids": [f"{name}_{i}" for i in range(50)],
+            }
+            for name in CIRCUITS
+        ]
+        circuits[0]["training_fault_ids"][-1] = circuits[0]["training_fault_ids"][0]
+        with self.assertRaisesRegex(ValueError, "800 unique"):
+            from prepare_smartatpg_training import _validate_fault_selection
+            _validate_fault_selection(circuits, FAULTS_PER_CIRCUIT)
+
+    def test_round_order_is_deterministic_and_contains_800_faults(self):
+        circuits = [
+            {
+                "name": name,
+                "training_fault_ids": [f"{name}_{i}" for i in range(50)],
+            }
+            for name in CIRCUITS
         ]
         first = _episode_order(circuits, 2026, 3)
         self.assertEqual(first, _episode_order(circuits, 2026, 3))
         self.assertNotEqual(first, _episode_order(circuits, 2026, 4))
-        self.assertEqual(len(first), 200)
-        self.assertEqual(len(set(first)), 200)
+        self.assertEqual(len(first), 800)
+        self.assertEqual(len(set(first)), 800)
 
     def test_best_score_prioritizes_detection_then_search_cost(self):
         baseline = {
@@ -280,10 +320,8 @@ class SmartATPGTrainingTests(unittest.TestCase):
             torch.save({
                 "format": BEST_CHECKPOINT_FORMAT,
                 "manifest_hash": "manifest",
-                "config": {
-                    "encoder_variant": "level_gat_gru", "device": str(device),
-                },
-                "round": 20,
+                "config": _source_config(circuits, 5),
+                "round": 8,
                 "agent": agent.training_state_dict(),
             }, best_checkpoint)
             with (
@@ -298,7 +336,7 @@ class SmartATPGTrainingTests(unittest.TestCase):
                     output_dir=output_dir,
                     best_checkpoint_path=best_checkpoint,
                     manifest_digest="manifest",
-                    normal_rounds=20,
+                    normal_rounds=8,
                     reinforcement_rounds=5,
                     backtrack_limit=2000,
                     seed=2026,
@@ -342,10 +380,8 @@ class SmartATPGTrainingTests(unittest.TestCase):
             torch.save({
                 "format": BEST_CHECKPOINT_FORMAT,
                 "manifest_hash": "manifest",
-                "config": {
-                    "encoder_variant": "level_gat_gru", "device": str(device),
-                },
-                "round": 20,
+                "config": _source_config(circuits, 1),
+                "round": 8,
                 "agent": agent.training_state_dict(),
             }, best_checkpoint)
             with (
@@ -360,7 +396,7 @@ class SmartATPGTrainingTests(unittest.TestCase):
                     output_dir=output_dir,
                     best_checkpoint_path=best_checkpoint,
                     manifest_digest="manifest",
-                    normal_rounds=20,
+                    normal_rounds=8,
                     reinforcement_rounds=1,
                     backtrack_limit=2000,
                     seed=2026,
@@ -393,10 +429,8 @@ class SmartATPGTrainingTests(unittest.TestCase):
             torch.save({
                 "format": BEST_CHECKPOINT_FORMAT,
                 "manifest_hash": "manifest",
-                "config": {
-                    "encoder_variant": "level_gat_gru", "device": str(device),
-                },
-                "round": 20,
+                "config": _source_config(circuits, 1),
+                "round": 8,
                 "agent": first_agent.training_state_dict(),
             }, best_checkpoint)
             first_calls = []
@@ -425,7 +459,7 @@ class SmartATPGTrainingTests(unittest.TestCase):
                     output_dir=output_dir,
                     best_checkpoint_path=best_checkpoint,
                     manifest_digest="manifest",
-                    normal_rounds=20,
+                    normal_rounds=8,
                     reinforcement_rounds=1,
                     backtrack_limit=2000,
                     seed=2026,
@@ -461,7 +495,7 @@ class SmartATPGTrainingTests(unittest.TestCase):
                     output_dir=output_dir,
                     best_checkpoint_path=best_checkpoint,
                     manifest_digest="manifest",
-                    normal_rounds=20,
+                    normal_rounds=8,
                     reinforcement_rounds=1,
                     backtrack_limit=2000,
                     seed=2026,
@@ -480,7 +514,7 @@ class SmartATPGTrainingTests(unittest.TestCase):
                 self.assertTrue((output_dir / name).is_file(), name)
 
     def test_only_gat_accepts_at_most_five_reinforcement_rounds(self):
-        with self.assertRaisesRegex(ValueError, "Only level_gat_gru"):
+        with self.assertRaises(SystemExit):
             train_main([
                 "missing.json", "unused", "--encoder", "fanin_mean",
                 "--reinforcement-rounds", "1",
@@ -490,10 +524,15 @@ class SmartATPGTrainingTests(unittest.TestCase):
                 "missing.json", "unused", "--encoder", "level_gat_gru",
                 "--reinforcement-rounds", "6",
             ])
-        with self.assertRaisesRegex(ValueError, "exactly 20"):
+        with self.assertRaisesRegex(ValueError, "exactly 8"):
             train_main([
-                "missing.json", "unused", "--rounds", "19",
+                "missing.json", "unused", "--rounds", "7",
                 "--encoder", "level_gat_gru", "--reinforcement-rounds", "1",
+            ])
+        with self.assertRaisesRegex(ValueError, "exactly 8"):
+            train_main([
+                "missing.json", "unused", "--rounds", "7",
+                "--encoder", "level_gat_gru",
             ])
 
 

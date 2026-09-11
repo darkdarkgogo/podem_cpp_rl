@@ -1,8 +1,6 @@
 import hashlib
 import sys
 import tempfile
-import threading
-import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,7 +16,7 @@ from benchmark_smartatpg import (
     _summarize_preprocessing, _write_reports, percentage_change, run_benchmark,
 )
 from run_smartatpg_benchmark_linux import main as run_benchmark_main
-from run_smartatpg_training_linux import _run_parallel, main as run_training_main
+from run_smartatpg_training_linux import main as run_training_main
 from smartatpg_portable import CIRCUITS
 from train_smartatpg import _validate_resume_config, _validate_round_target
 
@@ -61,6 +59,7 @@ class SplitLauncherTests(unittest.TestCase):
                 "convert_full_scan_bench.py",
                 "prepare_smartatpg_benchmark.py",
                 "prepare_smartatpg_training.py",
+                "plot_final_comparison.py",
                 "run_smartatpg_benchmark_linux.py",
                 "run_smartatpg_training_linux.py",
                 "smartatpg_portable.py",
@@ -94,59 +93,56 @@ class SplitLauncherTests(unittest.TestCase):
             ):
                 run_training_main(["--output-dir", str(output)])
             commands = [call.args[0] for call in tee.call_args_list]
-            self.assertEqual(len(commands), 4)
+            self.assertEqual(len(commands), 3)
             self.assertTrue(str(commands[0][2]).endswith("prepare_smartatpg_training.py"))
-            self.assertTrue(str(commands[3][2]).endswith("prepare_smartatpg_benchmark.py"))
+            self.assertTrue(str(commands[2][2]).endswith("prepare_smartatpg_benchmark.py"))
             train_calls = [
                 call for call in tee.call_args_list
                 if str(call.args[0][2]).endswith("train_smartatpg.py")
             ]
-            self.assertEqual(len(train_calls), 2)
+            self.assertEqual(len(train_calls), 1)
             gpu_by_encoder = {
                 call.args[0][call.args[0].index("--encoder") + 1]:
                 call.args[2]["CUDA_VISIBLE_DEVICES"]
                 for call in train_calls
             }
-            self.assertEqual(gpu_by_encoder, {"fanin_mean": "0", "level_gat_gru": "1"})
-            self.assertEqual({call.args[3] for call in train_calls}, {"[mean] ", "[gat-gru] "})
+            self.assertEqual(gpu_by_encoder, {"level_gat_gru": "0"})
             flattened = " ".join(" ".join(map(str, command)) for command in commands)
             self.assertNotIn("build_native.py", flattened)
             self.assertNotIn("benchmark_smartatpg.py", flattened)
             for command in (call.args[0] for call in train_calls):
-                self.assertEqual(command[command.index("--rounds") + 1], "20")
-            mean_command = next(
-                command for command in (call.args[0] for call in train_calls)
-                if "fanin_mean" in command
-            )
+                self.assertEqual(command[command.index("--rounds") + 1], "8")
             gat_command = next(
                 command for command in (call.args[0] for call in train_calls)
                 if "level_gat_gru" in command
             )
-            self.assertNotIn("--reinforcement-rounds", mean_command)
             self.assertEqual(
                 gat_command[gat_command.index("--reinforcement-rounds") + 1], "5"
             )
             self.assertTrue(
-                str(commands[3][5]).endswith("model_best_reinforced.txt")
+                str(commands[2][4]).endswith("model_best_reinforced.txt")
             )
             prepare = commands[0]
+            self.assertEqual(prepare[prepare.index("--count") + 1], "50")
             self.assertEqual(
                 prepare[prepare.index("--backtrack-limit") + 1], "2000"
             )
 
-    def test_training_launcher_requires_two_visible_gpus(self):
+    def test_training_launcher_requires_one_selected_gpu(self):
+        with (
+            patch("run_smartatpg_training_linux.sys.platform", "linux"),
+            patch("run_smartatpg_training_linux._check_cpp_extension"),
+            patch("run_smartatpg_training_linux.torch.cuda.device_count", return_value=0),
+            self.assertRaisesRegex(RuntimeError, "only 0 CUDA device"),
+        ):
+            run_training_main([])
         with (
             patch("run_smartatpg_training_linux.sys.platform", "linux"),
             patch("run_smartatpg_training_linux._check_cpp_extension"),
             patch("run_smartatpg_training_linux.torch.cuda.device_count", return_value=1),
             self.assertRaisesRegex(RuntimeError, "only 1 CUDA device"),
         ):
-            run_training_main([])
-        with (
-            patch("run_smartatpg_training_linux.sys.platform", "linux"),
-            self.assertRaisesRegex(ValueError, "two distinct"),
-        ):
-            run_training_main(["--mean-gpu", "0", "--gat-gpu", "0"])
+            run_training_main(["--gpu", "1"])
         with (
             patch("run_smartatpg_training_linux.sys.platform", "linux"),
             self.assertRaisesRegex(ValueError, "between 1 and 5"),
@@ -154,59 +150,26 @@ class SplitLauncherTests(unittest.TestCase):
             run_training_main(["--gat-reinforcement-rounds", "6"])
         with (
             patch("run_smartatpg_training_linux.sys.platform", "linux"),
-            self.assertRaisesRegex(ValueError, "exactly 20"),
+            self.assertRaisesRegex(ValueError, "exactly 8"),
         ):
-            run_training_main(["--rounds", "19"])
+            run_training_main(["--rounds", "7"])
 
-    def test_training_round_target_can_change_without_changing_other_config(self):
-        saved = {"rounds": 30, "seed": 2026, "encoder_variant": "fanin_mean"}
-        current = {"rounds": 20, "seed": 2026, "encoder_variant": "fanin_mean"}
-        self.assertEqual(_validate_resume_config(saved, current), 20)
+    def test_training_round_target_cannot_change_on_resume(self):
+        saved = {"rounds": 20, "seed": 2026, "encoder_variant": "level_gat_gru"}
+        current = {"rounds": 8, "seed": 2026, "encoder_variant": "level_gat_gru"}
+        with self.assertRaisesRegex(ValueError, "Training configuration changed"):
+            _validate_resume_config(saved, current)
+        saved = dict(current)
+        self.assertEqual(_validate_resume_config(saved, current), 8)
         current["seed"] = 14
         with self.assertRaisesRegex(ValueError, "Training configuration changed"):
             _validate_resume_config(saved, current)
-        _validate_round_target(20, 99, 20)
-        _validate_round_target(21, 0, 20)
-        with self.assertRaisesRegex(ValueError, "already started round 21"):
-            _validate_round_target(21, 1, 20)
-        with self.assertRaisesRegex(ValueError, "already started round 21"):
-            _validate_round_target(22, 0, 20)
-
-    def test_parallel_training_terminates_peer_after_failure(self):
-        barrier = threading.Barrier(2)
-        processes = {}
-
-        class FakeProcess:
-            def __init__(self):
-                self.terminated = False
-
-            def poll(self):
-                return 143 if self.terminated else None
-
-            def terminate(self):
-                self.terminated = True
-
-        def fake_command(command, log_path, environment, prefix="", on_start=None):
-            process = processes.setdefault(command[0], FakeProcess())
-            on_start(process)
-            barrier.wait(timeout=2)
-            if command[0] == "failed":
-                return 2
-            deadline = time.monotonic() + 2
-            while not process.terminated and time.monotonic() < deadline:
-                time.sleep(0.001)
-            return 143 if process.terminated else 0
-
-        jobs = {
-            "failed": (["failed"], Path("failed.log"), {}, "[failed] "),
-            "peer": (["peer"], Path("peer.log"), {}, "[peer] "),
-        }
-        with (
-            patch("run_smartatpg_training_linux._tee_command", side_effect=fake_command),
-            self.assertRaisesRegex(RuntimeError, "failed training failed"),
-        ):
-            _run_parallel(jobs)
-        self.assertTrue(processes["peer"].terminated)
+        _validate_round_target(8, 99, 8)
+        _validate_round_target(9, 0, 8)
+        with self.assertRaisesRegex(ValueError, "already started round 9"):
+            _validate_round_target(9, 1, 8)
+        with self.assertRaisesRegex(ValueError, "already started round 9"):
+            _validate_round_target(10, 0, 8)
 
     def test_benchmark_launcher_only_builds_and_benchmarks(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -286,11 +249,10 @@ class BenchmarkSummaryTests(unittest.TestCase):
             run_benchmark("unused", "unused", "unused", backtrack_limit=500)
 
     def test_summary_compares_atpg_time_only(self):
-        models = ("heuristic", "smartatpg_mean", "smartatpg_gat_gru")
+        models = ("scoap_heuristic", "smartatpg_gat_gru")
         records = []
         for model, backtracks, seconds in (
-            ("heuristic", 100, (2.0, 4.0)),
-            ("smartatpg_mean", 90, (1.5, 2.5)),
+            ("scoap_heuristic", 100, (2.0, 4.0)),
             ("smartatpg_gat_gru", 80, (1.0, 2.0)),
         ):
             for repeat, atpg_seconds in enumerate(seconds, 1):
@@ -299,6 +261,8 @@ class BenchmarkSummaryTests(unittest.TestCase):
                     "circuit": "test",
                     "model": model,
                     "detected": 10,
+                    "redundant_uncollapsed": 0,
+                    "successful_faults": 10,
                     "total_faults": 10,
                     "equivalent_detected": 5,
                     "equivalent_faults": 5,
@@ -308,16 +272,15 @@ class BenchmarkSummaryTests(unittest.TestCase):
                     "backtrace_steps": backtracks * 10,
                     "test_vectors": 2,
                     "atpg_seconds": atpg_seconds,
-                    "rl_select_calls": 0 if model == "heuristic" else backtracks,
+                    "rl_select_calls": 0 if model == "scoap_heuristic" else backtracks,
                     "actor_forward_calls": (
-                        0 if model == "heuristic"
-                        else backtracks if model == "smartatpg_mean" else 10
+                        0 if model == "scoap_heuristic" else 10
                     ),
                     "rl_select_seconds": (
-                        0.0 if model == "heuristic" else atpg_seconds / 1000
+                        0.0 if model == "scoap_heuristic" else atpg_seconds / 1000
                     ),
                     "actor_forward_seconds": (
-                        0.0 if model == "heuristic" else atpg_seconds / 2000
+                        0.0 if model == "scoap_heuristic" else atpg_seconds / 2000
                     ),
                     "native_total_seconds": atpg_seconds + 100,
                     "wall_seconds": atpg_seconds + 200,
@@ -325,25 +288,26 @@ class BenchmarkSummaryTests(unittest.TestCase):
         rows, totals, comparisons = _summarize(
             records, {"circuits": [{"name": "test"}]}, models, 2
         )
-        self.assertEqual(totals["heuristic"]["atpg_seconds"], 3.0)
-        self.assertNotIn("wall_seconds", totals["heuristic"])
+        self.assertEqual(totals["scoap_heuristic"]["atpg_seconds"], 3.0)
+        self.assertNotIn("wall_seconds", totals["scoap_heuristic"])
         self.assertNotIn("native_total_seconds", rows[0])
-        self.assertEqual(set(comparisons["smartatpg_mean"]), {
+        self.assertEqual(set(comparisons["smartatpg_gat_gru"]), {
             "backtracks", "backtrace_steps", "atpg_seconds"
         })
         self.assertEqual(
-            comparisons["smartatpg_mean"]["backtracks"]["reduction_percent"], 10.0
+            comparisons["smartatpg_gat_gru"]["backtracks"]["reduction_percent"], 20.0
         )
-        self.assertEqual(totals["smartatpg_mean"]["actor_forward_calls"], 90)
         self.assertEqual(totals["smartatpg_gat_gru"]["actor_forward_calls"], 10)
         self.assertAlmostEqual(
-            totals["smartatpg_mean"]["average_rl_select_microseconds"],
-            2.0 / 1000 * 1.0e6 / 90,
+            totals["smartatpg_gat_gru"]["average_rl_select_microseconds"],
+            1.5 / 1000 * 1.0e6 / 80,
         )
 
     def test_native_actor_timing_is_parsed(self):
         output = """
 #total number of detected faults = 10
+#total number of redundant faults (uncollapsed) = 1
+#total number of successful faults = 11
 #total number of gate faults (uncollapsed) = 12
 #number of equivalent detected faults = 5
 #number of equivalent gate faults (collapsed) = 6
@@ -359,39 +323,34 @@ class BenchmarkSummaryTests(unittest.TestCase):
 cputime for test pattern generation (one circuit): 1.250000s 1.500000s
 """
         parsed = _parse_native_output(output, Path("native.log"))
+        self.assertEqual(parsed["redundant_uncollapsed"], 1)
+        self.assertEqual(parsed["successful_faults"], 11)
         self.assertEqual(parsed["rl_select_calls"], 40)
         self.assertEqual(parsed["actor_forward_calls"], 10)
         self.assertEqual(parsed["rl_select_seconds"], 0.004)
         self.assertEqual(parsed["actor_forward_seconds"], 0.003)
 
-    def test_preprocessing_summary_separates_both_embeddings(self):
+    def test_preprocessing_summary_contains_only_gat_embedding(self):
         summary = _summarize_preprocessing([
             {"operation": "graph_feature_build", "seconds": 1.0},
             {"operation": "graph_feature_build", "seconds": 2.0},
-            {"operation": "graph_embedding", "model": "smartatpg_mean", "seconds": 3.0},
-            {"operation": "graph_embedding", "model": "smartatpg_mean", "seconds": 4.0},
             {"operation": "graph_embedding", "model": "smartatpg_gat_gru", "seconds": 5.0},
         ])
         self.assertEqual(summary["graph_feature_build_seconds"], 3.0)
-        self.assertEqual(summary["embedding_seconds"]["smartatpg_mean"], 7.0)
         self.assertEqual(summary["embedding_seconds"]["smartatpg_gat_gru"], 5.0)
 
     def test_final_report_contains_actor_and_embedding_timing(self):
         base = {
             "detected": 10, "total_faults": 12, "aborted": 1,
-            "redundant": 1, "test_vectors": 2, "backtracks": 20,
+            "redundant": 1, "redundant_uncollapsed": 1,
+            "successful_faults": 11, "test_vectors": 2, "backtracks": 20,
             "backtrace_steps": 30, "atpg_seconds": 1.0,
-            "fault_coverage": 10 / 12, "rl_select_calls": 0,
+            "fault_coverage": 11 / 12, "rl_select_calls": 0,
             "actor_forward_calls": 0, "average_rl_select_microseconds": 0.0,
             "average_actor_forward_microseconds": 0.0,
         }
         totals = {
-            "heuristic": dict(base),
-            "smartatpg_mean": dict(
-                base, rl_select_calls=100, actor_forward_calls=100,
-                average_rl_select_microseconds=1.5,
-                average_actor_forward_microseconds=1.0,
-            ),
+            "scoap_heuristic": dict(base),
             "smartatpg_gat_gru": dict(
                 base, rl_select_calls=80, actor_forward_calls=20,
                 average_rl_select_microseconds=0.5,
@@ -403,7 +362,7 @@ cputime for test pattern generation (one circuit): 1.250000s 1.500000s
                 key: {"reduction_percent": 0.0, "improvement_percent": 0.0}
                 for key in ("backtracks", "backtrace_steps", "atpg_seconds")
             }
-            for name in ("smartatpg_mean", "smartatpg_gat_gru")
+            for name in ("smartatpg_gat_gru",)
         }
         model = SimpleNamespace(
             encoder_variant="test", actor_input_dim=12, best_round=1,
@@ -414,26 +373,23 @@ cputime for test pattern generation (one circuit): 1.250000s 1.500000s
         )
         preprocessing = [
             {"operation": "graph_feature_build", "seconds": 1.0},
-            {"operation": "graph_embedding", "model": "smartatpg_mean", "seconds": 2.0},
             {"operation": "graph_embedding", "model": "smartatpg_gat_gru", "seconds": 3.0},
         ]
         with tempfile.TemporaryDirectory() as directory:
             result = _write_reports(
-                Path(directory), [{"circuit": "test", "model": "heuristic"}],
+                Path(directory), [{"circuit": "test", "model": "scoap_heuristic"}],
                 totals, comparisons,
-                {"smartatpg_mean": model, "smartatpg_gat_gru": model},
+                {"smartatpg_gat_gru": model},
                 preprocessing,
             )
             report = (Path(directory) / "FINAL_RESULTS.md").read_text(encoding="utf-8")
-        self.assertIn("| smartatpg_mean | 100 | 100 | 0 |", report)
+        self.assertNotIn("smartatpg_mean", report)
+        self.assertIn("scoap_heuristic", report)
         self.assertIn("| smartatpg_gat_gru | 80 | 20 | 60 |", report)
         self.assertIn("| smartatpg_gat_gru embedding | 3.000000 |", report)
+        self.assertEqual(result["models"]["smartatpg_gat_gru"]["parameter_count"], 26)
         self.assertEqual(
-            result["preprocessing"]["embedding_seconds"]["smartatpg_mean"], 2.0
-        )
-        self.assertEqual(result["models"]["smartatpg_mean"]["parameter_count"], 26)
-        self.assertEqual(
-            result["models"]["smartatpg_mean"]["actor_parameter_count"], 6
+            result["models"]["smartatpg_gat_gru"]["actor_parameter_count"], 6
         )
 
 

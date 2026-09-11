@@ -512,9 +512,6 @@ void ATPG::generate_tdfault_list()
 
 	if (fault_order_by_scoap)
 	{
-		cc0.resize(fault_num + 1);
-		cc1.resize(fault_num + 1);
-		co.resize(fault_num + 1);
 		calculate_scoap();
 		fault_reorder();
 	}
@@ -525,8 +522,12 @@ void ATPG::calculate_scoap()
 	int i, j, k, temp;
 	wptr w;
 	nptr n;
+	const int wire_count = static_cast<int>(sort_wlist.size());
+	cc0.assign(wire_count, 0);
+	cc1.assign(wire_count, 0);
+	co.assign(wire_count, 0);
 
-	for (i = 0; i < ncktwire; ++i)
+	for (i = 0; i < wire_count; ++i)
 	{
 		w = sort_wlist[i];
 		n = w->inode.front();
@@ -603,7 +604,7 @@ void ATPG::calculate_scoap()
 		}
 	}
 
-	for (i = ncktwire - 1; i >= 0; --i)
+	for (i = wire_count - 1; i >= 0; --i)
 	{
 		w = sort_wlist[i];
 		n = w->onode.front();

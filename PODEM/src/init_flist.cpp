@@ -25,6 +25,10 @@ void require_fault_map(bool condition, const string &message) {
 void ATPG::generate_fault_list() {
   if (!fault_map_path.empty()) {
     load_mapped_fault_list();
+    if (fault_order_by_scoap) {
+      calculate_scoap();
+      fault_reorder();
+    }
     return;
   }
   int fault_num;
@@ -206,6 +210,10 @@ void ATPG::generate_fault_list() {
   }
 
   fprintf(stdout, "#number of equivalent faults = %d\n", fault_num);
+  if (fault_order_by_scoap) {
+    calculate_scoap();
+    fault_reorder();
+  }
 }/* end of generate_fault_list */
 
 vector<ATPG::FaultCatalogEntry> ATPG::get_fault_catalog() const {
@@ -384,13 +392,17 @@ void ATPG::load_mapped_fault_list() {
 /* computing the actual fault coverage */
 void ATPG::compute_fault_coverage() {
   double gate_fault_coverage, eqv_gate_fault_coverage;
-  int no_of_detect, eqv_no_of_detect, eqv_num_of_gate_fault;
+  int no_of_detect, no_of_redundant, no_of_successful;
+  int eqv_no_of_detect, eqv_no_of_redundant, eqv_no_of_successful;
+  int eqv_num_of_gate_fault;
   fptr f;
 
   debug = 0;
   no_of_detect = 0;
+  no_of_redundant = 0;
   gate_fault_coverage = 0.0;
   eqv_no_of_detect = 0;
+  eqv_no_of_redundant = 0;
   eqv_gate_fault_coverage = 0.0;
   eqv_num_of_gate_fault = 0;
 
@@ -433,13 +445,18 @@ void ATPG::compute_fault_coverage() {
     if (f->detect == TRUE) {
       no_of_detect += f->eqv_fault_num;
       eqv_no_of_detect++;
+    } else if (f->detect == REDUNDANT) {
+      no_of_redundant += f->eqv_fault_num;
+      eqv_no_of_redundant++;
     }
     eqv_num_of_gate_fault++;
   }
+  no_of_successful = no_of_detect + no_of_redundant;
+  eqv_no_of_successful = eqv_no_of_detect + eqv_no_of_redundant;
   if (num_of_gate_fault != 0)
-    gate_fault_coverage = (((double) no_of_detect) / num_of_gate_fault) * 100;
+    gate_fault_coverage = (((double) no_of_successful) / num_of_gate_fault) * 100;
   if (eqv_num_of_gate_fault != 0)
-    eqv_gate_fault_coverage = (((double) eqv_no_of_detect) / eqv_num_of_gate_fault) * 100;
+    eqv_gate_fault_coverage = (((double) eqv_no_of_successful) / eqv_num_of_gate_fault) * 100;
 
   /* print out fault coverage results */
   fprintf(stdout, "\n");
@@ -449,9 +466,12 @@ void ATPG::compute_fault_coverage() {
           "#total number of gate faults (uncollapsed) = %d\n",
           num_of_gate_fault);  // uncollapsed gate-level fault
   fprintf(stdout, "#total number of detected faults = %d\n", no_of_detect);
+  fprintf(stdout, "#total number of redundant faults (uncollapsed) = %d\n", no_of_redundant);
+  fprintf(stdout, "#total number of successful faults = %d\n", no_of_successful);
   fprintf(stdout, "#total gate fault coverage = %5.2f%%\n", gate_fault_coverage);  // uncollapsed fault coverage
   fprintf(stdout, "#number of equivalent gate faults (collapsed) = %d\n", eqv_num_of_gate_fault);
   fprintf(stdout, "#number of equivalent detected faults = %d\n", eqv_no_of_detect);
+  fprintf(stdout, "#number of equivalent redundant faults = %d\n", eqv_no_of_redundant);
   fprintf(stdout, "#equivalent gate fault coverage = %5.2f%%\n", eqv_gate_fault_coverage);
   fprintf(stdout, "\n");
 }/* end of compute_fault_coverage */

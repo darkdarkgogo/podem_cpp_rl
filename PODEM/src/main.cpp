@@ -295,11 +295,6 @@ void ATPG::set_tdfsim_only(const bool &b)
 	this->tdfsim_only = b;
 }
 
-void ATPG::set_SCOAP(const bool &b)
-{
-	this->fault_order_by_scoap = b;
-}
-
 void ATPG::set_DTC(const bool &b)
 {
 	this->dynamic_test_compression = b;

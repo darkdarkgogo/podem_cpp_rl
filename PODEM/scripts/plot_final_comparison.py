@@ -5,51 +5,50 @@ import csv
 import math
 from pathlib import Path
 import sys
+import warnings
 
 
 REQUIRED_MODELS = (
-    "heuristic",
-    "smartatpg_mean",
+    "scoap_heuristic",
     "smartatpg_gat_gru",
 )
-MEAN_MODEL = "smartatpg_mean"
+BASELINE_MODEL = "scoap_heuristic"
 RELATIVE_MODELS = (
-    "heuristic",
     "smartatpg_gat_gru",
 )
 MODEL_COLORS = {
-    "heuristic": "#6B7280",
-    "smartatpg_mean": "#F59E0B",
+    "scoap_heuristic": "#6B7280",
     "smartatpg_gat_gru": "#2563EB",
 }
 METRICS = (
     {
         "column": "backtrace_steps",
         "title": "Relative Backtrace Steps by Circuit",
-        "ylabel": "Ratio to smartatpg_mean",
+        "ylabel": "Ratio to SCOAP heuristic",
         "filename": "backtrace_steps_by_circuit.png",
-        "relative_to_mean": True,
+        "relative_to_baseline": True,
     },
     {
         "column": "backtracks",
         "title": "Relative Backtracks by Circuit",
-        "ylabel": "Ratio to smartatpg_mean",
+        "ylabel": "Ratio to SCOAP heuristic",
         "filename": "backtracks_by_circuit.png",
-        "relative_to_mean": True,
+        "relative_to_baseline": True,
     },
     {
         "column": "atpg_seconds",
         "title": "Relative ATPG Runtime by Circuit",
-        "ylabel": "Ratio to smartatpg_mean",
+        "ylabel": "Ratio to SCOAP heuristic",
         "filename": "runtime_by_circuit.png",
-        "relative_to_mean": True,
+        "relative_to_baseline": True,
     },
     {
         "column": "fault_coverage",
         "title": "Fault Coverage by Circuit",
         "ylabel": "Fault coverage (%)",
         "filename": "fault_coverage_by_circuit.png",
-        "relative_to_mean": False,
+        "relative_to_baseline": False,
+        "ylim": (98.0, 100.0),
     },
 )
 REQUIRED_COLUMNS = {
@@ -167,22 +166,22 @@ def _load_pyplot():
 
 def models_for_metric(metric):
     """Return the model bars shown for one metric."""
-    return RELATIVE_MODELS if metric["relative_to_mean"] else REQUIRED_MODELS
+    return RELATIVE_MODELS if metric["relative_to_baseline"] else REQUIRED_MODELS
 
 
 def metric_values(circuits, model, records, metric):
     """Return one model's relative ratios or fault-coverage percentages."""
     column = metric["column"]
-    if not metric["relative_to_mean"]:
+    if not metric["relative_to_baseline"]:
         return [records[(circuit, model)][column] * 100.0 for circuit in circuits]
 
     values = []
     for circuit in circuits:
-        denominator = records[(circuit, MEAN_MODEL)][column]
+        denominator = records[(circuit, BASELINE_MODEL)][column]
         if denominator == 0.0:
             raise ValueError(
                 f"Cannot normalize {column} for circuit {circuit!r}: "
-                f"{MEAN_MODEL} is zero."
+                f"{BASELINE_MODEL} is zero."
             )
         values.append(records[(circuit, model)][column] / denominator)
     return values
@@ -193,7 +192,7 @@ def plot_metric(plt, circuits, records, metric, output_path):
     figure_width = max(10.0, 0.8 * len(circuits) + 2.5)
     figure, axis = plt.subplots(figsize=(figure_width, 6.0))
     models = models_for_metric(metric)
-    group_width = 0.72 if metric["relative_to_mean"] else 0.82
+    group_width = 0.72 if metric["relative_to_baseline"] else 0.82
     bar_width = group_width / len(models)
     centers = list(range(len(circuits)))
 
@@ -221,20 +220,35 @@ def plot_metric(plt, circuits, records, metric, output_path):
     axis.set_axisbelow(True)
     axis.spines["top"].set_visible(False)
     axis.spines["right"].set_visible(False)
-    if metric["relative_to_mean"]:
+    if metric["relative_to_baseline"]:
         axis.axhline(
             1.0,
-            color=MODEL_COLORS[MEAN_MODEL],
+            color=MODEL_COLORS[BASELINE_MODEL],
             linestyle="--",
             linewidth=1.6,
-            label="smartatpg_mean baseline (1.0)",
+            label="SCOAP heuristic baseline (1.0)",
         )
     else:
-        axis.set_ylim(0.0, 100.0)
+        axis.set_ylim(*metric["ylim"])
+        axis.set_yticks((98.0, 98.5, 99.0, 99.5, 100.0))
     axis.legend(loc="best", frameon=False)
     figure.tight_layout()
     figure.savefig(output_path, dpi=300, bbox_inches="tight")
     plt.close(figure)
+
+
+def warn_for_clipped_coverage(records):
+    below_range = [
+        f"{circuit}/{model}={values['fault_coverage']:.3%}"
+        for (circuit, model), values in records.items()
+        if model in REQUIRED_MODELS and values["fault_coverage"] < 0.98
+    ]
+    if below_range:
+        warnings.warn(
+            "Fault coverage below the fixed 98%-100% plotting range; bars will "
+            "be clipped without changing the data: " + ", ".join(below_range),
+            RuntimeWarning,
+        )
 
 
 def generate_plots(csv_path, output_dir=None):
@@ -246,6 +260,8 @@ def generate_plots(csv_path, output_dir=None):
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     plt = _load_pyplot()
+
+    warn_for_clipped_coverage(records)
 
     output_paths = []
     for metric in METRICS:

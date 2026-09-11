@@ -31,6 +31,7 @@ from rl_podem.cpp_bridge import (
 from rl_podem.smartatpg_artifacts import export_actor, export_descriptors, snapshot_id, policy_from_state
 from rl_podem.artifact_paths import training_output_paths
 from smartatpg_portable import (
+    CIRCUITS,
     compute_embeddings as compute_portable_embeddings,
     export_embeddings as export_portable_embeddings,
     load_graph as load_portable_graph,
@@ -260,24 +261,39 @@ class SmartATPGTests(unittest.TestCase):
         root = Path(self.temp.name)
         samples = root / "sample_circuits"
         samples.mkdir()
-        (samples / "c432.bench").write_text(BENCH.replace("unused = BUF(a)\n", ""), encoding="utf-8")
-        mean, gat = root / "mean.txt", root / "gat.txt"
-        for policy, path in ((SmartATPGPolicy(), mean), (GATGRUSmartATPGPolicy(), gat)):
-            export_actor(policy.state_dict(), path, best_round=1, best_score=(-1, 2, 3, -4, 1))
+        for circuit_name in CIRCUITS:
+            fixture = BENCH.replace("unused = BUF(a)\n", "")
+            if circuit_name.startswith("s"):
+                fixture = fixture.replace("n = NOT(a)", "ff = DFF(a)\nn = NOT(ff)")
+            (samples / f"{circuit_name}.bench").write_text(
+                fixture, encoding="utf-8"
+            )
+        gat = root / "gat.txt"
+        export_actor(
+            GATGRUSmartATPGPolicy().state_dict(), gat,
+            best_round=1, best_score=(-1, 2, 3, -4, 1),
+            training_protocol={
+                "heuristic": "scoap_heuristic",
+                "circuit_order": list(CIRCUITS),
+                "faults_per_circuit": 50,
+                "normal_rounds": 8,
+                "reinforcement_rounds": 5,
+            },
+        )
         bundle = root / "bundle"
-        with patch.object(prepare_bundle, "ROOT", root), patch.object(prepare_bundle, "CIRCUITS", ("c432",)):
-            manifest = prepare_bundle.prepare(bundle, mean, gat)
-            self.assertEqual(prepare_bundle.prepare(bundle, mean, gat, resume=True), manifest)
-        with patch.object(benchmark, "CIRCUITS", ("c432",)):
-            benchmark._validate_manifest(manifest, bundle)
+        with patch.object(prepare_bundle, "ROOT", root):
+            manifest = prepare_bundle.prepare(bundle, gat)
+            self.assertEqual(prepare_bundle.prepare(bundle, gat, resume=True), manifest)
+        benchmark._validate_manifest(manifest, bundle)
         self.assertEqual(manifest["gate_embedding_dim"], 12)
-        self.assertEqual(manifest["models"]["smartatpg_mean"]["actor_input_dim"], 12)
         self.assertEqual(manifest["models"]["smartatpg_gat_gru"]["actor_input_dim"], 13)
         model_paths = {name: bundle / record["path"] for name, record in manifest["models"].items()}
         for item in manifest["circuits"]:
             item["circuit"] = str(bundle / item["circuit"])
             item["fault_map"] = str(bundle / item["fault_map"])
-        models, _, _ = benchmark._prepare_models(model_paths, manifest, root / "comparison")
+        models, _, _ = benchmark._prepare_models(
+            model_paths, manifest, root / "comparison"
+        )
         graph = load_circuit_graph(manifest["circuits"][0]["circuit"])
         for name in model_paths:
             emb = models[name]["embeddings"]["c432"]

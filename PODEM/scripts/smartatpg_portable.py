@@ -10,7 +10,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-MODEL_FORMAT = "SMARTATPG_MODEL_V8"
+MODEL_FORMAT = "SMARTATPG_MODEL_V9"
+DIRECT_12D_MODEL_FORMAT = "SMARTATPG_MODEL_V8"
 DIRECT_11D_MODEL_FORMAT = "SMARTATPG_MODEL_V7"
 PREVIOUS_MODEL_FORMAT = "SMARTATPG_MODEL_V6"
 LEGACY_MODEL_FORMAT = "SMARTATPG_MODEL_V5"
@@ -77,15 +78,28 @@ class PortableModel:
     hidden_dim: int
     actor_input_dim: int
     decision_state_dim: int
+    heuristic: str | None
+    circuit_order: tuple[str, ...]
+    faults_per_circuit: int | None
+    normal_rounds: int | None
+    reinforcement_rounds: int | None
     tensors: dict[str, Tensor]
 
     @property
     def gate_embedding_dim(self):
-        return GATE_EMBEDDING_DIM if self.model_format == MODEL_FORMAT else 11
+        return (
+            GATE_EMBEDDING_DIM
+            if self.model_format in (MODEL_FORMAT, DIRECT_12D_MODEL_FORMAT)
+            else 11
+        )
 
     @property
     def feature_schema(self):
-        return FEATURE_SCHEMA if self.model_format == MODEL_FORMAT else LEGACY_FEATURE_SCHEMA
+        return (
+            FEATURE_SCHEMA
+            if self.model_format in (MODEL_FORMAT, DIRECT_12D_MODEL_FORMAT)
+            else LEGACY_FEATURE_SCHEMA
+        )
 
 
 @dataclass(frozen=True)
@@ -131,10 +145,15 @@ def load_model(path):
     path = Path(path)
     tokens = iter(path.read_text(encoding="utf-8").split())
     model_format = _next(tokens, "header")
-    if model_format not in (LEGACY_MODEL_FORMAT, PREVIOUS_MODEL_FORMAT, DIRECT_11D_MODEL_FORMAT, MODEL_FORMAT):
-        raise ValueError("SmartATPG benchmark requires a V5, V6, V7 or V8 model")
-    has_co = model_format == MODEL_FORMAT
-    direct_actor = model_format in (DIRECT_11D_MODEL_FORMAT, MODEL_FORMAT)
+    if model_format not in (
+        LEGACY_MODEL_FORMAT, PREVIOUS_MODEL_FORMAT, DIRECT_11D_MODEL_FORMAT,
+        DIRECT_12D_MODEL_FORMAT, MODEL_FORMAT,
+    ):
+        raise ValueError("SmartATPG benchmark requires a V5, V6, V7, V8 or V9 model")
+    has_co = model_format in (DIRECT_12D_MODEL_FORMAT, MODEL_FORMAT)
+    direct_actor = model_format in (
+        DIRECT_11D_MODEL_FORMAT, DIRECT_12D_MODEL_FORMAT, MODEL_FORMAT,
+    )
     gate_dim = GATE_EMBEDDING_DIM if has_co else 11
     schema = FEATURE_SCHEMA if has_co else LEGACY_FEATURE_SCHEMA
     mean_config = GRAPH_CONFIG if has_co else LEGACY_GRAPH_CONFIG
@@ -194,6 +213,25 @@ def load_model(path):
             not math.isfinite(value) for value in best_score
         ):
             raise ValueError("SmartATPG best score must contain five finite values")
+    heuristic = None
+    circuit_order = ()
+    faults_per_circuit = None
+    normal_rounds = None
+    reinforcement_rounds = None
+    if model_format == MODEL_FORMAT:
+        heuristic = _field(tokens, "heuristic")
+        circuit_order = tuple(_field(tokens, "circuit_order").split(","))
+        faults_per_circuit = int(_field(tokens, "faults_per_circuit"))
+        normal_rounds = int(_field(tokens, "normal_rounds"))
+        reinforcement_rounds = int(_field(tokens, "reinforcement_rounds"))
+        if (
+            heuristic != "scoap_heuristic"
+            or circuit_order != CIRCUITS
+            or faults_per_circuit != 50
+            or normal_rounds != 8
+            or not 0 <= reinforcement_rounds <= 5
+        ):
+            raise ValueError("Invalid SmartATPG V9 training protocol")
     hidden_dim = int(_field(tokens, "hidden_dim"))
     if hidden_dim <= 0:
         raise ValueError("SmartATPG model hidden_dim must be positive")
@@ -269,7 +307,9 @@ def load_model(path):
                 raise ValueError(f"Invalid Actor tensor shape for {name}: expected {shape}")
     return PortableModel(
         model_format, encoder_variant, graph_config, snapshot, best_round,
-        best_score, hidden_dim, actor_input_dim, decision_state_dim, tensors,
+        best_score, hidden_dim, actor_input_dim, decision_state_dim,
+        heuristic, circuit_order, faults_per_circuit, normal_rounds,
+        reinforcement_rounds, tensors,
     )
 
 
@@ -538,6 +578,7 @@ def export_embeddings(model, graph, path):
         else:
             header = {
                 MODEL_FORMAT: EMBEDDING_FORMAT,
+                DIRECT_12D_MODEL_FORMAT: EMBEDDING_FORMAT,
                 DIRECT_11D_MODEL_FORMAT: "SMARTATPG_EMBEDDINGS_V5",
                 PREVIOUS_MODEL_FORMAT: "SMARTATPG_EMBEDDINGS_V4",
             }[model.model_format]

@@ -9,7 +9,9 @@ from pathlib import Path
 import torch
 
 from prepare_smartatpg_training import (
-    BACKTRACK_LIMIT, FAULT_FILTER, MANIFEST_FORMAT, select_hard_faults,
+    BACKTRACK_LIMIT, FAULT_FILTER, HEURISTIC, MANIFEST_FORMAT,
+    MAX_REINFORCEMENT_ROUNDS, NORMAL_TRAINING_ROUNDS, SELECTION,
+    select_hard_faults,
     sha256_file,
 )
 from rl_podem.backends import smartatpg_metadata
@@ -18,20 +20,18 @@ from rl_podem.cpp_bridge import (
     smartatpg_pi_reward,
 )
 from rl_podem.ppo import device
-from rl_podem.smartatpg import SmartATPGPPOAgent
 from rl_podem.gat_gru import GATGRUSmartATPGPPOAgent
 from rl_podem.smartatpg_artifacts import export_actor
 from rl_podem.smartatpg_features import load_circuit_graph
+from smartatpg_portable import CIRCUITS
 
 
-CHECKPOINT_FORMAT = "SMARTATPG_12D_CO_TRAINING_V3"
-BEST_CHECKPOINT_FORMAT = "SMARTATPG_12D_CO_BEST_V3"
-REINFORCEMENT_CHECKPOINT_FORMAT = "SMARTATPG_GAT_REINFORCEMENT_V1"
-REINFORCEMENT_BEST_FORMAT = "SMARTATPG_GAT_REINFORCEMENT_BEST_V1"
-NORMAL_TRAINING_ROUNDS = 20
-MAX_REINFORCEMENT_ROUNDS = 5
+CHECKPOINT_FORMAT = "SMARTATPG_12D_CO_TRAINING_V4"
+BEST_CHECKPOINT_FORMAT = "SMARTATPG_12D_CO_BEST_V4"
+REINFORCEMENT_CHECKPOINT_FORMAT = "SMARTATPG_GAT_REINFORCEMENT_V2"
+REINFORCEMENT_BEST_FORMAT = "SMARTATPG_GAT_REINFORCEMENT_BEST_V2"
+FAULTS_PER_CIRCUIT = 50
 AGENT_TYPES = {
-    "fanin_mean": SmartATPGPPOAgent,
     "level_gat_gru": GATGRUSmartATPGPPOAgent,
 }
 PAPER_REWARD = {
@@ -41,6 +41,14 @@ PAPER_REWARD = {
     "detected": 100.0,
     "undetected": -100.0,
 }
+TRAINING_PROTOCOL_KEYS = (
+    "heuristic", "circuit_order", "faults_per_circuit", "normal_rounds",
+    "reinforcement_rounds",
+)
+
+
+def _training_protocol(config):
+    return {key: config[key] for key in TRAINING_PROTOCOL_KEYS}
 
 
 def _manifest_hash(path):
@@ -99,16 +107,33 @@ def _validate_manifest(manifest):
             f"SmartATPG training requires a {BACKTRACK_LIMIT}-backtrack manifest"
         )
     circuits = list(manifest.get("circuits", []))
-    if [item.get("name") for item in circuits] != ["c6288", "s38417"]:
-        raise ValueError("Training requires exactly c6288 and s38417")
+    if [item.get("name") for item in circuits] != list(CIRCUITS):
+        raise ValueError("Training requires all 16 benchmark circuits")
     count = int(manifest.get("fault_count_per_circuit", -1))
-    if count != 100:
-        raise ValueError("Paper training requires exactly 100 faults per circuit")
+    if count != FAULTS_PER_CIRCUIT:
+        raise ValueError(
+            f"Training requires exactly {FAULTS_PER_CIRCUIT} faults per circuit"
+        )
+    if manifest.get("heuristic") != HEURISTIC:
+        raise ValueError("Training requires a SCOAP heuristic manifest")
+    if manifest.get("circuit_order") != list(CIRCUITS):
+        raise ValueError("Training manifest circuit order metadata is invalid")
+    if manifest.get("selection") != SELECTION:
+        raise ValueError("Training manifest fault ranking metadata is invalid")
+    if int(manifest.get("normal_rounds", -1)) != NORMAL_TRAINING_ROUNDS:
+        raise ValueError(
+            f"Training manifest must specify {NORMAL_TRAINING_ROUNDS} normal rounds"
+        )
+    reinforcement_rounds = int(manifest.get("reinforcement_rounds", -1))
+    if not 0 <= reinforcement_rounds <= MAX_REINFORCEMENT_ROUNDS:
+        raise ValueError("Training manifest reinforcement rounds are invalid")
     for item in circuits:
         if len(item.get("training_fault_ids", [])) != count:
-            raise ValueError(f"Circuit {item['name']} must contain 100 fault IDs")
+            raise ValueError(
+                f"Circuit {item['name']} must contain {FAULTS_PER_CIRCUIT} fault IDs"
+            )
         required_artifacts = {"source_circuit", "circuit", "fault_map", "profile"}
-        if item["name"] == "s38417":
+        if item["name"].startswith("s"):
             required_artifacts.add("scan_circuit")
         if set(item.get("artifact_sha256", {})) != required_artifacts:
             raise ValueError(f"Circuit {item['name']} artifact list is incomplete")
@@ -120,9 +145,22 @@ def _validate_manifest(manifest):
         selected = select_hard_faults(profiles, count)
         expected_ids = [row["fault_id"] for row in selected]
         if item["training_fault_ids"] != expected_ids:
-            raise ValueError(f"Circuit {item['name']} faults are not the baseline detected top 100")
+            raise ValueError(
+                f"Circuit {item['name']} faults are not the baseline detected "
+                f"top {FAULTS_PER_CIRCUIT}"
+            )
         if item.get("training_faults") != selected:
             raise ValueError(f"Circuit {item['name']} ranking metadata changed")
+    fault_keys = [
+        (item["name"], fault_id)
+        for item in circuits
+        for fault_id in item["training_fault_ids"]
+    ]
+    expected_faults = len(CIRCUITS) * FAULTS_PER_CIRCUIT
+    if len(fault_keys) != expected_faults or len(set(fault_keys)) != expected_faults:
+        raise ValueError(
+            f"Training manifest must contain exactly {expected_faults} unique faults"
+        )
     return circuits
 
 
@@ -216,6 +254,7 @@ def _evaluate_fault(evaluator, item, fault_id, backtrack_limit, seed):
         seed=seed,
         fault_ids=[fault_id],
         fault_map_path=item["fault_map"],
+        use_scoap=True,
         event_callback=event_callback,
     )
     return {
@@ -276,13 +315,9 @@ def _save_state(path, agent, state):
 
 
 def _validate_resume_config(saved, current):
-    saved = dict(saved or {})
-    current = dict(current)
-    saved_rounds = saved.pop("rounds", None)
-    current_rounds = current.pop("rounds")
-    if saved != current or not isinstance(saved_rounds, int) or saved_rounds <= 0:
+    if dict(saved or {}) != dict(current):
         raise ValueError("Training configuration changed since checkpoint")
-    return current_rounds
+    return int(current["rounds"])
 
 
 def _validate_round_target(current_round, episode_index, target_rounds):
@@ -343,6 +378,7 @@ def _save_reinforcement_best(
     export_actor(
         state["best_agent"]["policy_old"], model_path,
         best_round=validation_round, best_score=state["best_score"],
+        training_protocol=_training_protocol(config),
     )
 
 
@@ -376,6 +412,10 @@ def _run_gat_reinforcement(
         "device": str(device),
         "faults_per_episode": 1,
         "training_scope": "current_unresolved_training_faults",
+        "heuristic": HEURISTIC,
+        "circuit_order": [item["name"] for item in circuits],
+        "faults_per_circuit": FAULTS_PER_CIRCUIT,
+        "reinforcement_rounds": reinforcement_rounds,
     }
 
     if checkpoint_path.is_file():
@@ -420,9 +460,22 @@ def _run_gat_reinforcement(
             raise ValueError("GAT reinforcement requires the current best checkpoint")
         if source.get("manifest_hash") != manifest_digest:
             raise ValueError("Best GAT checkpoint uses a different training manifest")
-        if source.get("config", {}).get("encoder_variant") != "level_gat_gru":
+        source_config = source.get("config", {})
+        if source_config.get("encoder_variant") != "level_gat_gru":
             raise ValueError("Only the level_gat_gru model can be reinforced")
-        if source.get("config", {}).get("device") != str(device):
+        expected_source_protocol = {
+            "heuristic": HEURISTIC,
+            "circuit_order": [item["name"] for item in circuits],
+            "faults_per_circuit": FAULTS_PER_CIRCUIT,
+            "normal_rounds": normal_rounds,
+            "reinforcement_rounds": reinforcement_rounds,
+        }
+        if any(
+            source_config.get(key) != value
+            for key, value in expected_source_protocol.items()
+        ):
+            raise ValueError("Best GAT checkpoint training protocol is incompatible")
+        if source_config.get("device") != str(device):
             raise ValueError(
                 "Best GAT checkpoint device does not match reinforcement device"
             )
@@ -494,6 +547,7 @@ def _run_gat_reinforcement(
                 seed=seed + normal_rounds + round_number,
                 fault_ids=[fault_id],
                 fault_map_path=item["fault_map"],
+                use_scoap=True,
             )
             metrics = trainer.episode_metrics[0]
             state["episode_index"] = index + 1
@@ -574,7 +628,8 @@ def _run_gat_reinforcement(
         _save_state(checkpoint_path, agent, state)
         print(
             f"REINFORCEMENT_ROUND round={round_number}/{reinforcement_rounds} "
-            f"trained={len(order)} detected={evaluation['detected_faults']}/200 "
+            f"trained={len(order)} "
+            f"detected={evaluation['detected_faults']}/{evaluation['episodes']} "
             f"unresolved={len(next_unresolved)} best={int(is_best)}",
             flush=True,
         )
@@ -602,8 +657,8 @@ def main(argv=None):
         help="Extra unresolved-fault rounds; supported only by level_gat_gru.",
     )
     parser.add_argument(
-        "--encoder", choices=tuple(AGENT_TYPES), default="fanin_mean",
-        help="Graph encoder variant; use separate output directories per variant.",
+        "--encoder", choices=tuple(AGENT_TYPES), default="level_gat_gru",
+        help="Graph encoder variant.",
     )
     args = parser.parse_args(argv)
     if args.rounds <= 0 or args.k_epochs <= 0:
@@ -616,12 +671,9 @@ def main(argv=None):
         )
     if args.encoder != "level_gat_gru" and args.reinforcement_rounds:
         raise ValueError("Only level_gat_gru supports reinforcement training")
-    if (
-        args.reinforcement_rounds
-        and args.rounds != NORMAL_TRAINING_ROUNDS
-    ):
+    if args.rounds != NORMAL_TRAINING_ROUNDS:
         raise ValueError(
-            f"GAT reinforcement requires exactly {NORMAL_TRAINING_ROUNDS} "
+            f"SmartATPG training requires exactly {NORMAL_TRAINING_ROUNDS} "
             "normal training rounds"
         )
 
@@ -631,6 +683,12 @@ def main(argv=None):
 
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
     circuits = _validate_manifest(manifest)
+    if int(manifest["normal_rounds"]) != args.rounds:
+        raise ValueError("Requested normal rounds do not match the training manifest")
+    if int(manifest["reinforcement_rounds"]) != args.reinforcement_rounds:
+        raise ValueError(
+            "Requested reinforcement rounds do not match the training manifest"
+        )
     backtrack_limit = int(manifest["backtrack_limit"])
     graphs = {item["name"]: load_circuit_graph(item["circuit"]) for item in circuits}
     agent = AGENT_TYPES[args.encoder](
@@ -666,12 +724,19 @@ def main(argv=None):
         "backtrack_limit": backtrack_limit,
         "actor_lr": 0.001,
         "critic_lr": 0.01,
-        "faults_per_round": 200,
+        "faults_per_round": sum(
+            len(item["training_fault_ids"]) for item in circuits
+        ),
         "bc_epochs": 0,
         "curriculum_stages": 0,
         "device": str(device),
         "paper_reward": PAPER_REWARD,
         "encoder_variant": args.encoder,
+        "heuristic": HEURISTIC,
+        "circuit_order": list(CIRCUITS),
+        "faults_per_circuit": FAULTS_PER_CIRCUIT,
+        "normal_rounds": args.rounds,
+        "reinforcement_rounds": args.reinforcement_rounds,
     }
     state = {
         "format": CHECKPOINT_FORMAT,
@@ -713,13 +778,18 @@ def main(argv=None):
         raise RuntimeError("Install tensorboard before SmartATPG training") from error
     writer = SummaryWriter(str(output_dir / "tensorboard"))
     circuit_by_name = {item["name"]: item for item in circuits}
-    export_actor(agent.policy_old.state_dict(), model_latest_path)
+    training_protocol = _training_protocol(config)
+    export_actor(
+        agent.policy_old.state_dict(), model_latest_path,
+        training_protocol=training_protocol,
+    )
     if state["best_agent"] is not None:
         export_actor(
             state["best_agent"]["policy_old"],
             model_best_path,
             best_round=state["best_round"],
             best_score=state["best_score"],
+            training_protocol=training_protocol,
         )
 
     try:
@@ -736,6 +806,7 @@ def main(argv=None):
                     seed=args.seed + round_number,
                     fault_ids=[fault_id],
                     fault_map_path=item["fault_map"],
+                    use_scoap=True,
                 )
                 metrics = trainer.episode_metrics[0]
                 state["episode_index"] = index + 1
@@ -750,11 +821,14 @@ def main(argv=None):
                 writer.add_scalar("episode/ppo_loss", metrics["total_loss"], step)
                 writer.add_scalar("episode/rnd_loss", metrics["rnd_loss"], step)
                 writer.flush()
-                export_actor(agent.policy_old.state_dict(), model_latest_path)
+                export_actor(
+                    agent.policy_old.state_dict(), model_latest_path,
+                    training_protocol=training_protocol,
+                )
                 _save_state(checkpoint_path, agent, state)
                 print(
                     f"EPISODE round={round_number}/{args.rounds} "
-                    f"index={index + 1}/200 circuit={circuit_name} "
+                    f"index={index + 1}/{len(order)} circuit={circuit_name} "
                     f"fault={fault_id} backtracks={metrics['backtracks']} "
                     f"backtrace_steps={metrics['backtrace_steps']}",
                     flush=True,
@@ -784,6 +858,7 @@ def main(argv=None):
                 export_actor(
                     state["best_agent"]["policy_old"], model_best_path,
                     best_round=round_number, best_score=score,
+                    training_protocol=training_protocol,
                 )
             writer.add_scalar("round/backtracks_total", evaluation["backtracks_total"], round_number)
             writer.add_scalar("round/backtracks_mean", evaluation["backtracks_mean"], round_number)
@@ -801,7 +876,7 @@ def main(argv=None):
             _save_state(checkpoint_path, agent, state)
             print(
                 f"ROUND round={round_number}/{args.rounds} "
-                f"detected={evaluation['detected_faults']}/200 "
+                f"detected={evaluation['detected_faults']}/{evaluation['episodes']} "
                 f"backtracks={evaluation['backtracks_total']} "
                 f"backtrace_steps={evaluation['backtrace_steps_total']} "
                 f"best={int(is_best)}",
@@ -828,7 +903,10 @@ def main(argv=None):
         writer.close()
 
     if not args.reinforcement_rounds:
-        export_actor(agent.policy_old.state_dict(), model_latest_path)
+        export_actor(
+            agent.policy_old.state_dict(), model_latest_path,
+            training_protocol=training_protocol,
+        )
     print(
         f"TRAINING_COMPLETE rounds={args.rounds} "
         f"reinforcement_rounds={args.reinforcement_rounds} "

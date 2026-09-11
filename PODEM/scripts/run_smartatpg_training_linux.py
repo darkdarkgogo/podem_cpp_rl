@@ -1,21 +1,21 @@
-"""Train both SmartATPG encoders and export one comparison bundle."""
+"""Train the all-circuit GAT-GRU SmartATPG model and export its bundle."""
 
 import argparse
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
-import threading
 import time
 
 import torch
 
+from smartatpg_portable import CIRCUITS
+
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKTRACK_LIMIT = 2000
-NORMAL_TRAINING_ROUNDS = 20
+NORMAL_TRAINING_ROUNDS = 8
 GAT_REINFORCEMENT_ROUNDS = 5
 
 
@@ -71,49 +71,12 @@ def _run(command, log_path, environment):
     return time.perf_counter() - started
 
 
-def _run_parallel(jobs):
-    active = {}
-    lock = threading.Lock()
-
-    def run_one(name, command, log_path, environment, prefix):
-        def register(process):
-            with lock:
-                active[name] = process
-
-        started = time.perf_counter()
-        code = _tee_command(command, log_path, environment, prefix, register)
-        if code:
-            raise RuntimeError(f"{name} training failed with exit code {code}")
-        return time.perf_counter() - started
-
-    executor = ThreadPoolExecutor(max_workers=len(jobs))
-    futures = {
-        executor.submit(run_one, name, *settings): name
-        for name, settings in jobs.items()
-    }
-    timings = {}
-    try:
-        for future in as_completed(futures):
-            name = futures[future]
-            timings[name] = future.result()
-    except BaseException:
-        with lock:
-            processes = list(active.values())
-        for process in processes:
-            if process.poll() is None:
-                process.terminate()
-        raise
-    finally:
-        executor.shutdown(wait=True, cancel_futures=True)
-    return timings
-
-
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=ROOT / "artifacts/smartatpg_12d_co_bt2000",
+        default=ROOT / "artifacts/smartatpg_12d_co_all16_8rounds_bt2000",
     )
     parser.add_argument("--rounds", type=int, default=NORMAL_TRAINING_ROUNDS)
     parser.add_argument("--seed", type=int, default=2026)
@@ -124,8 +87,7 @@ def main(argv=None):
         type=int,
         default=GAT_REINFORCEMENT_ROUNDS,
     )
-    parser.add_argument("--mean-gpu", type=int, default=0)
-    parser.add_argument("--gat-gpu", type=int, default=1)
+    parser.add_argument("--gpu", type=int, default=0)
     args = parser.parse_args(argv)
     if not sys.platform.startswith("linux"):
         raise RuntimeError("This training launcher is intended for Linux")
@@ -144,24 +106,23 @@ def main(argv=None):
             f"GAT reinforcement requires exactly {NORMAL_TRAINING_ROUNDS} "
             "normal training rounds"
         )
-    if args.mean_gpu < 0 or args.gat_gpu < 0 or args.mean_gpu == args.gat_gpu:
-        raise ValueError("Mean and GAT-GRU training require two distinct non-negative GPU IDs")
+    if args.gpu < 0:
+        raise ValueError("GPU ID must be non-negative")
     if args.backtrack_limit != BACKTRACK_LIMIT:
         raise ValueError(
             f"SmartATPG training requires backtrack limit {BACKTRACK_LIMIT}"
         )
     _check_cpp_extension()
     gpu_count = torch.cuda.device_count()
-    if max(args.mean_gpu, args.gat_gpu) >= gpu_count:
+    if args.gpu >= gpu_count:
         raise RuntimeError(
-            f"Requested GPUs {args.mean_gpu} and {args.gat_gpu}, but PyTorch sees "
+            f"Requested GPU {args.gpu}, but PyTorch sees "
             f"only {gpu_count} CUDA device(s)"
         )
 
     output_dir = args.output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     preparation_dir = output_dir / "preparation"
-    baseline_dir = output_dir / "smartatpg_mean"
     gat_gru_dir = output_dir / "smartatpg_gat_gru"
     environment = os.environ.copy()
     environment.update({
@@ -173,27 +134,18 @@ def main(argv=None):
             environment.get("PYTHONPATH", ""),
         ]),
     })
-    mean_environment = dict(environment, CUDA_VISIBLE_DEVICES=str(args.mean_gpu))
-    gat_environment = dict(environment, CUDA_VISIBLE_DEVICES=str(args.gat_gpu))
+    gat_environment = dict(environment, CUDA_VISIBLE_DEVICES=str(args.gpu))
     prepare_command = [
         sys.executable,
         "-u",
         str(ROOT / "scripts/prepare_smartatpg_training.py"),
         str(preparation_dir),
-        "--count", "100",
+        "--count", "50",
         "--backtrack-limit", str(args.backtrack_limit),
         "--seed", str(args.profile_seed),
+        "--normal-rounds", str(args.rounds),
+        "--reinforcement-rounds", str(args.gat_reinforcement_rounds),
         "--resume",
-    ]
-    baseline_train_command = [
-        sys.executable,
-        "-u",
-        str(ROOT / "scripts/train_smartatpg.py"),
-        str(preparation_dir / "training_manifest.json"),
-        str(baseline_dir),
-        "--rounds", str(args.rounds),
-        "--seed", str(args.seed),
-        "--encoder", "fanin_mean",
     ]
     gat_gru_train_command = [
         sys.executable,
@@ -211,28 +163,32 @@ def main(argv=None):
         "-u",
         str(ROOT / "scripts/prepare_smartatpg_benchmark.py"),
         str(output_dir / "benchmark_bundle"),
-        str(baseline_dir / "model_best.txt"),
         str(gat_gru_dir / "model_best_reinforced.txt"),
         "--resume",
     ]
     metadata = {
-        "format": "SMARTATPG_TRAINING_RUN_V2",
+        "format": "SMARTATPG_TRAINING_RUN_V3",
         "python": sys.executable,
         "torch": torch.__version__,
         "cuda_available": torch.cuda.is_available(),
         "device": "cuda:0" if torch.cuda.is_available() else "cpu",
         "physical_gpu_assignment": {
-            "smartatpg_mean": args.mean_gpu,
-            "smartatpg_gat_gru": args.gat_gpu,
+            "smartatpg_gat_gru": args.gpu,
         },
         "rounds": args.rounds,
         "gat_reinforcement_rounds": args.gat_reinforcement_rounds,
         "seed": args.seed,
         "profile_seed": args.profile_seed,
         "backtrack_limit": args.backtrack_limit,
+        "training_protocol": {
+            "heuristic": "scoap_heuristic",
+            "circuit_order": list(CIRCUITS),
+            "faults_per_circuit": 50,
+            "normal_rounds": args.rounds,
+            "reinforcement_rounds": args.gat_reinforcement_rounds,
+        },
         "commands": [
-            prepare_command, baseline_train_command,
-            gat_gru_train_command, bundle_command,
+            prepare_command, gat_gru_train_command, bundle_command,
         ],
         "started_at": time.strftime("%Y-%m-%d %H:%M:%S"),
     }
@@ -244,22 +200,10 @@ def main(argv=None):
             prepare_command, output_dir / "prepare_training.log", environment
         )
     }
-    parallel_timings = _run_parallel({
-        "smartatpg_mean": (
-            baseline_train_command, baseline_dir / "train.log",
-            mean_environment, "[mean] ",
-        ),
-        "smartatpg_gat_gru": (
-            gat_gru_train_command, gat_gru_dir / "train.log",
-            gat_environment, "[gat-gru] ",
-        ),
-    })
-    timings.update({
-        f"{name}_training_seconds": seconds
-        for name, seconds in parallel_timings.items()
-    })
+    timings["smartatpg_gat_gru_training_seconds"] = _run(
+        gat_gru_train_command, gat_gru_dir / "train.log", gat_environment
+    )
     required_models = (
-        baseline_dir / "model_best.txt",
         gat_gru_dir / "model_best.txt",
         gat_gru_dir / "model_best_reinforced.txt",
     )

@@ -14,15 +14,37 @@ from smartatpg_portable import (
     GAT_GRU_GRAPH_CONFIG,
     FEATURE_SCHEMA,
     GATE_EMBEDDING_DIM,
-    GRAPH_CONFIG,
+    MODEL_FORMAT,
     POLICY_STATE_DIM,
     load_model,
     sha256_file,
 )
 
 
-MANIFEST_FORMAT = "SMARTATPG_BENCHMARK_BUNDLE_V5"
+MANIFEST_FORMAT = "SMARTATPG_BENCHMARK_BUNDLE_V7"
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def _model_training_protocol(model):
+    protocol = {
+        "heuristic": model.heuristic,
+        "circuit_order": list(model.circuit_order),
+        "faults_per_circuit": model.faults_per_circuit,
+        "normal_rounds": model.normal_rounds,
+        "reinforcement_rounds": model.reinforcement_rounds,
+    }
+    if (
+        protocol["heuristic"] != "scoap_heuristic"
+        or protocol["circuit_order"] != list(CIRCUITS)
+        or protocol["faults_per_circuit"] != 50
+        or protocol["normal_rounds"] != 8
+        or not isinstance(protocol["reinforcement_rounds"], int)
+        or not 1 <= protocol["reinforcement_rounds"] <= 5
+    ):
+        raise ValueError("Benchmark model training protocol is incompatible")
+    return protocol
+
+
 def _atomic_json(path, value):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -57,8 +79,22 @@ def _validate_resume(path):
         raise ValueError("Existing benchmark bundle has an incompatible format")
     if [item.get("name") for item in manifest.get("circuits", [])] != list(CIRCUITS):
         raise ValueError("Existing benchmark bundle does not contain all 16 circuits")
-    if set(manifest.get("models", {})) != {"smartatpg_mean", "smartatpg_gat_gru"}:
-        raise ValueError("Benchmark bundle must contain both SmartATPG models")
+    if set(manifest.get("models", {})) != {"smartatpg_gat_gru"}:
+        raise ValueError("Benchmark bundle must contain only the GAT-GRU model")
+    protocol = manifest.get("training_protocol")
+    reinforcement_rounds = (
+        protocol.get("reinforcement_rounds") if isinstance(protocol, dict) else None
+    )
+    if (
+        not isinstance(protocol, dict)
+        or protocol.get("heuristic") != "scoap_heuristic"
+        or protocol.get("circuit_order") != list(CIRCUITS)
+        or protocol.get("faults_per_circuit") != 50
+        or protocol.get("normal_rounds") != 8
+        or not isinstance(reinforcement_rounds, int)
+        or not 1 <= reinforcement_rounds <= 5
+    ):
+        raise ValueError("Benchmark bundle training protocol is incompatible")
     records = [*manifest["models"].values(), *manifest["circuits"]]
     for record in records:
         for key, expected_hash in record["artifact_sha256"].items():
@@ -69,13 +105,17 @@ def _validate_resume(path):
         model = load_model(_bundle_path(bundle_root, record["path"]))
         if model.snapshot != record["snapshot"]:
             raise ValueError(f"Benchmark model snapshot changed: {name}")
+        if (
+            record.get("training_protocol") != protocol
+            or _model_training_protocol(model) != protocol
+        ):
+            raise ValueError(f"Benchmark model training protocol changed: {name}")
     return manifest
 
 
-def prepare(output_dir, baseline_model_path, gat_gru_model_path, resume=False):
+def prepare(output_dir, gat_gru_model_path, resume=False):
     output_dir = Path(output_dir).resolve()
     source_models = {
-        "smartatpg_mean": Path(baseline_model_path).resolve(),
         "smartatpg_gat_gru": Path(gat_gru_model_path).resolve(),
     }
     source_hashes = {name: sha256_file(path) for name, path in source_models.items()}
@@ -91,8 +131,8 @@ def prepare(output_dir, baseline_model_path, gat_gru_model_path, resume=False):
         print("BENCHMARK_BUNDLE_MODEL_CHANGED rebuilding", flush=True)
 
     models = {name: load_model(path) for name, path in source_models.items()}
+    training_protocol = _model_training_protocol(models["smartatpg_gat_gru"])
     expected_variants = {
-        "smartatpg_mean": ("fanin_mean", GRAPH_CONFIG),
         "smartatpg_gat_gru": ("level_gat_gru", GAT_GRU_GRAPH_CONFIG),
     }
     model_records = {}
@@ -101,7 +141,7 @@ def prepare(output_dir, baseline_model_path, gat_gru_model_path, resume=False):
         if model.encoder_variant != variant or model.graph_config != graph_config:
             raise ValueError(f"Wrong encoder variant for benchmark model {name}")
         expected_dim = ACTOR_INPUT_DIM + int(variant == "level_gat_gru")
-        if model.model_format != "SMARTATPG_MODEL_V8" or model.actor_input_dim != expected_dim:
+        if model.model_format != MODEL_FORMAT or model.actor_input_dim != expected_dim:
             raise ValueError(f"Benchmark requires a direct Actor model for {name}")
         if model.best_round <= 0 or model.best_score is None:
             raise ValueError(f"Benchmark requires a best checkpoint for {name}")
@@ -120,6 +160,7 @@ def prepare(output_dir, baseline_model_path, gat_gru_model_path, resume=False):
             "snapshot": model.snapshot,
             "best_round": model.best_round,
             "best_score": list(model.best_score),
+            "training_protocol": _model_training_protocol(model),
             "parameter_count": sum(
                 tensor.rows * tensor.cols for tensor in model.tensors.values()
             ),
@@ -161,6 +202,7 @@ def prepare(output_dir, baseline_model_path, gat_gru_model_path, resume=False):
         "feature_schema": FEATURE_SCHEMA,
         "gate_embedding_dim": GATE_EMBEDDING_DIM,
         "action_mask_dim": ACTION_MASK_DIM,
+        "training_protocol": training_protocol,
         "models": model_records,
         "circuits": records,
     }
@@ -172,13 +214,11 @@ def prepare(output_dir, baseline_model_path, gat_gru_model_path, resume=False):
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output_dir", type=Path)
-    parser.add_argument("baseline_model", type=Path)
     parser.add_argument("gat_gru_model", type=Path)
     parser.add_argument("--resume", action="store_true")
     args = parser.parse_args(argv)
     prepare(
-        args.output_dir, args.baseline_model, args.gat_gru_model,
-        resume=args.resume,
+        args.output_dir, args.gat_gru_model, resume=args.resume,
     )
 
 

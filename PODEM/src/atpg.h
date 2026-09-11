@@ -146,6 +146,8 @@ public:
 	vector<int> cc0, cc1, co;
 
 private:
+	friend class ATPGScoapTestAccess;
+
 	/* alias declaration */
 	class WIRE;
 	class NODE;
@@ -291,8 +293,8 @@ private:
 	void forward_imply(wptr);
 	wptr test_possible(fptr);
 	wptr find_pi_assignment(wptr, const int &);
-	wptr find_hardest_control(nptr);
-	wptr find_easiest_control(nptr);
+	wptr find_hardest_control(nptr, const int &);
+	wptr find_easiest_control(nptr, const int &);
 	nptr find_propagate_gate(const int &);
 	bool trace_unknown_path(wptr);
 	bool check_test();

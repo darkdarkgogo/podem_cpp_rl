@@ -307,7 +307,8 @@ void ActorModel::load(const std::string &path) {
                      (header == "SMARTATPG_MODEL_V5" ? 5 :
                       (header == "SMARTATPG_MODEL_V6" ? 6 :
                        (header == "SMARTATPG_MODEL_V7" ? 7 :
-                        (header == "SMARTATPG_MODEL_V8" ? 8 : 0)))));
+                        (header == "SMARTATPG_MODEL_V8" ? 8 :
+                         (header == "SMARTATPG_MODEL_V9" ? 9 : 0))))));
   require(version_ != 0,
           "Unsupported actor format in: " + path);
   backend_ = "smartatpg";
@@ -346,7 +347,7 @@ void ActorModel::load(const std::string &path) {
     read_smartatpg_v6_metadata(
         input, backend_, schema_, encoder_variant_, graph_config_,
         gate_embedding_dim_, embedding_dim_, action_mask_dim_,
-        decision_state_dim_, snapshot_, version_ >= 7, version_ == 8);
+        decision_state_dim_, snapshot_, version_ >= 7, version_ >= 8);
     int best_round = 0;
     std::string best_score;
     require(static_cast<bool>(input >> key >> best_round) &&
@@ -355,6 +356,32 @@ void ActorModel::load(const std::string &path) {
     require(static_cast<bool>(input >> key >> best_score) &&
                 key == "best_score" && !best_score.empty(),
             "Invalid SmartATPG best score in: " + path);
+    if (version_ == 9) {
+      std::string heuristic;
+      std::string circuit_order;
+      int faults_per_circuit = 0;
+      int normal_rounds = 0;
+      int reinforcement_rounds = -1;
+      require(static_cast<bool>(input >> key >> heuristic) &&
+                  key == "heuristic" && heuristic == "scoap_heuristic",
+              "Invalid SmartATPG training heuristic in: " + path);
+      require(static_cast<bool>(input >> key >> circuit_order) &&
+                  key == "circuit_order" &&
+                  circuit_order ==
+                      "c432,c499,c1355,c1908,c2670,c3540,c5315,c6288,"
+                      "c7552,s5378,s9234,s13207,s15850,s35932,s38417,s38584",
+              "Invalid SmartATPG training circuit order in: " + path);
+      require(static_cast<bool>(input >> key >> faults_per_circuit) &&
+                  key == "faults_per_circuit" && faults_per_circuit == 50,
+              "Invalid SmartATPG faults-per-circuit metadata in: " + path);
+      require(static_cast<bool>(input >> key >> normal_rounds) &&
+                  key == "normal_rounds" && normal_rounds == 8,
+              "Invalid SmartATPG normal-round metadata in: " + path);
+      require(static_cast<bool>(input >> key >> reinforcement_rounds) &&
+                  key == "reinforcement_rounds" &&
+                  reinforcement_rounds >= 0 && reinforcement_rounds <= 5,
+              "Invalid SmartATPG reinforcement-round metadata in: " + path);
+    }
   }
 
   if (version_ < 4) {

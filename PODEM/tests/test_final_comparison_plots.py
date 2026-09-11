@@ -16,6 +16,7 @@ from plot_final_comparison import (
     metric_values,
     models_for_metric,
     read_comparison_csv,
+    warn_for_clipped_coverage,
 )
 
 
@@ -23,6 +24,8 @@ CSV_COLUMNS = (
     "circuit",
     "model",
     "detected",
+    "redundant_uncollapsed",
+    "successful_faults",
     "total_faults",
     "equivalent_detected",
     "equivalent_faults",
@@ -40,7 +43,7 @@ CSV_COLUMNS = (
     "average_actor_forward_microseconds",
     "fault_coverage",
 )
-MODELS = ("heuristic", "smartatpg_mean", "smartatpg_gat_gru")
+MODELS = ("scoap_heuristic", "smartatpg_gat_gru")
 
 
 def comparison_rows():
@@ -50,7 +53,9 @@ def comparison_rows():
             rows.append({
                 "circuit": circuit,
                 "model": model,
-                "detected": 70 + model_index,
+                "detected": 95 + model_index,
+                "redundant_uncollapsed": 3,
+                "successful_faults": 98 + model_index,
                 "total_faults": 100,
                 "equivalent_detected": 0,
                 "equivalent_faults": 0,
@@ -66,7 +71,7 @@ def comparison_rows():
                 "actor_forward_seconds": 0.05,
                 "average_rl_select_microseconds": 25000,
                 "average_actor_forward_microseconds": 16666.7,
-                "fault_coverage": (70 + model_index) / 100.0,
+                "fault_coverage": (98 + model_index) / 100.0,
             })
     return rows
 
@@ -84,7 +89,7 @@ def write_comparison_csv(path, *, rows=None, fieldnames=CSV_COLUMNS):
 
 
 class FinalComparisonPlotTests(unittest.TestCase):
-    def test_relative_metrics_use_mean_as_baseline_without_a_mean_bar(self):
+    def test_relative_metrics_use_scoap_as_baseline_without_a_baseline_bar(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             csv_path = Path(temp_dir) / "final_comparison.csv"
             write_comparison_csv(csv_path)
@@ -97,11 +102,7 @@ class FinalComparisonPlotTests(unittest.TestCase):
         )
         self.assertEqual(
             models_for_metric(backtracks_metric),
-            ("heuristic", "smartatpg_gat_gru"),
-        )
-        self.assertEqual(
-            metric_values(circuits, "heuristic", records, backtracks_metric),
-            [11 / 12, 21 / 22],
+            ("smartatpg_gat_gru",),
         )
         self.assertEqual(
             metric_values(
@@ -110,10 +111,10 @@ class FinalComparisonPlotTests(unittest.TestCase):
                 records,
                 backtracks_metric,
             ),
-            [13 / 12, 23 / 22],
+            [12 / 11, 22 / 21],
         )
 
-    def test_fault_coverage_keeps_all_three_models_as_percentages(self):
+    def test_fault_coverage_keeps_both_models_as_percentages(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             csv_path = Path(temp_dir) / "final_comparison.csv"
             write_comparison_csv(csv_path)
@@ -124,21 +125,30 @@ class FinalComparisonPlotTests(unittest.TestCase):
             if metric["column"] == "fault_coverage"
         )
         self.assertEqual(models_for_metric(coverage_metric), MODELS)
+        self.assertEqual(coverage_metric["ylim"], (98.0, 100.0))
         self.assertEqual(
-            metric_values(circuits, "smartatpg_mean", records, coverage_metric),
-            [72.0, 72.0],
+            metric_values(circuits, "smartatpg_gat_gru", records, coverage_metric),
+            [100.0, 100.0],
         )
 
-    def test_rejects_zero_mean_denominator(self):
+    def test_warns_when_coverage_is_clipped_below_98_percent(self):
+        records = {
+            ("c17", "scoap_heuristic"): {"fault_coverage": 0.97},
+            ("c17", "smartatpg_gat_gru"): {"fault_coverage": 0.99},
+        }
+        with self.assertWarnsRegex(RuntimeWarning, "c17/scoap_heuristic=97.000%"):
+            warn_for_clipped_coverage(records)
+
+    def test_rejects_zero_scoap_denominator(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             csv_path = Path(temp_dir) / "final_comparison.csv"
             rows = comparison_rows()
-            mean_row = next(
+            baseline_row = next(
                 row for row in rows
                 if row["circuit"] == "c17"
-                and row["model"] == "smartatpg_mean"
+                and row["model"] == "scoap_heuristic"
             )
-            mean_row["atpg_seconds"] = 0
+            baseline_row["atpg_seconds"] = 0
             write_comparison_csv(csv_path, rows=rows)
             circuits, _models, records = read_comparison_csv(csv_path)
             runtime_metric = next(
@@ -150,7 +160,9 @@ class FinalComparisonPlotTests(unittest.TestCase):
                 ValueError,
                 "Cannot normalize atpg_seconds for circuit 'c17'",
             ):
-                metric_values(circuits, "heuristic", records, runtime_metric)
+                metric_values(
+                    circuits, "smartatpg_gat_gru", records, runtime_metric
+                )
 
     def test_rejects_a_circuit_with_a_missing_model(self):
         with tempfile.TemporaryDirectory() as temp_dir:

@@ -12,6 +12,7 @@ if str(SCRIPTS) not in sys.path:
 
 from rl_podem.smartatpg_features import COST_CAP, load_circuit_graph
 from rl_podem.smartatpg import SmartATPGPolicy
+from rl_podem.cpp_bridge import profile_cpp_podem
 from smartatpg_portable import load_graph
 
 
@@ -78,6 +79,37 @@ class SCOAPFeatureTests(unittest.TestCase):
         torch.testing.assert_close(embedding[:, 0], 1 + graph.x[:, 11])
         embedding.sum().backward()
         self.assertGreater(float(policy.graph_encoder.layer.weight.grad[0, 11]), 0)
+
+    def test_native_scoap_flag_changes_stable_backtrace_choices(self):
+        root = Path(__file__).resolve().parents[1]
+        circuit = root / "sample_circuits/c432_binary.bench"
+        fault_map = root / "sample_circuits/c432_binary.faultmap"
+        baseline = {
+            row["fault_id"]: row for row in profile_cpp_podem(
+                circuit, backtrack_limit=2000, seed=14,
+                fault_map_path=fault_map, use_scoap=False,
+            )
+        }
+        scoap = {
+            row["fault_id"]: row for row in profile_cpp_podem(
+                circuit, backtrack_limit=2000, seed=14,
+                fault_map_path=fault_map, use_scoap=True,
+            )
+        }
+
+        self.assertEqual(baseline.keys(), scoap.keys())
+        expected_steps = {
+            "dummy_gate1:GO:sa0": (64, 36),
+            "dummy_gate1:GO:sa1": (64, 36),
+        }
+        for fault_id, (baseline_steps, scoap_steps) in expected_steps.items():
+            with self.subTest(fault=fault_id):
+                self.assertEqual(baseline[fault_id]["outcome"], 1)
+                self.assertEqual(scoap[fault_id]["outcome"], 1)
+                self.assertEqual(
+                    baseline[fault_id]["backtrace_steps"], baseline_steps,
+                )
+                self.assertEqual(scoap[fault_id]["backtrace_steps"], scoap_steps)
 
 
 if __name__ == "__main__":

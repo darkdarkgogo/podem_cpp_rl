@@ -19,3 +19,8 @@ void ATPG::set_seed(const int &value)
 {
 	this->seed = value;
 }
+
+void ATPG::set_SCOAP(const bool &enabled)
+{
+	this->fault_order_by_scoap = enabled;
+}

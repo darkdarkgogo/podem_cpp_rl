@@ -542,6 +542,20 @@ ATPG::wptr ATPG::find_pi_assignment(const wptr object_wire, const int &object_le
 			}
 		}
 
+		switch (objective_gate->type)
+		{
+			case BUF:
+			case AND:
+			case OR:
+				new_object_level = object_level;
+				break;
+			case NOT:
+			case NOR:
+			case NAND:
+				new_object_level = object_level ^ 1;
+				break;
+		}
+
 		if (!new_object_wire)
 		{
 			switch (objective_gate->type)
@@ -549,16 +563,16 @@ ATPG::wptr ATPG::find_pi_assignment(const wptr object_wire, const int &object_le
 				case OR:
 				case NAND:
 					if (object_level)
-						new_object_wire = find_easiest_control(objective_gate); // decision gate
+						new_object_wire = find_easiest_control(objective_gate, new_object_level); // decision gate
 					else
-						new_object_wire = find_hardest_control(objective_gate); // imply gate
+						new_object_wire = find_hardest_control(objective_gate, new_object_level); // imply gate
 					break;
 				case NOR:
 				case AND:
 					if (object_level)
-						new_object_wire = find_hardest_control(objective_gate);
+						new_object_wire = find_hardest_control(objective_gate, new_object_level);
 					else
-						new_object_wire = find_easiest_control(objective_gate);
+						new_object_wire = find_easiest_control(objective_gate, new_object_level);
 					break;
 				case NOT:
 				case BUF:
@@ -567,20 +581,6 @@ ATPG::wptr ATPG::find_pi_assignment(const wptr object_wire, const int &object_le
 			}
 		}
 
-		switch (objective_gate->type)
-		{
-			case BUF:
-			case AND:
-			case OR:
-				new_object_level = object_level;
-				break;
-				/* flip objective value  Fig 9.6 */
-			case NOT:
-			case NOR:
-			case NAND:
-				new_object_level = object_level ^ 1;
-				break;
-		}
 		if (new_object_wire)
 		{
 			total_backtrace_steps++;
@@ -595,9 +595,28 @@ ATPG::wptr ATPG::find_pi_assignment(const wptr object_wire, const int &object_le
 } /* end of find_pi_assignment */
 
 /* Fig 9.4 */
-ATPG::wptr ATPG::find_hardest_control(const nptr n)
+ATPG::wptr ATPG::find_hardest_control(const nptr n, const int &target_value)
 {
 	int i;
+	wptr selected = nullptr;
+	int selected_cost = 0;
+
+	if (fault_order_by_scoap)
+	{
+		for (i = 0; i < n->iwire.size(); i++)
+		{
+			if (n->iwire[i]->value != U)
+				continue;
+			const int index = n->iwire[i]->wlist_index;
+			const int cost = target_value ? cc1[index] : cc0[index];
+			if (!selected || cost > selected_cost)
+			{
+				selected = n->iwire[i];
+				selected_cost = cost;
+			}
+		}
+		return selected;
+	}
 
 	/* because gate inputs are arranged in a increasing level order,
 	 * larger input index means harder to control */
@@ -610,9 +629,28 @@ ATPG::wptr ATPG::find_hardest_control(const nptr n)
 } /* end of find_hardest_control */
 
 /* Fig 9.5 */
-ATPG::wptr ATPG::find_easiest_control(const nptr n)
+ATPG::wptr ATPG::find_easiest_control(const nptr n, const int &target_value)
 {
 	int i, nin;
+	wptr selected = nullptr;
+	int selected_cost = 0;
+
+	if (fault_order_by_scoap)
+	{
+		for (i = 0, nin = n->iwire.size(); i < nin; i++)
+		{
+			if (n->iwire[i]->value != U)
+				continue;
+			const int index = n->iwire[i]->wlist_index;
+			const int cost = target_value ? cc1[index] : cc0[index];
+			if (!selected || cost < selected_cost)
+			{
+				selected = n->iwire[i];
+				selected_cost = cost;
+			}
+		}
+		return selected;
+	}
 	// TODO  similar to hardiest_control but increasing level order
 	for (i = 0, nin = n->iwire.size(); i < nin; i++)
 	{
@@ -654,8 +692,9 @@ ATPG::nptr ATPG::find_propagate_gate(const int &level)
 				{
 					if (trace_unknown_path(sort_wlist[i]))
 					{
-						if (!rl_podem_episode_active ||
-								!rl_enabled_for(smartatpg::DecisionMode::PROPAGATION))
+					if ((!rl_podem_episode_active ||
+								!rl_enabled_for(smartatpg::DecisionMode::PROPAGATION)) &&
+								!fault_order_by_scoap)
 							return (sort_wlist[i]->inode.front());
 						candidates.push_back(sort_wlist[i]->inode.front());
 					}
@@ -668,6 +707,18 @@ ATPG::nptr ATPG::find_propagate_gate(const int &level)
 	{
 		rl_propagation_lock = nullptr;
 		return (nullptr);
+	}
+	if (!rl_podem_episode_active ||
+			!rl_enabled_for(smartatpg::DecisionMode::PROPAGATION))
+	{
+		nptr selected = candidates.front();
+		for (nptr candidate : candidates)
+		{
+			if (co[candidate->owire.front()->wlist_index] <
+					co[selected->owire.front()->wlist_index])
+				selected = candidate;
+		}
+		return selected;
 	}
 	if (rl_propagation_lock)
 	{

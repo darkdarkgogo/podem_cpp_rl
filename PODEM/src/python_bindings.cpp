@@ -135,7 +135,7 @@ py::dict run_stuck_at(const std::string &circuit_path,
                       py::object event_callback, int backtrack_limit,
                       int seed, py::object fault_ids, bool quiet,
                       const std::string &rl_mode,
-                      const std::string &fault_map_path) {
+                      const std::string &fault_map_path, bool use_scoap) {
   const bool has_fault_filter = !fault_ids.is_none();
   const std::vector<std::string> selected_faults = has_fault_filter
       ? fault_ids.cast<std::vector<std::string> >()
@@ -148,6 +148,7 @@ py::dict run_stuck_at(const std::string &circuit_path,
   atpg.set_seed(seed);
   atpg.set_total_attempt_num(1);
   atpg.set_SAF_atpg(true);
+  atpg.set_SCOAP(use_scoap);
   atpg.set_rl_mode(rl_mode);
   atpg.set_decision_policy(policy);
   atpg.set_quiet(quiet);
@@ -175,13 +176,14 @@ py::dict run_stuck_at(const std::string &circuit_path,
 
 py::list profile_stuck_at(const std::string &circuit_path,
                           int backtrack_limit, int seed,
-                          const std::string &fault_map_path) {
+                          const std::string &fault_map_path, bool use_scoap) {
   ATPG atpg;
   atpg.detected_num = 1;
   atpg.set_backtrack_limit(backtrack_limit);
   atpg.set_seed(seed);
   atpg.set_total_attempt_num(1);
   atpg.set_SAF_atpg(true);
+  atpg.set_SCOAP(use_scoap);
   atpg.set_drop_detected_faults(false);
   atpg.set_collect_fault_profiles(true);
   atpg.set_quiet(true);
@@ -271,10 +273,11 @@ PYBIND11_MODULE(cpp_podem, module) {
              py::arg("backtrack_limit") = 97, py::arg("seed") = 14,
              py::arg("fault_ids") = py::none(), py::arg("quiet") = false,
              py::arg("rl_mode") = "backtrace_rl",
-             py::arg("fault_map_path") = "");
+             py::arg("fault_map_path") = "", py::arg("use_scoap") = false);
   module.def("profile_stuck_at", &profile_stuck_at,
              py::arg("circuit_path"), py::arg("backtrack_limit") = 97,
-             py::arg("seed") = 14, py::arg("fault_map_path") = "");
+             py::arg("seed") = 14, py::arg("fault_map_path") = "",
+             py::arg("use_scoap") = false);
   module.def("catalog_stuck_at", &catalog_stuck_at,
              py::arg("circuit_path"), py::arg("fault_map_path") = "");
   module.def("score_actor_v2", &score_actor_v2, py::arg("actor_path"),

@@ -1,4 +1,4 @@
-"""Benchmark heuristic PODEM against both trained 12D SCOAP SmartATPG encoders."""
+"""Benchmark SCOAP PODEM against the trained 12D GAT-GRU SmartATPG model."""
 
 import argparse
 import csv
@@ -18,6 +18,7 @@ from smartatpg_portable import (
     FEATURE_SCHEMA,
     GATE_EMBEDDING_DIM,
     GRAPH_CONFIG,
+    MODEL_FORMAT,
     POLICY_STATE_DIM,
     export_embeddings,
     load_graph,
@@ -26,12 +27,16 @@ from smartatpg_portable import (
 )
 
 
-MANIFEST_FORMAT = "SMARTATPG_BENCHMARK_BUNDLE_V5"
+MANIFEST_FORMAT = "SMARTATPG_BENCHMARK_BUNDLE_V7"
 BACKTRACK_LIMIT = 2000
 
 
 PATTERNS = {
     "detected": r"#total number of detected faults = (\d+)",
+    "redundant_uncollapsed": (
+        r"#total number of redundant faults \(uncollapsed\) = (\d+)"
+    ),
+    "successful_faults": r"#total number of successful faults = (\d+)",
     "total_faults": r"#total number of gate faults \(uncollapsed\) = (\d+)",
     "equivalent_detected": r"#number of equivalent detected faults = (\d+)",
     "equivalent_faults": r"#number of equivalent gate faults \(collapsed\) = (\d+)",
@@ -105,8 +110,22 @@ def _validate_manifest(manifest, bundle_root):
     if [item.get("name") for item in circuits] != list(CIRCUITS):
         raise ValueError("Benchmark manifest must contain all 16 ISCAS circuits")
     model_records = manifest.get("models", {})
-    if set(model_records) != {"smartatpg_mean", "smartatpg_gat_gru"}:
-        raise ValueError("Benchmark manifest must contain both SmartATPG models")
+    if set(model_records) != {"smartatpg_gat_gru"}:
+        raise ValueError("Benchmark manifest must contain only the GAT-GRU model")
+    protocol = manifest.get("training_protocol")
+    reinforcement_rounds = (
+        protocol.get("reinforcement_rounds") if isinstance(protocol, dict) else None
+    )
+    if (
+        not isinstance(protocol, dict)
+        or protocol.get("heuristic") != "scoap_heuristic"
+        or protocol.get("circuit_order") != list(CIRCUITS)
+        or protocol.get("faults_per_circuit") != 50
+        or protocol.get("normal_rounds") != 8
+        or not isinstance(reinforcement_rounds, int)
+        or not 1 <= reinforcement_rounds <= 5
+    ):
+        raise ValueError("Benchmark manifest training protocol is incompatible")
     for item in [*model_records.values(), *circuits]:
         required = {"path"} if "path" in item else {"circuit", "fault_map"}
         if set(item.get("artifact_sha256", {})) != required:
@@ -176,7 +195,7 @@ def _stage_circuit_copy(item, output_dir):
 def _prepare_models(model_paths, manifest, output_dir):
     preprocessing = []
     portable_models = {}
-    models = {"heuristic": {}}
+    models = {"scoap_heuristic": {}}
     for name, model_path in model_paths.items():
         record = manifest["models"][name]
         model = load_model(model_path)
@@ -188,7 +207,13 @@ def _prepare_models(model_paths, manifest, output_dir):
             or model.encoder_variant != record["encoder_variant"]
             or model.actor_input_dim != record["actor_input_dim"]
             or model.decision_state_dim != record["decision_state_dim"]
-            or model.model_format != "SMARTATPG_MODEL_V8"
+            or model.model_format != MODEL_FORMAT
+            or record.get("training_protocol") != manifest["training_protocol"]
+            or model.heuristic != manifest["training_protocol"]["heuristic"]
+            or list(model.circuit_order) != manifest["training_protocol"]["circuit_order"]
+            or model.faults_per_circuit != manifest["training_protocol"]["faults_per_circuit"]
+            or model.normal_rounds != manifest["training_protocol"]["normal_rounds"]
+            or model.reinforcement_rounds != manifest["training_protocol"]["reinforcement_rounds"]
         ):
             raise ValueError(f"Model selection metadata does not match bundle: {name}")
         portable_models[name] = model
@@ -232,7 +257,7 @@ def _protocol(native_executable, manifest, models, repeats, seed, backtrack_limi
         "models": {
             name: (
                 {"snapshot": value["snapshot"], "actor_sha256": _sha256(value["actor"])}
-                if name != "heuristic"
+                if name != "scoap_heuristic"
                 else None
             )
             for name, value in models.items()
@@ -278,9 +303,10 @@ def _run_records(
                     str(native_executable),
                     "-bt", str(backtrack_limit),
                     "-seed", str(seed),
+                    "-scoap",
                     "-fault-map", _native_circuit_path(item["fault_map"]),
                 ]
-                if model != "heuristic":
+                if model != "scoap_heuristic":
                     command.extend([
                         "-rl-actor", _native_circuit_path(models[model]["actor"]),
                         "-rl-emb", _native_circuit_path(
@@ -360,10 +386,20 @@ def _summarize(records, manifest, model_names, repeats):
                 if row["actor_forward_calls"] else 0.0
             )
             row["fault_coverage"] = (
-                row["detected"] / row["total_faults"]
+                row["successful_faults"] / row["total_faults"]
                 if row["total_faults"]
                 else 0.0
             )
+            if row["successful_faults"] != (
+                row["detected"] + row["redundant_uncollapsed"]
+            ):
+                raise RuntimeError(
+                    f"Inconsistent successful fault count for {item['name']}/{model}."
+                )
+            if not 0.0 <= row["fault_coverage"] <= 1.0:
+                raise RuntimeError(
+                    f"Fault coverage is outside [0, 1] for {item['name']}/{model}."
+                )
             rows.append(row)
 
     numeric_keys = (
@@ -379,7 +415,7 @@ def _summarize(records, manifest, model_names, repeats):
     }
     for model in model_names:
         totals[model]["fault_coverage"] = (
-            totals[model]["detected"] / totals[model]["total_faults"]
+            totals[model]["successful_faults"] / totals[model]["total_faults"]
             if totals[model]["total_faults"]
             else 0.0
         )
@@ -394,8 +430,8 @@ def _summarize(records, manifest, model_names, repeats):
             if totals[model]["actor_forward_calls"] else 0.0
         )
     comparisons = {}
-    heuristic = totals["heuristic"]
-    for model in (name for name in model_names if name != "heuristic"):
+    heuristic = totals["scoap_heuristic"]
+    for model in (name for name in model_names if name != "scoap_heuristic"):
         comparisons[model] = {}
         for key in ("backtracks", "backtrace_steps", "atpg_seconds"):
             improvement = percentage_change(heuristic[key], totals[model][key])
@@ -414,7 +450,7 @@ def _summarize_preprocessing(preprocessing):
         ),
         "embedding_seconds": {},
     }
-    for model in ("smartatpg_mean", "smartatpg_gat_gru"):
+    for model in ("smartatpg_gat_gru",):
         summary["embedding_seconds"][model] = sum(
             item["seconds"] for item in preprocessing
             if item["operation"] == "graph_embedding"
@@ -427,7 +463,7 @@ def _write_reports(
     output_dir, rows, totals, comparisons, portable_models, preprocessing
 ):
     direct = {}
-    baseline = totals["smartatpg_mean"]
+    baseline = totals["scoap_heuristic"]
     candidate = totals["smartatpg_gat_gru"]
     for key in ("backtracks", "backtrace_steps", "atpg_seconds"):
         direct[key] = {
@@ -447,8 +483,8 @@ def _write_reports(
     preprocessing_summary = _summarize_preprocessing(preprocessing)
     result = {
         "totals": totals,
-        "relative_to_heuristic": comparisons,
-        "gat_gru_relative_to_mean": direct,
+        "relative_to_scoap_heuristic": comparisons,
+        "gat_gru_relative_to_scoap_heuristic": direct,
         "models": {
             name: {
                 "encoder_variant": model.encoder_variant,
@@ -481,18 +517,19 @@ def _write_reports(
         "# Final SmartATPG Comparison",
         "",
         "All models use the same native executable, circuits, faults, seed, and backtrack limit.",
-        "Positive reduction percentages indicate fewer steps or less time than heuristic.",
+        "Positive reduction percentages indicate fewer steps or less time than the SCOAP heuristic.",
         "",
         "Only the C++ ATPG interval is used for runtime comparison. Graph embedding, compilation, and Python orchestration are excluded.",
         "",
-        "| Model | Detected / total | Aborted | Redundant | Backtracks | Backtrace steps | Test vectors | ATPG s |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|",
+        "| Model | Successful / total | Detected | Redundant (uncollapsed) | Aborted | Backtracks | Backtrace steps | Test vectors | ATPG s |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
-    for model in ("heuristic", "smartatpg_mean", "smartatpg_gat_gru"):
+    for model in ("scoap_heuristic", "smartatpg_gat_gru"):
         item = totals[model]
         lines.append(
-            f"| {model} | {item['detected']}/{item['total_faults']} | "
-            f"{item['aborted']} | {item['redundant']} | {item['backtracks']} | "
+            f"| {model} | {item['successful_faults']}/{item['total_faults']} | "
+            f"{item['detected']} | {item['redundant_uncollapsed']} | "
+            f"{item['aborted']} | {item['backtracks']} | "
             f"{item['backtrace_steps']} | {item['test_vectors']} | "
             f"{item['atpg_seconds']:.6f} |"
         )
@@ -501,7 +538,7 @@ def _write_reports(
         "| Model | Backtrack reduction | Backtrace reduction | ATPG-time reduction |",
         "|---|---:|---:|---:|",
     ])
-    for model in ("smartatpg_mean", "smartatpg_gat_gru"):
+    for model in ("smartatpg_gat_gru",):
         values = comparisons[model]
         formatted = []
         for key in ("backtracks", "backtrace_steps", "atpg_seconds"):
@@ -510,7 +547,7 @@ def _write_reports(
         lines.append(f"| {model} | " + " | ".join(formatted) + " |")
     lines.extend([
         "",
-        "## GAT-GRU vs fanin-mean SmartATPG",
+        "## GAT-GRU vs SCOAP heuristic",
         "",
         "| Detected delta | Coverage delta (pp) | Aborted delta | Redundant delta | Test-vector delta | Backtrack reduction | Backtrace reduction | ATPG-time reduction |",
         "|---:|---:|---:|---:|---:|---:|---:|---:|",
@@ -529,12 +566,12 @@ def _write_reports(
         "",
         "## Native Actor timing",
         "",
-        "`smartatpg_mean` evaluates the Actor on every selection; `smartatpg_gat_gru` retains its native logit cache.",
+        "`smartatpg_gat_gru` retains its native logit cache.",
         "",
         "| Model | RL selections | Actor forwards | Cache hits | Avg selection (us) | Avg Actor forward (us) |",
         "|---|---:|---:|---:|---:|---:|",
     ])
-    for name in ("smartatpg_mean", "smartatpg_gat_gru"):
+    for name in ("smartatpg_gat_gru",):
         item = totals[name]
         lines.append(
             f"| {name} | {item['rl_select_calls']} | "
@@ -550,13 +587,12 @@ def _write_reports(
         "| Operation | Time (s) |",
         "|---|---:|",
         f"| Shared graph feature build | {preprocessing_summary['graph_feature_build_seconds']:.6f} |",
-        f"| smartatpg_mean embedding | {preprocessing_summary['embedding_seconds']['smartatpg_mean']:.6f} |",
         f"| smartatpg_gat_gru embedding | {preprocessing_summary['embedding_seconds']['smartatpg_gat_gru']:.6f} |",
         "",
         "| Model | Encoder | Total parameters | Actor parameters | Best round | Best score |",
         "|---|---|---:|---:|---:|---|",
     ])
-    for name in ("smartatpg_mean", "smartatpg_gat_gru"):
+    for name in ("smartatpg_gat_gru",):
         model = result["models"][name]
         lines.append(
             f"| {name} | {model['encoder_variant']} | "
@@ -566,7 +602,7 @@ def _write_reports(
         )
     lines.extend([
         "",
-        "Graph construction and both model embeddings are reported separately and excluded from ATPG time.",
+        "Graph construction and model embedding are reported separately and excluded from ATPG time.",
         "",
     ])
     (output_dir / "FINAL_RESULTS.md").write_text("\n".join(lines), encoding="utf-8")
