@@ -36,6 +36,15 @@ int main(int argc, char **argv) {
     std::cout << (atpg.*access(Ctoi{}))(argv[2][0]);
   } else if (operation == "gate") {
     std::cout << (atpg.*access(FindType{}))(argv[2]);
+  } else if (operation == "undetected-output") {
+    atpg.detected_num = 1;
+    atpg.set_backtrack_limit(0);
+    atpg.input(argv[2]);
+    atpg.level_circuit();
+    atpg.rearrange_gate_inputs();
+    atpg.create_dummy_gate();
+    atpg.generate_fault_list();
+    atpg.test();
   } else {
     return 2;
   }

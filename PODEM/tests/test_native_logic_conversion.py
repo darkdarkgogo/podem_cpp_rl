@@ -95,6 +95,23 @@ class NativeLogicConversionTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "3")
 
+    def test_undetected_fault_report_overwrites_previous_run(self):
+        circuit = Path(self.directory.name) / "overwrite.bench"
+        circuit.write_text(
+            "INPUT(a)\nINPUT(b)\ny = AND(a,b)\nOUTPUT(y)\n",
+            encoding="utf-8",
+        )
+        report = Path(str(circuit) + ".uf")
+
+        first = self.run_conversion("undetected-output", circuit)
+        self.assertEqual(first.returncode, 0, first.stderr)
+        first_report = report.read_text(encoding="utf-8")
+        self.assertTrue(first_report)
+
+        second = self.run_conversion("undetected-output", circuit)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertEqual(report.read_text(encoding="utf-8"), first_report)
+
 
 if __name__ == "__main__":
     unittest.main()

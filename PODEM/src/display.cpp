@@ -120,7 +120,7 @@ void ATPG::display_undetect() {
   wptr w;
   string ufile = filename + ".uf";
 
-  ofstream file(ufile, std::ifstream::out | std::ofstream::app); // open the input vectors' file
+  ofstream file(ufile, std::ofstream::out | std::ofstream::trunc);
   if (!file) { // if the ofstream obj does not exist, fail to open the file
     fprintf(stderr, "File %s could not be opened\n", ufile.c_str());
     exit(EXIT_FAILURE);
