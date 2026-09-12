@@ -1,112 +1,97 @@
-# Normal BENCH Subcircuit Training Dataset Design
+# 普通 BENCH 子电路训练集设计
 
-## Goal
+## 目标
 
-Create exactly 1,024 deterministic, unique, combinational BENCH circuits for
-future reinforcement learning in the C++ PODEM project. Source circuits come
-from the ISCAS'89 and ITC'99 benchmark suites. The output must preserve a
-normal gate-level representation and must never pass through ABC, AIGER, an
-AIG file, or an AIG-only graph representation.
+为 C++ PODEM 项目后续的强化学习生成恰好 1024 个确定、唯一的组合逻辑
+BENCH 电路。源电路来自 ISCAS'89 和 ITC'99 基准电路集。输出必须保留普通
+门级表示，整个流程不得经过 ABC、AIGER、AIG 文件或仅包含 AIG 门型的图表示。
 
-DeepTPI code and data are out of scope. Its existing test dataset remains
-unchanged and is not an input to this generator.
+DeepTPI 的代码和数据不在本任务范围内。DeepTPI 现有测试集保持不变，也不作为
+本生成器的输入。
 
-## Output
+## 输出内容
 
-The generated dataset lives at:
+生成的数据集位于：
 
 `PODEM/datasets/iscas89_itc99_normal_1024/`
 
-It contains:
+其中包含：
 
-- `circuits/`: exactly 1,024 files named `<suite>_<source>_<index>.bench`.
-- `manifest.json`: generator settings, source provenance, source and output
-  SHA-256 hashes, extraction boundaries, and per-circuit statistics.
-- `summary.json`: aggregate source, gate-type, node-count, depth, input, and
-  output distributions.
+- `circuits/`：恰好 1024 个 `.bench` 文件，命名格式为
+  `<数据集>_<源电路>_<序号>.bench`。
+- `manifest.json`：记录生成参数、数据来源、源文件及输出文件的 SHA-256、
+  提取边界和每个子电路的统计信息。
+- `summary.json`：记录源电路、门类型、节点数、深度、输入数和输出数的汇总分布。
 
-Raw downloaded archives and expanded source files live under
-`PODEM/datasets/_sources/` and are not mixed with generated training files.
+下载的原始压缩包和解压后的源文件存放在 `PODEM/datasets/_sources/`，不与最终
+训练电路混放。
 
-## Source Acquisition
+## 数据源获取
 
-The generator downloads the public benchmark archives from the CVUT digital
-design benchmark collection:
+生成器从 CVUT 数字电路基准库下载公开压缩包：
 
 - `https://ddd.fit.cvut.cz/www/prj/Benchmarks/ISCAS.7z`
 - `https://ddd.fit.cvut.cz/www/prj/Benchmarks/ITC99.7z`
 
-Existing original BENCH files under `PODEM/sample_circuits/` may be reused when
-their circuit name and content hash are recorded in the manifest. Downloads
-are cached. Re-running the generator does not fetch an archive that is already
-present. Extraction accepts `7z`, `7zz`, or a local archive path supplied on
-the command line.
+如果 `PODEM/sample_circuits/` 中已有对应的原始 BENCH 文件，可以复用，但必须
+在清单中记录电路名称和内容哈希。下载结果会被缓存，压缩包已存在时不重复下载。
+解压阶段支持 `7z`、`7zz`，也允许通过命令行指定本地压缩包路径。
 
-The source inventory records suite, archive URL or local path, archive hash,
-relative file path, and file hash. Generated and previously converted files
-whose names contain `_aig`, `_binary`, or `_scan` are excluded from the source
-inventory.
+源文件清单记录数据集、压缩包网址或本地路径、压缩包哈希、压缩包内相对路径和
+文件哈希。文件名中包含 `_aig`、`_binary` 或 `_scan` 的已转换文件不进入原始
+数据清单。
 
-## Normalization
+## 普通门归一化
 
-Each source BENCH file is parsed into a small internal circuit model. Names,
-ports, gate type, fanins, and source line numbers are retained for diagnostics.
+每个 BENCH 文件首先被解析为内部电路模型。模型保留信号名、端口、门类型、扇入
+和源文件行号，以便在发生错误时准确定位。
 
-Sequential circuits are converted to a full-scan combinational model using the
-existing `scripts/convert_full_scan_bench.py` behavior:
+时序电路按照现有 `scripts/convert_full_scan_bench.py` 的行为转换为全扫描组合模型：
 
-- A DFF output Q becomes a primary input.
-- The corresponding D input becomes a primary output.
-- The DFF itself and its sequential edge are removed.
-- All combinational gates remain ordinary gates.
+- DFF 的 Q 输出变成主输入。
+- 对应的 D 输入变成主输出。
+- 删除 DFF 本身及其时序边。
+- 所有组合逻辑门继续保持普通门表示。
 
-The existing `scripts/convert_binary_bench.py` rules then normalize circuits
-for the SmartATPG graph loader:
+随后按照现有 `scripts/convert_binary_bench.py` 的规则，将电路归一化为 SmartATPG
+图加载器可以直接读取的格式：
 
-- `BUFF` is normalized to `BUF`, and `INV` to `NOT`.
-- Multi-input AND, NAND, OR, and NOR gates become deterministic binary trees
-  of the same ordinary gate family.
-- XOR, XNOR, and EQV are expanded using the project's existing normal-gate
-  expansion rules.
-- Final gate types are exactly `AND`, `NAND`, `OR`, `NOR`, `NOT`, and `BUF`.
+- `BUFF` 统一为 `BUF`，`INV` 统一为 `NOT`。
+- 多输入 AND、NAND、OR 和 NOR 被展开为确定的同类二输入普通门树。
+- XOR、XNOR 和 EQV 按项目现有的普通门展开规则处理。
+- 最终门类型严格限定为 `AND`、`NAND`、`OR`、`NOR`、`NOT` 和 `BUF`。
 
-No AIG conversion executable or AIG-only rewrite is permitted.
+流程中不得调用任何 AIG 转换程序，也不得执行只保留 AND/NOT 的 AIG 重写。
 
-## Subcircuit Extraction
+## 子电路提取
 
-The normalized circuit is topologically sorted and assigned logic levels.
-Candidate subcircuits are backward logic cones rooted at deterministic sink
-gates. A candidate may cover at most 25 logic levels and at most 820 nodes.
-Traversal stops at the depth or node limit.
+归一化后的电路首先进行拓扑排序并计算逻辑层级。候选子电路是以确定的汇点门为
+根的反向逻辑锥。每个候选最多覆盖 25 个逻辑层，包含的节点总数最多为 820；达到
+深度或节点上限时停止扩展。
 
-Boundary handling is structural:
+边界按以下方式处理：
 
-- A fanin entering the selected cone becomes a primary input.
-- A selected signal used outside the cone becomes a primary output.
-- A source primary input inside the cone remains a primary input.
-- A source primary output inside the cone remains a primary output.
-- Internal gate types and connections are unchanged.
+- 从逻辑锥外进入逻辑锥的扇入信号变成主输入。
+- 逻辑锥内被外部节点使用的信号变成主输出。
+- 位于逻辑锥内的源电路主输入继续作为主输入。
+- 位于逻辑锥内的源电路主输出继续作为主输出。
+- 内部逻辑门的类型和连接关系保持不变。
 
-Candidates with fewer than 80 nodes, no primary input, no primary output, an
-undefined fanin, a duplicate driver, or a combinational cycle are rejected.
-Overlapping cones are allowed because they provide distinct training problems.
-Exact structural duplicates are removed using a canonical gate-and-edge hash
-that ignores source-specific signal names.
+节点少于 80、没有主输入、没有主输出、存在未定义扇入、存在重复驱动或存在组合环
+的候选都会被丢弃。逻辑锥之间允许重叠，因为它们可以形成不同的训练问题。使用
+忽略源信号名称的规范化门及边哈希删除结构完全相同的重复候选。
 
-## Selection
+## 数据选择
 
-All operations use seed `208`. Source files and sink gates are processed in a
-stable sorted order. Valid candidates are selected round-robin across source
-circuits so one large benchmark cannot fill the dataset by itself. Selection
-continues until exactly 1,024 unique circuits are chosen.
+所有操作使用固定随机种子 `208`。源文件和汇点门按照稳定排序处理。有效候选按源
+电路轮询选择，防止某个大型基准电路独占训练集，直到选出恰好 1024 个唯一子电路。
 
-If fewer than 1,024 valid unique candidates exist, generation fails with a
-per-source rejection summary. It never duplicates circuits to reach the
-target.
+如果有效且结构唯一的候选少于 1024 个，生成器必须失败，并输出各源电路的候选
+数量和拒绝原因统计；不得通过复制已有电路凑足数量。
 
-## Compatibility
+## 格式兼容性
 
-Every output file uses the C++ PODEM BENCH syntax:
+每个输出文件都使用 C++ PODEM 支持的 BENCH 语法：
 
 ```text
 INPUT(a)
@@ -116,38 +101,32 @@ n1 = NAND(a,b)
 z = BUF(n1)
 ```
 
-The generator produces BENCH files only. It does not produce DeepTPI NPZ
-files, labels, feature arrays, policies, faults, or training manifests.
+生成器只产生 BENCH 文件，不生成 DeepTPI NPZ、标签、特征数组、策略、故障文件
+或强化学习训练清单。
 
-## Validation
+## 验证条件
 
-Generation succeeds only when all checks pass:
+只有以下检查全部通过，生成过程才算成功：
 
-1. Exactly 1,024 `.bench` files exist in the output set.
-2. Every file parses with `rl_podem.smartatpg_features.load_circuit_graph`.
-3. Every circuit is acyclic and has complete drivers, inputs, and outputs.
-4. Every non-input gate is binary, except unary `NOT` and `BUF`.
-5. Every file contains 80 through 820 nodes and spans at most 25 logic levels.
-6. All canonical structural hashes and output file hashes are unique.
-7. Only `AND`, `NAND`, `OR`, `NOR`, `NOT`, and `BUF` occur in gate records.
-8. At least one output circuit contains OR-family logic, demonstrating that
-   the dataset is not constrained to AIG structure.
-9. A stratified sample from both suites loads successfully through the C++
-   PODEM executable.
-10. Re-running with the same inputs and seed reproduces identical manifest and
-    circuit hashes.
+1. 最终目录中恰好存在 1024 个 `.bench` 文件。
+2. 每个文件都能被 `rl_podem.smartatpg_features.load_circuit_graph` 解析。
+3. 每个电路都无环，并且驱动、输入和输出完整。
+4. 除一输入的 `NOT` 和 `BUF` 外，其余非输入门均为二输入门。
+5. 每个文件包含 80 至 820 个节点，并且最多覆盖 25 个逻辑层。
+6. 所有规范化结构哈希和输出文件哈希均唯一。
+7. 门记录中只出现 `AND`、`NAND`、`OR`、`NOR`、`NOT` 和 `BUF`。
+8. 输出中至少有一个电路包含 OR 类门，证明数据集不是仅含 AIG 门型的结构。
+9. 从 ISCAS89 和 ITC99 分层抽样的文件能够被 C++ PODEM 可执行程序成功加载。
+10. 使用相同输入和随机种子重复运行时，清单和电路哈希完全一致。
 
-## Failure Behavior
+## 失败处理
 
-Malformed records and unsupported cells report the source file and line
-number. Download, archive extraction, parsing, scan conversion, candidate
-shortage, validation, and C++ smoke-test failures stop the run with a nonzero
-exit code. Output is built in a staging directory and replaces the final
-dataset only after every validation passes, so a failed run cannot leave a
-partial 1,024-file dataset.
+格式错误和不支持的单元必须报告源文件及行号。下载失败、解压失败、解析失败、
+scan-cut 失败、候选不足、验证失败或 C++ 冒烟测试失败时，程序以非零状态退出。
+所有输出先在暂存目录中生成，只有全部验证通过后才替换最终数据集，因此失败的运行
+不会留下不完整的 1024 文件数据集。
 
-## Project Changes
+## 项目改动范围
 
-Implementation adds one dataset generator under `PODEM/scripts/`, focused unit
-tests under `PODEM/tests/`, and the generated dataset directory. Existing
-DeepTPI files and existing C++ PODEM sample circuits are not modified.
+实现阶段在 `PODEM/scripts/` 下新增一个数据集生成器，在 `PODEM/tests/` 下新增针对性
+单元测试，并生成数据集目录。现有 DeepTPI 文件和 C++ PODEM 的已有示例电路均不修改。
