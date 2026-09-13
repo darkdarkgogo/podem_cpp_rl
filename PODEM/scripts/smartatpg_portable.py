@@ -10,23 +10,16 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-MODEL_FORMAT = "SMARTATPG_MODEL_V9"
-DIRECT_12D_MODEL_FORMAT = "SMARTATPG_MODEL_V8"
-DIRECT_11D_MODEL_FORMAT = "SMARTATPG_MODEL_V7"
-PREVIOUS_MODEL_FORMAT = "SMARTATPG_MODEL_V6"
-LEGACY_MODEL_FORMAT = "SMARTATPG_MODEL_V5"
-EMBEDDING_FORMAT = "SMARTATPG_EMBEDDINGS_V6"
-LEGACY_EMBEDDING_FORMAT = "SMARTATPG_EMBEDDINGS_V3"
-FEATURE_SCHEMA = "SMARTATPG_FEATURES_V3_12D_CO"
-GRAPH_CONFIG = "fanin_mean_1x24x12"
-GAT_GRU_GRAPH_CONFIG = "level_gat_gru_fwd_rev_12d_v2"
-LEGACY_FEATURE_SCHEMA = "SMARTATPG_FEATURES_V2_11D"
-LEGACY_GRAPH_CONFIG = "fanin_mean_1x22x11"
-LEGACY_GAT_GRU_GRAPH_CONFIG = "level_gat_gru_fwd_rev_11d_v1"
-GATE_TYPES = ("PI", "AND", "NAND", "OR", "NOR", "NOT", "BUF")
-GATE_EMBEDDING_DIM = 12
-POLICY_STATE_DIM = 14
-ACTOR_INPUT_DIM = 12
+MODEL_FORMAT = "SMARTATPG_MODEL_V11"
+DIRECT_MODEL_FORMAT = "SMARTATPG_MODEL_V10"
+EMBEDDING_FORMAT = "SMARTATPG_EMBEDDINGS_V7"
+FEATURE_SCHEMA = "SMARTATPG_FEATURES_V4_11D_CO_NO_BUF"
+GRAPH_CONFIG = "fanin_mean_1x22x11_co_nobuf"
+GAT_GRU_GRAPH_CONFIG = "level_gat_gru_fwd_rev_11d_v3_nobuf"
+GATE_TYPES = ("PI", "AND", "NAND", "OR", "NOR", "NOT")
+GATE_EMBEDDING_DIM = 11
+POLICY_STATE_DIM = 13
+ACTOR_INPUT_DIM = 11
 ACTION_MASK_DIM = 2
 COST_CAP = 10**9
 CIRCUITS = (
@@ -38,9 +31,6 @@ PORT_RE = re.compile(r"^(INPUT|OUTPUT)\s*\(\s*([^()\s]+)\s*\)$", re.I)
 GATE_RE = re.compile(r"^([^\s=(),]+)\s*=\s*(\w+)\s*\(([^()]*)\)$")
 
 ACTOR_TENSORS = (
-    "gate_encoder.0.weight",
-    "gate_encoder.0.bias",
-    "objective_value_embedding.weight",
     "backtrace_actor.0.weight",
     "backtrace_actor.0.bias",
     "backtrace_actor.2.weight",
@@ -87,19 +77,11 @@ class PortableModel:
 
     @property
     def gate_embedding_dim(self):
-        return (
-            GATE_EMBEDDING_DIM
-            if self.model_format in (MODEL_FORMAT, DIRECT_12D_MODEL_FORMAT)
-            else 11
-        )
+        return GATE_EMBEDDING_DIM
 
     @property
     def feature_schema(self):
-        return (
-            FEATURE_SCHEMA
-            if self.model_format in (MODEL_FORMAT, DIRECT_12D_MODEL_FORMAT)
-            else LEGACY_FEATURE_SCHEMA
-        )
+        return FEATURE_SCHEMA
 
 
 @dataclass(frozen=True)
@@ -145,58 +127,34 @@ def load_model(path):
     path = Path(path)
     tokens = iter(path.read_text(encoding="utf-8").split())
     model_format = _next(tokens, "header")
-    if model_format not in (
-        LEGACY_MODEL_FORMAT, PREVIOUS_MODEL_FORMAT, DIRECT_11D_MODEL_FORMAT,
-        DIRECT_12D_MODEL_FORMAT, MODEL_FORMAT,
-    ):
-        raise ValueError("SmartATPG benchmark requires a V5, V6, V7, V8 or V9 model")
-    has_co = model_format in (DIRECT_12D_MODEL_FORMAT, MODEL_FORMAT)
-    direct_actor = model_format in (
-        DIRECT_11D_MODEL_FORMAT, DIRECT_12D_MODEL_FORMAT, MODEL_FORMAT,
-    )
-    gate_dim = GATE_EMBEDDING_DIM if has_co else 11
-    schema = FEATURE_SCHEMA if has_co else LEGACY_FEATURE_SCHEMA
-    mean_config = GRAPH_CONFIG if has_co else LEGACY_GRAPH_CONFIG
-    gat_config = GAT_GRU_GRAPH_CONFIG if has_co else LEGACY_GAT_GRU_GRAPH_CONFIG
-    if model_format == LEGACY_MODEL_FORMAT:
-        encoder_variant = "fanin_mean"
-        expected_metadata = {
-            "backend": "smartatpg", "feature_schema": schema,
-            "graph_config": mean_config,
-            "gate_embedding_dim": str(gate_dim),
-            "policy_state_dim": "13",
-        }
-        actor_input_dim = 13
-        decision_state_dim = 13
-    else:
-        expected_metadata = {
-            "backend": "smartatpg", "feature_schema": schema,
-        }
+    if model_format not in (DIRECT_MODEL_FORMAT, MODEL_FORMAT):
+        raise ValueError("SmartATPG benchmark requires a V10 or V11 model")
+    gate_dim = GATE_EMBEDDING_DIM
+    expected_metadata = {
+        "backend": "smartatpg", "feature_schema": FEATURE_SCHEMA,
+    }
     for key, expected in expected_metadata.items():
         if _field(tokens, key) != expected:
             raise ValueError(f"Invalid SmartATPG model {key}")
-    if model_format != LEGACY_MODEL_FORMAT:
-        encoder_variant = _field(tokens, "encoder_variant")
-        graph_config = _field(tokens, "graph_config")
-        expected_config = {
-            "fanin_mean": mean_config,
-            "level_gat_gru": gat_config,
-        }.get(encoder_variant)
-        if graph_config != expected_config:
-            raise ValueError("Invalid SmartATPG encoder variant or graph configuration")
-        if int(_field(tokens, "gate_embedding_dim")) != gate_dim:
-            raise ValueError(f"SmartATPG gate embedding dimension must be {gate_dim}")
-        actor_input_dim = int(_field(tokens, "actor_input_dim"))
-        expected_actor_dim = gate_dim + int(direct_actor and encoder_variant == "level_gat_gru")
-        if actor_input_dim != expected_actor_dim:
-            raise ValueError("Actor input dimension does not match model version and encoder")
-        if int(_field(tokens, "action_mask_dim")) != ACTION_MASK_DIM:
-            raise ValueError("SmartATPG action mask dimension must be 2")
-        decision_state_dim = int(_field(tokens, "decision_state_dim"))
-        if decision_state_dim != actor_input_dim + ACTION_MASK_DIM:
-            raise ValueError("Decision state dimension must match Actor input plus mask")
-    else:
-        graph_config = mean_config
+    encoder_variant = _field(tokens, "encoder_variant")
+    graph_config = _field(tokens, "graph_config")
+    expected_config = {
+        "fanin_mean": GRAPH_CONFIG,
+        "level_gat_gru": GAT_GRU_GRAPH_CONFIG,
+    }.get(encoder_variant)
+    if graph_config != expected_config:
+        raise ValueError("Invalid SmartATPG encoder variant or graph configuration")
+    if int(_field(tokens, "gate_embedding_dim")) != gate_dim:
+        raise ValueError(f"SmartATPG gate embedding dimension must be {gate_dim}")
+    actor_input_dim = int(_field(tokens, "actor_input_dim"))
+    expected_actor_dim = gate_dim + int(encoder_variant == "level_gat_gru")
+    if actor_input_dim != expected_actor_dim:
+        raise ValueError("Actor input dimension does not match encoder")
+    if int(_field(tokens, "action_mask_dim")) != ACTION_MASK_DIM:
+        raise ValueError("SmartATPG action mask dimension must be 2")
+    decision_state_dim = int(_field(tokens, "decision_state_dim"))
+    if decision_state_dim != actor_input_dim + ACTION_MASK_DIM:
+        raise ValueError("Decision state dimension must match Actor input plus mask")
     snapshot = _field(tokens, "snapshot")
     if len(snapshot) != 64 or any(value not in "0123456789abcdef" for value in snapshot):
         raise ValueError("Invalid SmartATPG model snapshot")
@@ -231,7 +189,7 @@ def load_model(path):
             or normal_rounds != 8
             or not 0 <= reinforcement_rounds <= 5
         ):
-            raise ValueError("Invalid SmartATPG V9 training protocol")
+            raise ValueError("Invalid SmartATPG V11 training protocol")
     hidden_dim = int(_field(tokens, "hidden_dim"))
     if hidden_dim <= 0:
         raise ValueError("SmartATPG model hidden_dim must be positive")
@@ -265,10 +223,6 @@ def load_model(path):
         else GAT_GRU_ENCODER_TENSORS
     )
     expected_tensors = set((*encoder_tensors, *ACTOR_TENSORS))
-    if direct_actor:
-        expected_tensors.difference_update({
-            "gate_encoder.0.weight", "gate_encoder.0.bias", "objective_value_embedding.weight"
-        })
     if set(tensors) != expected_tensors:
         missing = sorted(expected_tensors - set(tensors))
         extra = sorted(set(tensors) - expected_tensors)
@@ -292,19 +246,18 @@ def load_model(path):
                 tensor = tensors[prefix + name]
                 if (tensor.rows, tensor.cols) != shape:
                     raise ValueError(f"Invalid GAT-GRU tensor shape for {prefix + name}")
-    input_name = "backtrace_actor.0.weight" if direct_actor else "gate_encoder.0.weight"
-    if (tensors[input_name].rows, tensors[input_name].cols) != (hidden_dim, actor_input_dim):
+    if (tensors["backtrace_actor.0.weight"].rows,
+            tensors["backtrace_actor.0.weight"].cols) != (hidden_dim, actor_input_dim):
         raise ValueError("Actor gate encoder input shape does not match metadata")
-    if direct_actor:
-        actor_shapes = {
-            "backtrace_actor.0.weight": (hidden_dim, actor_input_dim),
-            "backtrace_actor.0.bias": (1, hidden_dim),
-            "backtrace_actor.2.weight": (2, hidden_dim),
-            "backtrace_actor.2.bias": (1, 2),
-        }
-        for name, shape in actor_shapes.items():
-            if (tensors[name].rows, tensors[name].cols) != shape:
-                raise ValueError(f"Invalid Actor tensor shape for {name}: expected {shape}")
+    actor_shapes = {
+        "backtrace_actor.0.weight": (hidden_dim, actor_input_dim),
+        "backtrace_actor.0.bias": (1, hidden_dim),
+        "backtrace_actor.2.weight": (2, hidden_dim),
+        "backtrace_actor.2.bias": (1, 2),
+    }
+    for name, shape in actor_shapes.items():
+        if (tensors[name].rows, tensors[name].cols) != shape:
+            raise ValueError(f"Invalid Actor tensor shape for {name}: expected {shape}")
     return PortableModel(
         model_format, encoder_variant, graph_config, snapshot, best_round,
         best_score, hidden_dim, actor_input_dim, decision_state_dim,
@@ -335,16 +288,20 @@ def load_graph(path):
             if gate is None:
                 raise ValueError(f"Malformed BENCH line {line_number}: {line}")
             name, gate_type, input_text = gate.groups()
-            gate_type = {"BUFF": "BUF", "EQV": "XNOR"}.get(
-                gate_type.upper(), gate_type.upper()
-            )
+            gate_type = gate_type.upper()
+            if gate_type in ("BUF", "BUFF"):
+                raise ValueError(
+                    f"Unsupported SmartATPG gate type BUF at line {line_number}; "
+                    "the BUF-free feature schema requires normalized BENCH input"
+                )
+            gate_type = {"EQV": "XNOR"}.get(gate_type, gate_type)
             inputs = tuple(value.strip() for value in input_text.split(","))
             if gate_type not in GATE_TYPES[1:]:
                 raise ValueError(
                     f"Unsupported SmartATPG gate type {gate_type} at line "
                     f"{line_number}; convert XOR/XNOR before embedding"
                 )
-            expected = 1 if gate_type in ("NOT", "BUF") else 2
+            expected = 1 if gate_type == "NOT" else 2
             if len(inputs) != expected or any(
                 not value or re.search(r"\s", value) for value in inputs
             ):
@@ -390,7 +347,7 @@ def load_graph(path):
         ones = [cc1[value] for value in inputs]
         if gate_type == "PI":
             zero, one = 1, 1
-        elif gate_type in ("BUF", "NOT"):
+        elif gate_type == "NOT":
             zero, one = zeros[0] + 1, ones[0] + 1
         elif gate_type in ("AND", "NAND"):
             zero, one = min(zeros) + 1, sum(ones) + 1
@@ -433,11 +390,10 @@ def load_graph(path):
     for position, gate_type in enumerate(gate_types):
         row = [0.0] * GATE_EMBEDDING_DIM
         row[GATE_TYPES.index(gate_type)] = 1.0
-        row[7] = levels[position] / max_level
-        row[8] = normalized[0][position]
-        row[9] = normalized[1][position]
-        row[10] = normalized[2][position]
-        row[11] = normalized[3][position]
+        structure_offset = len(GATE_TYPES)
+        row[structure_offset] = levels[position] / max_level
+        for offset, values in enumerate(normalized, structure_offset + 1):
+            row[offset] = values[position]
         features.append(tuple(row))
     return PortableGraph(
         circuit_hash(path), tuple(names), fanins, fanout_indices,
@@ -567,31 +523,16 @@ def export_embeddings(model, graph, path):
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     with temporary.open("w", encoding="utf-8", newline="\n") as output:
-        if model.model_format == LEGACY_MODEL_FORMAT:
-            output.write(f"{LEGACY_EMBEDDING_FORMAT}\n")
-            output.write(
-                f"backend smartatpg\nfeature_schema {model.feature_schema}\n"
-                f"graph_config {model.graph_config}\n"
-                f"gate_embedding_dim {size}\n"
-                f"policy_state_dim {model.decision_state_dim}\n"
-            )
-        else:
-            header = {
-                MODEL_FORMAT: EMBEDDING_FORMAT,
-                DIRECT_12D_MODEL_FORMAT: EMBEDDING_FORMAT,
-                DIRECT_11D_MODEL_FORMAT: "SMARTATPG_EMBEDDINGS_V5",
-                PREVIOUS_MODEL_FORMAT: "SMARTATPG_EMBEDDINGS_V4",
-            }[model.model_format]
-            output.write(f"{header}\n")
-            output.write(
-                f"backend smartatpg\nfeature_schema {model.feature_schema}\n"
-                f"encoder_variant {model.encoder_variant}\n"
-                f"graph_config {model.graph_config}\n"
-                f"gate_embedding_dim {size}\n"
-                f"actor_input_dim {model.actor_input_dim}\n"
-                f"action_mask_dim {ACTION_MASK_DIM}\n"
-                f"decision_state_dim {model.decision_state_dim}\n"
-            )
+        output.write(f"{EMBEDDING_FORMAT}\n")
+        output.write(
+            f"backend smartatpg\nfeature_schema {model.feature_schema}\n"
+            f"encoder_variant {model.encoder_variant}\n"
+            f"graph_config {model.graph_config}\n"
+            f"gate_embedding_dim {size}\n"
+            f"actor_input_dim {model.actor_input_dim}\n"
+            f"action_mask_dim {ACTION_MASK_DIM}\n"
+            f"decision_state_dim {model.decision_state_dim}\n"
+        )
         output.write(
             f"snapshot {model.snapshot}\n"
             f"circuit_hash {graph.circuit_hash}\n"

@@ -111,7 +111,7 @@ def export_descriptors(state, graph, path, policy=None):
     temporary = path.with_suffix(path.suffix + ".tmp")
     with temporary.open("w", encoding="utf-8", newline="\n") as out:
         metadata = inference_metadata(state)
-        out.write("SMARTATPG_EMBEDDINGS_V6\n")
+        out.write("SMARTATPG_EMBEDDINGS_V7\n")
         out.write(
             f"backend {metadata['backend']}\n"
             f"feature_schema {metadata['feature_schema']}\n"
@@ -143,7 +143,7 @@ def export_snapshot(state, graphs, actor_path):
         export_descriptors(state, graph, path, policy)
         circuits[name] = {"embeddings": str(path), "circuit_hash": graph.circuit_hash}
     export_actor(state, actor_path)
-    manifest = {"format": "SMARTATPG_INFERENCE_SNAPSHOT_V2",
+    manifest = {"format": "SMARTATPG_INFERENCE_SNAPSHOT_V3_11D_CO_NO_BUF",
                 **smartatpg_metadata(encoder_variant(state)),
                 "snapshot": identity, "actor": str(native_actor), "circuits": circuits}
     manifest_path = actor_path.with_suffix(actor_path.suffix + ".json")

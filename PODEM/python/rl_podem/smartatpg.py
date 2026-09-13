@@ -17,8 +17,8 @@ DECISION_STATE_DIM = GATE_EMBEDDING_DIM + ACTION_MASK_DIM
 # Kept as the logical rollout-state dimension for metadata compatibility.
 POLICY_STATE_DIM = DECISION_STATE_DIM
 ENCODER_VARIANT = "fanin_mean"
-RND_SCHEMA = "SMARTATPG_RAW_OBJECTIVE_V2_CO"
-TRAINING_FORMAT = "RL_PODEM_SMARTATPG_PPO_V5_CO"
+RND_SCHEMA = "SMARTATPG_RAW_OBJECTIVE_V3_11D_CO_NO_BUF"
+TRAINING_FORMAT = "RL_PODEM_SMARTATPG_PPO_V6_11D_CO_NO_BUF"
 
 
 @dataclass(frozen=True)
@@ -92,7 +92,9 @@ class SmartATPGPolicy(BacktraceActorCriticV2):
 
     def batch_logits(self, descriptors, values):
         if descriptors.ndim != 2 or descriptors.shape[1] != ACTOR_INPUT_DIM:
-            raise ValueError("SmartATPG Actor accepts only 12D gate embeddings")
+            raise ValueError(
+                f"SmartATPG Actor accepts only {ACTOR_INPUT_DIM}D gate embeddings"
+            )
         state = descriptors.to(device=self.backtrace_actor[0].weight.device, dtype=torch.float32)
         return self.backtrace_actor(state), self.critic(state).squeeze(-1)
 
@@ -132,7 +134,9 @@ class SmartATPGPPOAgent(BacktracePPOAgentV2):
 
     def _rnd_observation(self, objective_embedding, objective_value):
         if objective_embedding.numel() != FEATURE_DIM:
-            raise ValueError("SmartATPG RND expects the raw 12-value gate features")
+            raise ValueError(
+                f"SmartATPG RND expects the raw {FEATURE_DIM}-value gate features"
+            )
         return super()._rnd_observation(objective_embedding.cpu(), objective_value)
 
     def _select(self, gate, value, candidates, mask, deterministic):

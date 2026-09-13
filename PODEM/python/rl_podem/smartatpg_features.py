@@ -10,8 +10,8 @@ from pathlib import Path
 
 import torch
 
-FEATURE_SCHEMA = "SMARTATPG_FEATURES_V3_12D_CO"
-GATE_TYPES = ("PI", "AND", "NAND", "OR", "NOR", "NOT", "BUF")
+FEATURE_SCHEMA = "SMARTATPG_FEATURES_V4_11D_CO_NO_BUF"
+GATE_TYPES = ("PI", "AND", "NAND", "OR", "NOR", "NOT")
 FEATURE_DIM = len(GATE_TYPES) + 5
 COST_CAP = 10**9
 GRAPH_CONFIG = {
@@ -20,7 +20,7 @@ GRAPH_CONFIG = {
     "output_dim": FEATURE_DIM,
     "aggregation": "fanin_mean",
 }
-GRAPH_CONFIG_ID = "fanin_mean_1x24x12"
+GRAPH_CONFIG_ID = "fanin_mean_1x22x11_co_nobuf"
 PORT_RE = re.compile(r"^(INPUT|OUTPUT)\s*\(\s*([^()\s]+)\s*\)$", re.I)
 GATE_RE = re.compile(r"^([^\s=(),]+)\s*=\s*(\w+)\s*\(([^()]*)\)$")
 
@@ -80,16 +80,20 @@ def load_circuit_graph(path):
             if gate is None:
                 raise ValueError(f"Malformed BENCH line {line_number}: {line}")
             name, gate_type, input_text = gate.groups()
-            gate_type = {"BUFF": "BUF", "EQV": "XNOR"}.get(
-                gate_type.upper(), gate_type.upper()
-            )
+            gate_type = gate_type.upper()
+            if gate_type in ("BUF", "BUFF"):
+                raise ValueError(
+                    f"Unsupported SmartATPG gate type BUF at line {line_number}; "
+                    "the BUF-free feature schema requires normalized BENCH input"
+                )
+            gate_type = {"EQV": "XNOR"}.get(gate_type, gate_type)
             inputs = tuple(value.strip() for value in input_text.split(","))
             if gate_type not in GATE_TYPES[1:]:
                 raise ValueError(
                     f"Unsupported SmartATPG gate type {gate_type} at line "
                     f"{line_number}; convert XOR/XNOR before loading the graph"
                 )
-            expected = 1 if gate_type in ("NOT", "BUF") else 2
+            expected = 1 if gate_type == "NOT" else 2
             if len(inputs) != expected or any(not value or re.search(r"\s", value) for value in inputs):
                 raise ValueError(f"Gate {name} requires {expected} input(s); use a binary BENCH")
         if name in drivers:
@@ -128,7 +132,7 @@ def load_circuit_graph(path):
         b = [cc1[v] for v in inputs]
         if kind == "PI":
             zero, one = 1, 1
-        elif kind in ("BUF", "NOT"):
+        elif kind == "NOT":
             zero, one = a[0] + 1, b[0] + 1
         elif kind in ("AND", "NAND"):
             zero, one = min(a) + 1, sum(b) + 1
@@ -173,8 +177,11 @@ def load_circuit_graph(path):
     reverse_level_edges = level_edges(level_groups, fanout_indices)
     features = torch.zeros((len(names), FEATURE_DIM), dtype=torch.float32)
     features[torch.arange(len(names)), torch.tensor([GATE_TYPES.index(kind) for kind in types])] = 1
-    features[:, 7] = torch.tensor(levels, dtype=torch.float32) / max(1, max(levels))
-    for column, values in enumerate((fanouts, cc0, cc1, co), 8):
+    structure_offset = len(GATE_TYPES)
+    features[:, structure_offset] = (
+        torch.tensor(levels, dtype=torch.float32) / max(1, max(levels))
+    )
+    for column, values in enumerate((fanouts, cc0, cc1, co), structure_offset + 1):
         maximum = max((v for v in values if math.isfinite(v)), default=0)
         scale = max(1.0, math.log1p(maximum))
         features[:, column] = torch.tensor([

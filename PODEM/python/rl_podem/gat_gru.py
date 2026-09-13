@@ -16,9 +16,9 @@ GRAPH_CONFIG = {
     "schedule": "forward_levels_then_reverse_levels",
     "directions": "independent",
 }
-GRAPH_CONFIG_ID = "level_gat_gru_fwd_rev_12d_v2"
+GRAPH_CONFIG_ID = "level_gat_gru_fwd_rev_11d_v3_nobuf"
 ACTOR_INPUT_DIM = FEATURE_DIM + 1
-TRAINING_FORMAT = "RL_PODEM_SMARTATPG_GAT_GRU_PPO_V4_CO"
+TRAINING_FORMAT = "RL_PODEM_SMARTATPG_GAT_GRU_PPO_V5_11D_CO_NO_BUF"
 
 
 class DirectionalGATGRU(nn.Module):
@@ -76,7 +76,9 @@ class LevelWiseGATGRUEncoder(nn.Module):
         for edges in reversed(graph.reverse_level_edges):
             hidden = self.reverse_pass.update_level(hidden, edges)
         if hidden.shape[1] != GATE_EMBEDDING_DIM:
-            raise ValueError("GAT-GRU must preserve the 12D gate embedding")
+            raise ValueError(
+                f"GAT-GRU must preserve the {GATE_EMBEDDING_DIM}D gate embedding"
+            )
         if not bool(torch.isfinite(hidden).all()):
             raise FloatingPointError("Non-finite GAT-GRU hidden state")
         return hidden
@@ -90,7 +92,10 @@ class GATGRUSmartATPGPolicy(SmartATPGPolicy):
         model_device = self.backtrace_actor[0].weight.device
         descriptors = descriptors.to(device=model_device, dtype=torch.float32)
         if descriptors.ndim != 2 or descriptors.shape[1] != FEATURE_DIM:
-            raise ValueError("agentATPG requires 12D graph embeddings before objective concatenation")
+            raise ValueError(
+                f"agentATPG requires {FEATURE_DIM}D graph embeddings before "
+                "objective concatenation"
+            )
         values = torch.as_tensor(values, device=model_device).reshape(-1, 1)
         if values.shape[0] != descriptors.shape[0] or not bool(((values == 0) | (values == 1)).all()):
             raise ValueError("agentATPG requires one binary objective value per embedding")

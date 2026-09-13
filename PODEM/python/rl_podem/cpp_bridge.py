@@ -26,52 +26,30 @@ def _load_cpp_embedding_artifact(
     table: dict[str, torch.Tensor] = {}
     with Path(path).open("r", encoding="utf-8") as handle:
         header = handle.readline().strip()
-        if header not in (
-            "SMARTATPG_EMBEDDINGS_V2", "SMARTATPG_EMBEDDINGS_V3",
-            "SMARTATPG_EMBEDDINGS_V4", "SMARTATPG_EMBEDDINGS_V5",
-            "SMARTATPG_EMBEDDINGS_V6",
-        ):
+        if header != "SMARTATPG_EMBEDDINGS_V7":
             raise ValueError(f"Unsupported embedding format: {path}")
-        if header == "SMARTATPG_EMBEDDINGS_V2":
-            raise ValueError(
-                "Legacy 80-dimensional SmartATPG descriptors are incompatible "
-                "with the 11-dimensional GraphSAGE format"
-            )
         keys = (
-            ("backend", "feature_schema", "graph_config", "gate_embedding_dim",
-             "policy_state_dim", "snapshot")
-            if header == "SMARTATPG_EMBEDDINGS_V3" else
-            ("backend", "feature_schema", "encoder_variant", "graph_config",
-             "gate_embedding_dim", "actor_input_dim", "action_mask_dim",
-             "decision_state_dim", "snapshot")
+            "backend", "feature_schema", "encoder_variant", "graph_config",
+            "gate_embedding_dim", "actor_input_dim", "action_mask_dim",
+            "decision_state_dim", "snapshot",
         )
         metadata = {key: read_pair(handle, key) for key in keys}
-        has_co = header == "SMARTATPG_EMBEDDINGS_V6"
-        gate_dim = FEATURE_DIM if has_co else 11
+        gate_dim = FEATURE_DIM
+        from .gat_gru import GRAPH_CONFIG_ID as GAT_GRU_GRAPH_CONFIG_ID
         expected_config = {
-            "fanin_mean": GRAPH_CONFIG_ID if has_co else "fanin_mean_1x22x11",
-            "level_gat_gru": "level_gat_gru_fwd_rev_12d_v2" if has_co else "level_gat_gru_fwd_rev_11d_v1",
+            "fanin_mean": GRAPH_CONFIG_ID,
+            "level_gat_gru": GAT_GRU_GRAPH_CONFIG_ID,
         }.get(metadata.get("encoder_variant"))
-        actor_dim = int(metadata.get("actor_input_dim", 13))
+        actor_dim = int(metadata["actor_input_dim"])
         expected_actor_dim = gate_dim + int(metadata.get("encoder_variant") == "level_gat_gru")
-        valid_graph = (
-            metadata["graph_config"] == "fanin_mean_1x22x11"
-            if header == "SMARTATPG_EMBEDDINGS_V3" else
-            metadata["graph_config"] == expected_config
-        )
-        dimensions_valid = (
-            metadata.get("policy_state_dim") == "13"
-            if header == "SMARTATPG_EMBEDDINGS_V3" else
-            actor_dim == (expected_actor_dim if header in ("SMARTATPG_EMBEDDINGS_V5", "SMARTATPG_EMBEDDINGS_V6") else 11)
-            and metadata.get("action_mask_dim") == "2"
-            and metadata.get("decision_state_dim") == str(actor_dim + 2)
-        )
         if (
             metadata["backend"] != "smartatpg"
-            or metadata["feature_schema"] != (FEATURE_SCHEMA if has_co else "SMARTATPG_FEATURES_V2_11D")
-            or not valid_graph
+            or metadata["feature_schema"] != FEATURE_SCHEMA
+            or metadata["graph_config"] != expected_config
             or metadata["gate_embedding_dim"] != str(gate_dim)
-            or not dimensions_valid
+            or actor_dim != expected_actor_dim
+            or metadata["action_mask_dim"] != "2"
+            or metadata["decision_state_dim"] != str(actor_dim + 2)
             or len(metadata["snapshot"]) != 64
             or any(char not in "0123456789abcdef" for char in metadata["snapshot"])
         ):
@@ -232,7 +210,7 @@ def export_actor_v2_state_dict(
             for direction in ("forward_pass", "reverse_pass")
             for name, shape in shapes.items()
         }
-        graph_config = "level_gat_gru_fwd_rev_12d_v2"
+        from .gat_gru import GRAPH_CONFIG_ID as graph_config
     for name, shape in graph_shapes.items():
         if tuple(state_dict[name].shape) != shape:
             raise ValueError(f"Invalid graph tensor shape for {name}: expected {shape}")
@@ -280,9 +258,7 @@ def export_actor_v2_state_dict(
     ):
         raise ValueError("SmartATPG training protocol metadata is invalid")
     with temporary.open("w", encoding="utf-8", newline="\n") as output:
-        output.write(
-            "SMARTATPG_MODEL_V9\n" if has_protocol else "SMARTATPG_MODEL_V8\n"
-        )
+        output.write("SMARTATPG_MODEL_V11\n" if has_protocol else "SMARTATPG_MODEL_V10\n")
         for key in (
             "backend", "feature_schema", "encoder_variant", "graph_config",
             "gate_embedding_dim", "actor_input_dim", "action_mask_dim",
