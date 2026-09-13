@@ -9,12 +9,9 @@ import torch
 from .backends import resolve_backend, smartatpg_metadata
 from .cpp_bridge import export_actor_v2_state_dict
 from .smartatpg import (
-    ACTION_MASK_DIM, ACTOR_INPUT_DIM, DECISION_STATE_DIM,
-    ENCODER_VARIANT, GATE_EMBEDDING_DIM, POLICY_STATE_DIM, SmartATPGPolicy,
+    ACTION_MASK_DIM, ENCODER_VARIANT, GATE_EMBEDDING_DIM, SmartATPGPolicy,
 )
-from .smartatpg_features import (
-    FEATURE_SCHEMA, GRAPH_CONFIG_ID, load_circuit_graph,
-)
+from .smartatpg_features import load_circuit_graph
 
 
 def encoder_variant(state):

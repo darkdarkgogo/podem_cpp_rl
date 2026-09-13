@@ -18,7 +18,6 @@ GRAPH_CONFIG = "fanin_mean_1x22x11_co_nobuf"
 GAT_GRU_GRAPH_CONFIG = "level_gat_gru_fwd_rev_11d_v3_nobuf"
 GATE_TYPES = ("PI", "AND", "NAND", "OR", "NOR", "NOT")
 GATE_EMBEDDING_DIM = 11
-POLICY_STATE_DIM = 13
 ACTOR_INPUT_DIM = 11
 ACTION_MASK_DIM = 2
 COST_CAP = 10**9

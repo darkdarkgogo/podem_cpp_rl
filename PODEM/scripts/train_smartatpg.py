@@ -1,4 +1,4 @@
-"""Train a selected 12D SCOAP SmartATPG graph policy without BC or curriculum."""
+"""Train a selected 11D BUF-free SCOAP SmartATPG graph policy."""
 
 import argparse
 import hashlib
@@ -26,10 +26,10 @@ from rl_podem.smartatpg_features import load_circuit_graph
 from smartatpg_portable import CIRCUITS
 
 
-CHECKPOINT_FORMAT = "SMARTATPG_12D_CO_TRAINING_V4"
-BEST_CHECKPOINT_FORMAT = "SMARTATPG_12D_CO_BEST_V4"
-REINFORCEMENT_CHECKPOINT_FORMAT = "SMARTATPG_GAT_REINFORCEMENT_V2"
-REINFORCEMENT_BEST_FORMAT = "SMARTATPG_GAT_REINFORCEMENT_BEST_V2"
+CHECKPOINT_FORMAT = "SMARTATPG_11D_CO_NO_BUF_TRAINING_V5"
+BEST_CHECKPOINT_FORMAT = "SMARTATPG_11D_CO_NO_BUF_BEST_V5"
+REINFORCEMENT_CHECKPOINT_FORMAT = "SMARTATPG_GAT_REINFORCEMENT_V3_11D_CO_NO_BUF"
+REINFORCEMENT_BEST_FORMAT = "SMARTATPG_GAT_REINFORCEMENT_BEST_V3_11D_CO_NO_BUF"
 FAULTS_PER_CIRCUIT = 50
 AGENT_TYPES = {
     "level_gat_gru": GATGRUSmartATPGPPOAgent,
@@ -753,7 +753,7 @@ def main(argv=None):
     if checkpoint_path.is_file():
         saved = torch.load(checkpoint_path, map_location="cpu")
         if saved.get("format") != CHECKPOINT_FORMAT:
-            raise ValueError("Legacy SmartATPG checkpoint is incompatible with 12D CO training")
+            raise ValueError("Checkpoint is incompatible with 11D CO BUF-free training")
         if saved.get("manifest_hash") != manifest_digest:
             raise ValueError("Training manifest changed since checkpoint")
         target_rounds = _validate_resume_config(saved.get("config"), config)

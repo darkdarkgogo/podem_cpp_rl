@@ -1,4 +1,4 @@
-"""Benchmark SCOAP PODEM against the trained 12D GAT-GRU SmartATPG model."""
+"""Benchmark SCOAP PODEM against the trained 11D BUF-free SmartATPG model."""
 
 import argparse
 import csv
@@ -19,7 +19,6 @@ from smartatpg_portable import (
     GATE_EMBEDDING_DIM,
     GRAPH_CONFIG,
     MODEL_FORMAT,
-    POLICY_STATE_DIM,
     export_embeddings,
     load_graph,
     load_model,
@@ -27,7 +26,7 @@ from smartatpg_portable import (
 )
 
 
-MANIFEST_FORMAT = "SMARTATPG_BENCHMARK_BUNDLE_V7"
+MANIFEST_FORMAT = "SMARTATPG_BENCHMARK_BUNDLE_V8_11D_CO_NO_BUF"
 BACKTRACK_LIMIT = 2000
 
 
@@ -105,7 +104,7 @@ def _validate_manifest(manifest, bundle_root):
         "action_mask_dim": ACTION_MASK_DIM,
     }
     if any(manifest.get(key) != value for key, value in expected.items()):
-        raise ValueError("Benchmark manifest is incompatible with SmartATPG 12D CO")
+        raise ValueError("Benchmark manifest is incompatible with 11D CO BUF-free SmartATPG")
     circuits = list(manifest.get("circuits", []))
     if [item.get("name") for item in circuits] != list(CIRCUITS):
         raise ValueError("Benchmark manifest must contain all 16 ISCAS circuits")

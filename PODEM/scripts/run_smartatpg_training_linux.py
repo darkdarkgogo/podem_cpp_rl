@@ -76,7 +76,7 @@ def main(argv=None):
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=ROOT / "artifacts/smartatpg_12d_co_all16_8rounds_bt2000",
+        default=ROOT / "artifacts/smartatpg_11d_co_nobuf_all16_8rounds_bt2000",
     )
     parser.add_argument("--rounds", type=int, default=NORMAL_TRAINING_ROUNDS)
     parser.add_argument("--seed", type=int, default=2026)

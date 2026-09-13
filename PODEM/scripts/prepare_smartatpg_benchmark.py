@@ -15,13 +15,12 @@ from smartatpg_portable import (
     FEATURE_SCHEMA,
     GATE_EMBEDDING_DIM,
     MODEL_FORMAT,
-    POLICY_STATE_DIM,
     load_model,
     sha256_file,
 )
 
 
-MANIFEST_FORMAT = "SMARTATPG_BENCHMARK_BUNDLE_V7"
+MANIFEST_FORMAT = "SMARTATPG_BENCHMARK_BUNDLE_V8_11D_CO_NO_BUF"
 ROOT = Path(__file__).resolve().parents[1]
 
 

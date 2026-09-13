@@ -12,7 +12,7 @@ from rl_podem.cpp_bridge import profile_cpp_podem
 from smartatpg_portable import CIRCUITS
 
 
-MANIFEST_FORMAT = "SMARTATPG_ALL_CIRCUITS_TRAINING_V3"
+MANIFEST_FORMAT = "SMARTATPG_ALL_CIRCUITS_TRAINING_V4_11D_CO_NO_BUF"
 FAULT_FILTER = "baseline_detected_only"
 BACKTRACK_LIMIT = 2000
 FAULTS_PER_CIRCUIT = 50

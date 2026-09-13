@@ -1,6 +1,6 @@
 # SmartATPG RL 使用入口
 
-当前对比包含12维 fanin-mean SmartATPG 基线和12维逐 level 双向 GAT-GRU（agentATPG）。节点特征包含静态 SCOAP CC0、CC1、CO。SmartATPG 的12维 embedding 直接进入 Actor/Critic；agentATPG 拼接1维目标值 object_val 后，以13维直接进入 Actor/Critic。两者都没有前置 gate_encoder 或目标值查表相加；mask 仅在 logits 后使用。训练环境与 C++ 编译评测环境已经分离。
+当前正式训练与评测使用逐 level 双向 GAT-GRU（agentATPG）。节点初始特征和图 embedding 均为11维：6维 gate 类型 one-hot（不含 BUF）加 level、fanout、静态 SCOAP CC0、CC1、CO。Actor/Critic 在11维 embedding 后拼接1维目标值 `object_val`，因此输入为12维；mask 仅在 logits 后使用。训练环境与 C++ 编译评测环境已经分离。
 
 完整中文说明见 [`docs/SMARTATPG_11D_使用说明.md`](docs/SMARTATPG_11D_使用说明.md)。
 
@@ -11,7 +11,7 @@ chmod +x train_smartatpg_linux.sh benchmark_smartatpg_linux.sh tensorboard_smart
 ./train_smartatpg_linux.sh
 ```
 
-训练脚本先生成共享 fault 清单，再将 fanin-mean 固定到物理 GPU 0、GAT-GRU 固定到物理 GPU 1 并行训练；两者完成后生成对比包。
+训练脚本先为16个电路生成每个50条 hard-detected fault 的固定清单，再在指定 GPU 上训练 GAT-GRU 8轮，并执行最多5轮失败 fault 强化；完成后生成只含 GAT-GRU 模型的评测包。
 
 TensorBoard：
 

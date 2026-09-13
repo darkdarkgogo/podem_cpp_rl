@@ -11,7 +11,7 @@
 #include <stdexcept>
 #include <unordered_set>
 
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(__MINGW32__)
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
@@ -24,12 +24,12 @@ namespace {
 template <std::size_t InputDim>
 void fixed_direct_actor_32x2(
     const float *input,
-    const std::array<float, 13 * 32> &hidden_weight_by_input,
+    const std::array<float, 12 * 32> &hidden_weight_by_input,
     const std::array<float, 32> &hidden_bias,
     const std::array<float, 2 * 32> &output_weight,
     const std::array<float, 2> &output_bias, float *hidden, float *logits) {
-  static_assert(InputDim == 12 || InputDim == 13,
-                "Fixed SmartATPG Actor input must be 12D or 13D");
+  static_assert(InputDim == 11 || InputDim == 12,
+                "Fixed SmartATPG Actor input must be 11D or 12D");
   for (std::size_t row = 0; row < 32; ++row)
     hidden[row] = hidden_bias[row];
   for (std::size_t col = 0; col < InputDim; ++col) {
@@ -60,7 +60,7 @@ void require_finite(float value, const std::string &context) {
 }
 
 std::ifstream open_artifact(const std::string &path, std::ios::openmode mode = std::ios::in) {
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(__MINGW32__)
   const UINT codepage = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
       path.c_str(), -1, nullptr, 0) > 0 ? CP_UTF8 : CP_ACP;
   const int count = MultiByteToWideChar(codepage, 0, path.c_str(), -1, nullptr, 0);
@@ -75,18 +75,14 @@ std::ifstream open_artifact(const std::string &path, std::ios::openmode mode = s
 }
 
 std::vector<std::string> required_tensor_names(
-    int version, const std::string &encoder_variant) {
+    const std::string &encoder_variant) {
   std::vector<std::string> names = {
-      "gate_encoder.0.weight",
-      "gate_encoder.0.bias",
-      "objective_value_embedding.weight",
       "backtrace_actor.0.weight",
       "backtrace_actor.0.bias",
       "backtrace_actor.2.weight",
       "backtrace_actor.2.bias",
   };
-  if (version >= 7) names.erase(names.begin(), names.begin() + 3);
-  if (version == 5 || encoder_variant == "fanin_mean") {
+  if (encoder_variant == "fanin_mean") {
     names.insert(names.begin(), "graph_encoder.layer.bias");
     names.insert(names.begin(), "graph_encoder.layer.weight");
   } else if (encoder_variant == "level_gat_gru") {
@@ -103,63 +99,20 @@ std::vector<std::string> required_tensor_names(
   return names;
 }
 
-void read_backend_metadata(std::istream &input, std::string &backend,
-                           std::string &schema, std::string &snapshot) {
-  std::string key;
-  require(static_cast<bool>(input >> key >> backend) && key == "backend" &&
-              backend == "smartatpg", "Invalid artifact backend");
-  require(static_cast<bool>(input >> key >> schema) && key == "feature_schema" &&
-              schema == "SMARTATPG_FEATURES_V1", "Invalid artifact feature schema");
-  require(static_cast<bool>(input >> key >> snapshot) && key == "snapshot" &&
-              snapshot.size() == 64 &&
-              snapshot.find_first_not_of("0123456789abcdef") == std::string::npos,
-          "Invalid artifact snapshot identifier");
-}
-
-void read_smartatpg_11d_metadata(
-    std::istream &input, std::string &backend, std::string &schema,
-    std::string &graph_config, std::size_t &gate_embedding_dim,
-    std::size_t &policy_state_dim, std::string &snapshot) {
-  std::string key;
-  require(static_cast<bool>(input >> key >> backend) && key == "backend" &&
-              backend == "smartatpg", "Invalid artifact backend");
-  require(static_cast<bool>(input >> key >> schema) &&
-              key == "feature_schema" &&
-              schema == "SMARTATPG_FEATURES_V2_11D",
-          "Invalid SmartATPG 11D feature schema");
-  require(static_cast<bool>(input >> key >> graph_config) &&
-              key == "graph_config" &&
-              graph_config == "fanin_mean_1x22x11",
-          "Invalid SmartATPG GraphSAGE configuration");
-  require(static_cast<bool>(input >> key >> gate_embedding_dim) &&
-              key == "gate_embedding_dim" && gate_embedding_dim == 11,
-          "SmartATPG gate embedding dimension must be 11");
-  require(static_cast<bool>(input >> key >> policy_state_dim) &&
-              key == "policy_state_dim" && policy_state_dim == 13,
-          "SmartATPG policy state dimension must be 13");
-  require(static_cast<bool>(input >> key >> snapshot) && key == "snapshot" &&
-              snapshot.size() == 64 &&
-              snapshot.find_first_not_of("0123456789abcdef") ==
-                  std::string::npos,
-          "Invalid artifact snapshot identifier");
-}
-
-void read_smartatpg_v6_metadata(
+void read_smartatpg_metadata(
     std::istream &input, std::string &backend, std::string &schema,
     std::string &encoder_variant, std::string &graph_config,
     std::size_t &gate_embedding_dim, std::size_t &actor_input_dim,
     std::size_t &action_mask_dim, std::size_t &decision_state_dim,
-    std::string &snapshot, bool direct_actor = false, bool has_co = false) {
+    std::string &snapshot) {
   std::string key;
-  const std::size_t expected_gate_dim = has_co ? 12U : 11U;
-  const std::string expected_schema = has_co ? "SMARTATPG_FEATURES_V3_12D_CO" :
-                                              "SMARTATPG_FEATURES_V2_11D";
+  const std::size_t expected_gate_dim = 11U;
   require(static_cast<bool>(input >> key >> backend) && key == "backend" &&
               backend == "smartatpg", "Invalid artifact backend");
   require(static_cast<bool>(input >> key >> schema) &&
               key == "feature_schema" &&
-              schema == expected_schema,
-          "Invalid SmartATPG feature schema for model version");
+              schema == "SMARTATPG_FEATURES_V4_11D_CO_NO_BUF",
+          "Invalid BUF-free SmartATPG feature schema");
   require(static_cast<bool>(input >> key >> encoder_variant) &&
               key == "encoder_variant" &&
               (encoder_variant == "fanin_mean" ||
@@ -170,8 +123,8 @@ void read_smartatpg_v6_metadata(
           "Missing SmartATPG graph configuration");
   const std::string expected_config =
       encoder_variant == "fanin_mean" ?
-          (has_co ? "fanin_mean_1x24x12" : "fanin_mean_1x22x11") :
-          (has_co ? "level_gat_gru_fwd_rev_12d_v2" : "level_gat_gru_fwd_rev_11d_v1");
+          "fanin_mean_1x22x11_co_nobuf" :
+          "level_gat_gru_fwd_rev_11d_v3_nobuf";
   require(graph_config == expected_config,
           "SmartATPG encoder variant and graph configuration do not match");
   require(static_cast<bool>(input >> key >> gate_embedding_dim) &&
@@ -180,7 +133,7 @@ void read_smartatpg_v6_metadata(
   require(static_cast<bool>(input >> key >> actor_input_dim) &&
               key == "actor_input_dim" &&
               actor_input_dim == expected_gate_dim +
-                  (direct_actor && encoder_variant == "level_gat_gru" ? 1U : 0U),
+                  (encoder_variant == "level_gat_gru" ? 1U : 0U),
           "Actor input dimension does not match its architecture");
   require(static_cast<bool>(input >> key >> action_mask_dim) &&
               key == "action_mask_dim" && action_mask_dim == 2,
@@ -204,10 +157,7 @@ void EmbeddingTable::load(const std::string &path,
 
   std::string header;
   std::getline(input, header);
-  require(header == "SMARTATPG_EMBEDDINGS_V2" ||
-              header == "SMARTATPG_EMBEDDINGS_V3" ||
-              header == "SMARTATPG_EMBEDDINGS_V4" || header == "SMARTATPG_EMBEDDINGS_V5" ||
-              header == "SMARTATPG_EMBEDDINGS_V6",
+  require(header == "SMARTATPG_EMBEDDINGS_V7",
           "Unsupported embedding format in: " + path);
   backend_ = "smartatpg";
   schema_.clear();
@@ -218,29 +168,12 @@ void EmbeddingTable::load(const std::string &path,
   actor_input_dim_ = 0;
   action_mask_dim_ = 0;
   decision_state_dim_ = 0;
-  if (header == "SMARTATPG_EMBEDDINGS_V2") {
-    require(false,
-            "Legacy 80-dimensional SmartATPG descriptors are incompatible "
-            "with the 11-dimensional GraphSAGE format");
-  } else if (header == "SMARTATPG_EMBEDDINGS_V3") {
-    std::size_t declared_gate_dim = 0;
-    read_smartatpg_11d_metadata(
-        input, backend_, schema_, graph_config_, declared_gate_dim,
-        policy_state_dim_, snapshot_);
-    encoder_variant_ = "fanin_mean";
-    actor_input_dim_ = policy_state_dim_;
-    action_mask_dim_ = 2;
-    decision_state_dim_ = policy_state_dim_;
-  } else if (header == "SMARTATPG_EMBEDDINGS_V4" || header == "SMARTATPG_EMBEDDINGS_V5" ||
-             header == "SMARTATPG_EMBEDDINGS_V6") {
-    std::size_t declared_gate_dim = 0;
-    read_smartatpg_v6_metadata(
-        input, backend_, schema_, encoder_variant_, graph_config_,
-        declared_gate_dim, actor_input_dim_, action_mask_dim_,
-        decision_state_dim_, snapshot_, header != "SMARTATPG_EMBEDDINGS_V4",
-        header == "SMARTATPG_EMBEDDINGS_V6");
-    policy_state_dim_ = decision_state_dim_;
-  }
+  std::size_t declared_gate_dim = 0;
+  read_smartatpg_metadata(
+      input, backend_, schema_, encoder_variant_, graph_config_,
+      declared_gate_dim, actor_input_dim_, action_mask_dim_,
+      decision_state_dim_, snapshot_);
+  policy_state_dim_ = decision_state_dim_;
 
   std::string key;
   std::string circuit_hash;
@@ -253,7 +186,7 @@ void EmbeddingTable::load(const std::string &path,
   require(static_cast<bool>(input >> key >> dimension_) && key == "dimension" &&
               dimension_ > 0,
           "Invalid embedding dimension in: " + path);
-  require(dimension_ == (header == "SMARTATPG_EMBEDDINGS_V6" ? 12U : 11U),
+  require(dimension_ == 11U && dimension_ == declared_gate_dim,
           "SmartATPG gate embedding dimension does not match artifact version");
   require(static_cast<bool>(input >> key >> expected_count) && key == "count",
           "Invalid embedding count in: " + path);
@@ -302,13 +235,8 @@ void ActorModel::load(const std::string &path) {
   std::string header;
   std::string key;
   std::getline(input, header);
-  version_ = header == "SMARTATPG_ACTOR_V3" ? 3 :
-                    (header == "SMARTATPG_ACTOR_V4" ? 4 :
-                     (header == "SMARTATPG_MODEL_V5" ? 5 :
-                      (header == "SMARTATPG_MODEL_V6" ? 6 :
-                       (header == "SMARTATPG_MODEL_V7" ? 7 :
-                        (header == "SMARTATPG_MODEL_V8" ? 8 :
-                         (header == "SMARTATPG_MODEL_V9" ? 9 : 0))))));
+  version_ = header == "SMARTATPG_MODEL_V10" ? 10 :
+             (header == "SMARTATPG_MODEL_V11" ? 11 : 0);
   require(version_ != 0,
           "Unsupported actor format in: " + path);
   backend_ = "smartatpg";
@@ -319,83 +247,49 @@ void ActorModel::load(const std::string &path) {
   gate_embedding_dim_ = 0;
   action_mask_dim_ = 0;
   decision_state_dim_ = 0;
-  if (version_ == 3) {
-    read_backend_metadata(input, backend_, schema_, snapshot_);
-    require(false,
-            "Legacy 80-dimensional SmartATPG actors are incompatible with "
-            "the 11-dimensional GraphSAGE format");
-  } else if (version_ == 4) {
-    require(false,
-            "SMARTATPG_ACTOR_V4 does not contain GraphSAGE weights; export "
-            "a SMARTATPG_MODEL_V5 model");
-  } else if (version_ == 5) {
-    read_smartatpg_11d_metadata(
-        input, backend_, schema_, graph_config_, gate_embedding_dim_,
-        embedding_dim_, snapshot_);
-    encoder_variant_ = "fanin_mean";
-    action_mask_dim_ = 2;
-    decision_state_dim_ = embedding_dim_;
-    int best_round = 0;
-    std::string best_score;
-    require(static_cast<bool>(input >> key >> best_round) &&
-                key == "best_round" && best_round >= 0,
-            "Invalid SmartATPG best round in: " + path);
-    require(static_cast<bool>(input >> key >> best_score) &&
-                key == "best_score" && !best_score.empty(),
-            "Invalid SmartATPG best score in: " + path);
-  } else if (version_ >= 6) {
-    read_smartatpg_v6_metadata(
-        input, backend_, schema_, encoder_variant_, graph_config_,
-        gate_embedding_dim_, embedding_dim_, action_mask_dim_,
-        decision_state_dim_, snapshot_, version_ >= 7, version_ >= 8);
-    int best_round = 0;
-    std::string best_score;
-    require(static_cast<bool>(input >> key >> best_round) &&
-                key == "best_round" && best_round >= 0,
-            "Invalid SmartATPG best round in: " + path);
-    require(static_cast<bool>(input >> key >> best_score) &&
-                key == "best_score" && !best_score.empty(),
-            "Invalid SmartATPG best score in: " + path);
-    if (version_ == 9) {
-      std::string heuristic;
-      std::string circuit_order;
-      int faults_per_circuit = 0;
-      int normal_rounds = 0;
-      int reinforcement_rounds = -1;
-      require(static_cast<bool>(input >> key >> heuristic) &&
-                  key == "heuristic" && heuristic == "scoap_heuristic",
-              "Invalid SmartATPG training heuristic in: " + path);
-      require(static_cast<bool>(input >> key >> circuit_order) &&
-                  key == "circuit_order" &&
-                  circuit_order ==
-                      "c432,c499,c1355,c1908,c2670,c3540,c5315,c6288,"
-                      "c7552,s5378,s9234,s13207,s15850,s35932,s38417,s38584",
-              "Invalid SmartATPG training circuit order in: " + path);
-      require(static_cast<bool>(input >> key >> faults_per_circuit) &&
-                  key == "faults_per_circuit" && faults_per_circuit == 50,
-              "Invalid SmartATPG faults-per-circuit metadata in: " + path);
-      require(static_cast<bool>(input >> key >> normal_rounds) &&
-                  key == "normal_rounds" && normal_rounds == 8,
-              "Invalid SmartATPG normal-round metadata in: " + path);
-      require(static_cast<bool>(input >> key >> reinforcement_rounds) &&
-                  key == "reinforcement_rounds" &&
-                  reinforcement_rounds >= 0 && reinforcement_rounds <= 5,
-              "Invalid SmartATPG reinforcement-round metadata in: " + path);
-    }
-  }
-
-  if (version_ < 4) {
-    require(static_cast<bool>(input >> key >> embedding_dim_) &&
-                key == "embedding_dim" && embedding_dim_ > 0,
-            "Invalid actor embedding dimension in: " + path);
-    gate_embedding_dim_ = embedding_dim_;
+  read_smartatpg_metadata(
+      input, backend_, schema_, encoder_variant_, graph_config_,
+      gate_embedding_dim_, embedding_dim_, action_mask_dim_,
+      decision_state_dim_, snapshot_);
+  int best_round = 0;
+  std::string best_score;
+  require(static_cast<bool>(input >> key >> best_round) &&
+              key == "best_round" && best_round >= 0,
+          "Invalid SmartATPG best round in: " + path);
+  require(static_cast<bool>(input >> key >> best_score) &&
+              key == "best_score" && !best_score.empty(),
+          "Invalid SmartATPG best score in: " + path);
+  if (version_ == 11) {
+    std::string heuristic;
+    std::string circuit_order;
+    int faults_per_circuit = 0;
+    int normal_rounds = 0;
+    int reinforcement_rounds = -1;
+    require(static_cast<bool>(input >> key >> heuristic) &&
+                key == "heuristic" && heuristic == "scoap_heuristic",
+            "Invalid SmartATPG training heuristic in: " + path);
+    require(static_cast<bool>(input >> key >> circuit_order) &&
+                key == "circuit_order" &&
+                circuit_order ==
+                    "c432,c499,c1355,c1908,c2670,c3540,c5315,c6288,"
+                    "c7552,s5378,s9234,s13207,s15850,s35932,s38417,s38584",
+            "Invalid SmartATPG training circuit order in: " + path);
+    require(static_cast<bool>(input >> key >> faults_per_circuit) &&
+                key == "faults_per_circuit" && faults_per_circuit == 50,
+            "Invalid SmartATPG faults-per-circuit metadata in: " + path);
+    require(static_cast<bool>(input >> key >> normal_rounds) &&
+                key == "normal_rounds" && normal_rounds == 8,
+            "Invalid SmartATPG normal-round metadata in: " + path);
+    require(static_cast<bool>(input >> key >> reinforcement_rounds) &&
+                key == "reinforcement_rounds" &&
+                reinforcement_rounds >= 0 && reinforcement_rounds <= 5,
+            "Invalid SmartATPG reinforcement-round metadata in: " + path);
   }
   require(static_cast<bool>(input >> key >> hidden_dim_) && key == "hidden_dim" &&
               hidden_dim_ > 0,
           "Invalid actor hidden dimension in: " + path);
-  require(version_ < 4 ||
-              (version_ == 5 && embedding_dim_ == 13) ||
-              (version_ == 6 && embedding_dim_ == 11) || version_ >= 7,
+  require(embedding_dim_ == gate_embedding_dim_ +
+              (encoder_variant_ == "level_gat_gru" ? 1U : 0U),
           "SmartATPG Actor input dimension does not match its model version");
 
   tensors_.clear();
@@ -424,7 +318,7 @@ void ActorModel::load(const std::string &path) {
   require(!(input >> key), "Unexpected trailing data in actor file: " + path);
 
   const std::vector<std::string> names =
-      required_tensor_names(version_, encoder_variant_);
+      required_tensor_names(encoder_variant_);
   require(tensors_.size() == names.size(), "Unexpected actor tensor count");
   for (const std::string &name : names) {
     tensor(name);
@@ -457,26 +351,8 @@ void ActorModel::load(const std::string &path) {
     }
   }
 
-  gate_weight_ = nullptr;
-  gate_bias_ = nullptr;
-  objective_value_embedding_ = nullptr;
-  if (version_ < 7) {
-  require(tensor("gate_encoder.0.weight").rows == hidden_dim_ &&
-              tensor("gate_encoder.0.weight").cols == embedding_dim_,
-          "gate_encoder weight dimensions do not match actor header");
-  require(tensor("gate_encoder.0.bias").rows *
-                  tensor("gate_encoder.0.bias").cols ==
-              hidden_dim_,
-          "gate_encoder bias dimensions do not match actor header");
-  gate_weight_ = &tensor("gate_encoder.0.weight");
-  gate_bias_ = &tensor("gate_encoder.0.bias");
-  const Tensor &value_embedding = tensor("objective_value_embedding.weight");
-  require(value_embedding.rows == 2 && value_embedding.cols == hidden_dim_,
-          "objective_value_embedding dimensions must be [2, hidden_dim]");
-  objective_value_embedding_ = &value_embedding;
-  }
   require(tensor("backtrace_actor.0.weight").rows == hidden_dim_ &&
-              tensor("backtrace_actor.0.weight").cols == (version_ >= 7 ? embedding_dim_ : hidden_dim_),
+              tensor("backtrace_actor.0.weight").cols == embedding_dim_,
           "V2 backtrace hidden weight dimensions are invalid");
   require(tensor("backtrace_actor.0.bias").values.size() == hidden_dim_,
           "V2 backtrace hidden bias dimensions are invalid");
@@ -486,8 +362,8 @@ void ActorModel::load(const std::string &path) {
   require(tensor("backtrace_actor.2.bias").values.size() == 2,
           "V2 backtrace output bias dimensions must be [2]");
 
-  fixed_direct_kernel_ = version_ >= 7 && hidden_dim_ == 32 &&
-                         (embedding_dim_ == 12 || embedding_dim_ == 13);
+  fixed_direct_kernel_ = hidden_dim_ == 32 &&
+                         (embedding_dim_ == 11 || embedding_dim_ == 12);
   if (fixed_direct_kernel_) {
     const Tensor &hidden_weight = tensor("backtrace_actor.0.weight");
     const Tensor &hidden_bias = tensor("backtrace_actor.0.bias");
@@ -521,10 +397,10 @@ std::vector<float> ActorModel::backtrace_action_logits(
   std::vector<float> state(hidden_dim_);
   std::vector<float> hidden(hidden_dim_);
   std::vector<float> logits(2);
-  require(objective.size() == (version_ >= 7 ? gate_embedding_dim_ : embedding_dim_),
+  require(objective.size() == gate_embedding_dim_,
           "Policy state dimension does not match V2 actor");
   std::vector<float> input = objective;
-  if (version_ >= 7 && encoder_variant_ == "level_gat_gru")
+  if (encoder_variant_ == "level_gat_gru")
     input.push_back(static_cast<float>(objective_value));
   backtrace_action_logits_into(input.data(), objective_value, state.data(),
                                hidden.data(), logits.data());
@@ -540,36 +416,19 @@ void ActorModel::backtrace_action_logits_into(
               logits != nullptr,
           "V2 actor buffers must not be null");
   if (fixed_direct_kernel_) {
-    if (embedding_dim_ == 12) {
-      fixed_direct_actor_32x2<12>(
+    if (embedding_dim_ == 11) {
+      fixed_direct_actor_32x2<11>(
           objective, fixed_hidden_weight_by_input_, fixed_hidden_bias_,
           fixed_output_weight_, fixed_output_bias_, hidden, logits);
     } else {
-      fixed_direct_actor_32x2<13>(
+      fixed_direct_actor_32x2<12>(
           objective, fixed_hidden_weight_by_input_, fixed_hidden_bias_,
           fixed_output_weight_, fixed_output_bias_, hidden, logits);
     }
     return;
   }
-  if (version_ < 7) {
-  require(gate_weight_ != nullptr && gate_bias_ != nullptr &&
-              objective_value_embedding_ != nullptr,
-          "V2 actor tensors are not initialized");
-
-  for (std::size_t row = 0; row < hidden_dim_; ++row) {
-    float value = gate_bias_->values[row];
-    const std::size_t offset = row * embedding_dim_;
-    for (std::size_t col = 0; col < embedding_dim_; ++col) {
-      value += gate_weight_->values[offset + col] * objective[col];
-    }
-    state[row] = std::tanh(value) +
-                 objective_value_embedding_->values[
-                     static_cast<std::size_t>(objective_value) * hidden_dim_ + row];
-  }
-
-  }
-  const float *actor_input = version_ >= 7 ? objective : state;
-  const std::size_t actor_width = version_ >= 7 ? embedding_dim_ : hidden_dim_;
+  const float *actor_input = objective;
+  const std::size_t actor_width = embedding_dim_;
   const Tensor &hidden_weight = tensor("backtrace_actor.0.weight");
   const Tensor &hidden_bias = tensor("backtrace_actor.0.bias");
   for (std::size_t row = 0; row < hidden_dim_; ++row) {
@@ -629,8 +488,7 @@ NativeActorPolicy::NativeActorPolicy(
 
   gate_count_ = gate_names_by_id.size();
   const std::size_t gate_embedding_dim = actor_.gate_embedding_dimension();
-  v2_mask_is_actor_input_ =
-      actor_.version_ == 5;
+  v2_mask_is_actor_input_ = false;
   use_logits_cache_ = actor_.encoder_variant() != "fanin_mean";
   use_fixed_actor_buffers_ = actor_.fixed_direct_kernel_;
   v2_variants_per_gate_ = v2_mask_is_actor_input_ ? 8 : 2;
@@ -690,7 +548,7 @@ int NativeActorPolicy::select(const DecisionRequest &request) {
           request.action_mask[0] ? 1.0f : 0.0f;
       policy_input[gate_embedding_dim + 1] =
           request.action_mask[1] ? 1.0f : 0.0f;
-    } else if (actor_.version_ >= 7 && actor_.encoder_variant() == "level_gat_gru") {
+    } else if (actor_.encoder_variant() == "level_gat_gru") {
       policy_input[gate_embedding_dim] = static_cast<float>(request.objective_value);
     }
     const auto actor_started = std::chrono::steady_clock::now();

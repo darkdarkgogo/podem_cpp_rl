@@ -137,11 +137,8 @@ private:
   int version_ = 0;
   std::string backend_ = "smartatpg", schema_, encoder_variant_, graph_config_, snapshot_;
   std::unordered_map<std::string, Tensor> tensors_;
-  const Tensor *gate_weight_ = nullptr;
-  const Tensor *gate_bias_ = nullptr;
-  const Tensor *objective_value_embedding_ = nullptr;
   bool fixed_direct_kernel_ = false;
-  std::array<float, 13 * 32> fixed_hidden_weight_by_input_{};
+  std::array<float, 12 * 32> fixed_hidden_weight_by_input_{};
   std::array<float, 32> fixed_hidden_bias_{};
   std::array<float, 2 * 32> fixed_output_weight_{};
   std::array<float, 2> fixed_output_bias_{};
@@ -170,7 +167,7 @@ private:
   std::size_t gate_count_ = 0;
   std::vector<float> state_buffer_;
   std::vector<float> hidden_buffer_;
-  std::array<float, 13> fixed_policy_input_buffer_{};
+  std::array<float, 12> fixed_policy_input_buffer_{};
   std::array<float, 32> fixed_state_buffer_{};
   std::array<float, 32> fixed_hidden_buffer_{};
   std::vector<float> v2_embedding_cache_;
