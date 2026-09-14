@@ -1,223 +1,147 @@
-# Data-split SmartATPG training design
+# 基于训练集与验证集划分的 SmartATPG 训练设计
 
-## Goal
+## 目标
 
-Replace the current 16-circuit training workflow with a dataset-driven workflow:
+将当前固定16个电路的训练流程替换为数据集驱动流程：
 
-- train on every BENCH circuit under `PODEM/data/train`;
-- select the best model by evaluating every BENCH circuit under
-  `PODEM/data/validation`;
-- use a backtrack limit of 200 for heuristic profiling, PPO training, validation,
-  and later benchmark execution;
-- run exactly five normal PPO rounds and remove the additional failed-fault
-  reinforcement phase;
-- allow a current 11D BUF-free checkpoint to continue learning on a different
-  circuit/fault manifest while retaining its complete learning state.
+- 使用 `PODEM/data/train` 下的全部 BENCH 电路训练；
+- 使用 `PODEM/data/validation` 下的全部 BENCH 电路选择最佳模型；
+- 启发式筛选、PPO 训练、验证以及后续基准评测统一使用200次 backtrack 上限；
+- 只执行5轮普通 PPO 训练，删除额外的失败 fault 强化阶段；
+- 当前11维、无 BUF 的 checkpoint 可以在保留完整学习状态的前提下，继续训练其他电路和 fault。
 
-The graph feature and artifact contract remains
-`SMARTATPG_FEATURES_V4_11D_CO_NO_BUF`. This change does not alter C++ PODEM's
-internal fanout-stem representation.
+图特征及工件协议继续使用 `SMARTATPG_FEATURES_V4_11D_CO_NO_BUF`。本次改动不改变 C++ PODEM 内部的 fanout stem 表示。
 
-## Dataset contract
+## 数据集约束
 
-The default dataset root is `PODEM/data` and contains:
+默认数据集根目录为 `PODEM/data`，其中包含：
 
-- `train/`: exactly 1024 normalized combinational BENCH subcircuits;
-- `validation/`: the six full validation circuits `b12_C`, `b15_C`, `b17_C`,
-  `b20_C`, `b21_C`, and `b22_C`.
+- `train/`：恰好1024个归一化后的组合逻辑 BENCH 子电路；
+- `validation/`：6个完整验证电路：`b12_C`、`b15_C`、`b17_C`、`b20_C`、`b21_C` 和 `b22_C`。
 
-Both directories are enumerated by sorted filename. Every input must be a
-regular `.bench` file, must have a unique stem, and must pass the 11D BUF-free
-Python graph loader. Explicit `BUF`/`BUFF`, unsupported gates, malformed
-drivers, and combinational cycles are rejected before profiling begins.
+两个目录都按照文件名稳定排序。每个输入必须是普通 `.bench` 文件，文件名主干必须唯一，并且必须通过11维、无 BUF 的 Python 图加载器校验。存在显式 `BUF`/`BUFF`、不支持的门、错误驱动关系或组合环时，必须在开始 fault profiling 前拒绝该数据集。
 
-The preparation output is separate from the source dataset. It records source
-paths, SHA-256 values, circuit hashes, graph statistics, profiling artifacts,
-and fault lists. Changing, adding, removing, or renaming a dataset file makes an
-existing manifest incompatible.
+preparation 输出与源数据集分开保存，记录源文件路径、SHA-256、电路哈希、图统计信息、profiling 工件以及 fault 清单。数据集文件被修改、增加、删除或重命名后，已有 manifest 必须判定为不兼容。
 
-## Fault profiling and split semantics
+## Fault profiling 与数据划分语义
 
-Preparation uses traditional heuristic SCOAP PODEM with
-`backtrack_limit=200` to enumerate and profile the complete collapsed fault
-catalog of every circuit.
+preparation 使用传统启发式 SCOAP PODEM，在 `backtrack_limit=200` 下枚举并测试每个电路的完整折叠 fault catalog。
 
-For a training circuit, the manifest retains every fault whose heuristic
-profile has `outcome == 1`. No ranking, hard-fault truncation, or fixed
-fault-count requirement is applied. A training circuit with zero detected
-faults is rejected because it cannot produce an episode.
+对于训练电路，manifest 保留启发式 profile 中所有 `outcome == 1` 的 fault。不进行难度排名、不截取 hard fault，也不要求每个电路具有固定 fault 数量。如果某个训练电路没有任何 `outcome == 1` fault，则直接报错，因为该电路无法产生有效训练 episode。
 
-For a validation circuit, the manifest retains the entire enumerated fault
-catalog, regardless of heuristic outcome. Detectable, redundant, and faults
-that the heuristic did not resolve within 200 backtracks all remain validation
-episodes. The heuristic outcome is profiling metadata only and never filters
-the validation set.
+对于验证电路，manifest 保留枚举出的完整 fault catalog，不根据启发式结果过滤。可检测 fault、不可测 fault，以及启发式在200次 backtrack 内未解决的 fault 都必须成为验证 episode。启发式 outcome 只作为 profiling 元数据，不能用于过滤验证集。
 
-Training and validation circuit identities and fault lists must remain
-disjoint by directory and manifest section. Validation episodes never call an
-optimizer update and never enter PPO or RND replay/state updates.
+训练集和验证集必须通过目录及 manifest 分区保持隔离。验证 episode 不得调用 optimizer 更新，也不得修改 PPO 或 RND 的训练及统计状态。
 
-## Preparation and resumability
+## Preparation 与断点恢复
 
-Preparation follows a fixed-manifest approach. It scans the dataset once and
-writes one per-circuit profile file as each circuit completes. An atomic
-preparation state records the dataset inventory and completed profiles, so an
-interrupted 1030-circuit profiling run resumes without repeating valid work.
+preparation 采用固定 manifest 方案。数据集只需完整扫描一次；每完成一个电路，就立即写入对应的独立 profile 文件。原子写入的 preparation 状态记录数据集清单和已完成的 profile，使包含1030个电路的 profiling 过程在中断后可以继续，而不必重复处理已经完成且哈希一致的电路。
 
-After all profiles pass validation, preparation atomically publishes the
-training manifest. The manifest contains separate `train_circuits` and
-`validation_circuits` sections rather than overloading one circuit list. Each
-circuit record contains its BENCH path and hashes, complete profile path and
-hash, and the selected episode fault IDs. Training records contain only
-`outcome == 1` IDs; validation records contain every catalog ID.
+所有 profile 完成并通过校验后，preparation 才原子发布正式训练 manifest。manifest 使用独立的 `train_circuits` 和 `validation_circuits` 字段，不能将两种电路混在同一个列表中。每条电路记录包含 BENCH 路径与哈希、完整 profile 路径与哈希，以及对应的 episode fault ID：
 
-Resume validates every reused source and profile hash. A changed source or
-profile is an error; the user must choose a new preparation directory or
-explicitly regenerate the manifest. Partial and finalized files are written by
-temporary-file replacement.
+- 训练记录只包含 `outcome == 1` 的 fault ID；
+- 验证记录包含完整 catalog 的全部 fault ID。
 
-## Five-round training flow
+恢复 preparation 时，必须校验复用的每个源文件及 profile 文件哈希。如果任一文件发生变化，应明确报错；用户需要选择新的 preparation 目录或显式重新生成 manifest。局部状态和最终文件都通过临时文件替换的方式原子写入。
 
-The Linux launcher prepares the dataset manifest, constructs graphs and native
-trainers for all training circuits, and constructs read-only evaluators for all
-validation circuits. It runs exactly five rounds with a backtrack limit of 200.
+## 五轮训练流程
 
-Each round contains every retained training fault exactly once. Episode order
-is deterministic for a given seed and round, but is shuffled across
-all training circuits so filename order does not form a curriculum. Existing
-per-episode checkpointing is retained so an interrupted round resumes at the
-next episode without replaying completed updates.
+Linux 启动器先准备数据集 manifest，再为全部训练电路创建图和原生 trainer，并为全部验证电路创建只读 evaluator。训练固定执行5轮，backtrack 上限固定为200。
 
-At the end of each complete round, the current policy is evaluated against
-every validation fault exactly once with no parameter or RND-statistic update.
-The best-model score is ordered as follows:
+每轮中，每个被保留的训练 fault 恰好出现一次。给定相同 seed 和轮次时，episode 顺序必须确定；所有训练电路的 episode 会放在一起打乱，避免文件名顺序形成隐式课程学习。保留现有的逐 episode checkpoint，使训练在一轮中断后能够从下一个 episode 继续，不重复已经完成的参数更新。
 
-1. maximize validation detected-fault count (equivalently coverage because the
-   validation catalog is fixed);
-2. minimize total validation backtracks;
-3. minimize total validation backtrace steps;
-4. maximize total validation extrinsic return;
-5. prefer the earlier round for an exact tie.
+每个完整训练轮次结束后，当前 policy 必须在验证集的每一个 fault 上恰好评估一次，而且不得更新任何参数或 RND 统计。最佳模型的比较顺序如下：
 
-The latest checkpoint is saved independently from the best checkpoint. A run
-that is interrupted during validation records validation progress and resumes
-without training the next round or accidentally promoting a partial result.
+1. 验证集检出 fault 数量最大，即固定 catalog 下的覆盖率最高；
+2. 验证集总 backtracks 最少；
+3. 验证集总 backtrace steps 最少；
+4. 验证集总 extrinsic return 最大；
+5. 以上完全相同时，优先保留更早的轮次。
 
-The failed-fault reinforcement phase and its checkpoint, metrics, unresolved
-fault list, CLI option, launcher step, and reinforced model output are removed
-from this workflow. The final benchmark bundle uses the validation-selected
-`model_best.txt`.
+latest checkpoint 与 best checkpoint 分开保存。如果程序在验证过程中中断，必须记录验证进度；恢复后从未完成的验证 fault 继续，不能进入下一轮训练，也不能使用不完整的验证结果更新最佳模型。
 
-## Checkpoint modes
+从本流程中删除失败 fault 强化阶段及其 checkpoint、metrics、未解决 fault 清单、CLI 参数、启动器步骤和 reinforced model 输出。最终 benchmark bundle 使用验证集选出的 `model_best.txt`。
 
-Two intentionally different modes are supported.
+## Checkpoint 使用模式
 
-### Resume the same run
+系统支持两种含义不同的 checkpoint 模式。
 
-`--resume` requires the same manifest hash, output directory, five-round
-configuration, backtrack limit, encoder variant, and seed. It restores all
-model and learning state plus the exact round, episode, validation, and random
-number generator progress.
+### 恢复同一个训练任务
 
-### Continue on a different dataset
+`--resume` 要求 manifest 哈希、输出目录、5轮配置、backtrack 上限、编码器类型和 seed 完全一致。恢复内容包括全部模型和学习状态，以及精确的训练轮次、episode、验证进度和随机数生成器状态。
 
-`--continue-from <checkpoint>` starts a new run and is mutually exclusive with
-resuming existing progress. It accepts a current BUF-free 11D training or best
-checkpoint and restores the complete agent learning state:
+### 在不同数据集上继续训练
 
-- graph encoder, Actor, Critic, and old-policy weights;
-- PPO optimizer state;
-- RND target/predictor, optimizer, and normalization statistics;
-- model-side random state required for continuous learning.
+`--continue-from <checkpoint>` 用于启动一个新的训练任务，并且不能与恢复已有进度同时使用。它只接受当前无 BUF、11维的 training checkpoint 或 best checkpoint，并恢复完整 agent 学习状态：
 
-It does not restore the source run's manifest binding, circuit trainers,
-round/episode counters, validation progress, best score, or best checkpoint.
-Those are initialized for the new manifest, and all best-model decisions are
-made again on the new validation set. Tensor shapes, encoder variant, feature
-schema, graph configuration, and current checkpoint format must match exactly;
-old 12D or legacy artifact formats are rejected.
+- 图编码器、Actor、Critic 和 old-policy 权重；
+- PPO optimizer 状态；
+- RND target、predictor、optimizer 及归一化统计；
+- 连续训练所需的模型侧随机状态。
 
-The new output directory records the source checkpoint path and SHA-256 so the
-continuation lineage is auditable. An already nonempty output directory may
-only be used through same-run `--resume`, never silently overwritten by
-`--continue-from`.
+以下内容不从旧任务继承：旧 manifest 绑定、旧电路 trainer、轮次和 episode 计数、验证进度、最佳分数及最佳 checkpoint。新任务根据新的 manifest 重新初始化这些状态，并完全使用新的验证集重新选择最佳模型。
 
-## Linux entry points and artifacts
+Tensor 形状、编码器类型、特征 schema、图配置及 checkpoint 格式必须严格匹配。旧12维 checkpoint 和其他历史工件格式必须拒绝。
 
-`train_smartatpg_linux.sh` defaults to:
+新输出目录记录来源 checkpoint 的路径及 SHA-256，保证继续训练的来源可追踪。`--continue-from` 不能写入已有内容的输出目录；非空输出目录只能通过同任务 `--resume` 使用，禁止静默覆盖。
 
-- dataset root `data`;
-- five rounds;
-- backtrack limit 200;
-- GAT-GRU encoder on physical GPU 0;
-- a new output directory whose name identifies the 11D BUF-free data-split
-  five-round protocol.
+## Linux 入口与输出工件
 
-The launcher produces:
+`train_smartatpg_linux.sh` 默认使用：
 
-- `preparation/training_manifest.json` and resumable per-circuit profiles;
-- `smartatpg_gat_gru/training_state.pth` for same-run resume;
-- `smartatpg_gat_gru/best_training_state.pth` selected only by validation;
-- `smartatpg_gat_gru/model_latest.txt` and `model_best.txt`;
-- per-round training and validation metrics plus TensorBoard events;
-- `benchmark_bundle/` containing only the validation-selected GAT-GRU model.
+- 数据集根目录 `data`；
+- 5轮训练；
+- 200次 backtrack 上限；
+- 物理 GPU 0 上的 GAT-GRU 编码器；
+- 名称中明确标记11维、无 BUF、数据集划分和5轮协议的新输出目录。
 
-The exported actor becomes `SMARTATPG_MODEL_V12` and records the preparation
-manifest hash, five-round protocol, and backtrack limit without embedding the
-1024 circuit names in its header. The portable and native loaders accept only
-this new model format. The unchanged 11D descriptor file remains
-`SMARTATPG_EMBEDDINGS_V7`, paired to a model by snapshot hash. Manifest,
-checkpoint, training-state, and benchmark-bundle format identifiers are also
-incremented so the old 16-circuit, 50-fault, eight-round protocol cannot be
-mistaken for this one.
-Absolute paths are not used as identity: manifests store relocatable paths
-relative to the preparation or dataset root plus content hashes, allowing the
-repository and dataset to move from Windows to Linux.
+启动器生成：
 
-## Error handling
+- `preparation/training_manifest.json` 及可断点恢复的逐电路 profile；
+- `smartatpg_gat_gru/training_state.pth`，用于恢复同一训练任务；
+- `smartatpg_gat_gru/best_training_state.pth`，只由验证集结果决定；
+- `smartatpg_gat_gru/model_latest.txt` 和 `model_best.txt`；
+- 每轮训练与验证 metrics，以及 TensorBoard events；
+- 只包含验证集最佳 GAT-GRU 模型的 `benchmark_bundle/`。
 
-The workflow fails explicitly when:
+导出的 Actor 升级为 `SMARTATPG_MODEL_V12`。其头部记录 preparation manifest 哈希、5轮训练协议及 backtrack 上限，不把1024个电路名称全部写入模型头。portable 和 C++ 原生加载器只接受该新模型格式。
 
-- either split is absent, empty, contains duplicate stems, or contains a
-  non-BENCH entry selected for processing;
-- any graph violates the 11D BUF-free input contract;
-- profiling fails, returns duplicate fault IDs, or a training circuit has no
-  `outcome == 1` faults;
-- source/profile hashes change during resume;
-- validation does not evaluate the full manifest catalog exactly once;
-- same-run resume configuration differs;
-- continuation checkpoint architecture or format is incompatible;
-- `--resume` and `--continue-from` are requested together;
-- continuation targets a nonempty output directory.
+11维 descriptor 文件结构不变，继续使用 `SMARTATPG_EMBEDDINGS_V7`，并通过 snapshot 哈希与模型配对。manifest、checkpoint、training state 和 benchmark bundle 的格式标识全部升级，防止旧的16电路、每电路50 fault、8轮协议被误认为当前流程。
 
-Errors name the split, circuit, source path, and operation so failures in a
-large dataset can be located without inspecting the whole run.
+绝对路径不作为工件身份。manifest 保存相对于 preparation 或数据集根目录的可迁移路径，并同时保存内容哈希，使仓库和数据集从 Windows 移至 Linux 后仍能继续使用。
 
-## Verification
+## 错误处理
 
-Tests must cover:
+出现以下情况时必须明确失败：
 
-1. sorted discovery of all 1024 training and six validation BENCH files;
-2. training fault selection includes every and only `outcome == 1` profile;
-3. validation fault selection includes the entire catalog, including non-1
-   outcomes;
-4. the backtrack limit is 200 in profiling, training, validation, launcher, and
-   benchmark metadata;
-5. deterministic episode order contains each retained training fault once;
-6. validation performs no optimizer/RND update and controls best-model
-   selection;
-7. exactly five normal rounds are allowed and no reinforcement phase runs;
-8. preparation resumes per-circuit profiling and rejects changed hashes;
-9. same-run resume restores exact progress;
-10. cross-manifest continuation restores complete learning state while resetting
-    progress and best-validation state;
-11. incompatible legacy/12D checkpoints are rejected;
-12. generated manifests and checkpoints remain usable after relocating the
-    repository to a Linux path;
-13. a small end-to-end fixture trains, validates, resumes, continues onto a
-    different manifest, exports the best V12 model, and prepares a benchmark
-    bundle.
+- 任一数据划分不存在、为空、存在重复文件名主干，或者选中的处理项不是 BENCH 文件；
+- 任一图违反11维无 BUF 输入协议；
+- profiling 失败、返回重复 fault ID，或者训练电路不存在 `outcome == 1` fault；
+- 恢复过程中发现源文件或 profile 哈希变化；
+- 验证没有对 manifest 中完整 fault catalog 恰好执行一次；
+- 同任务恢复配置不一致；
+- 继续训练使用的 checkpoint 架构或格式不兼容；
+- 同时请求 `--resume` 和 `--continue-from`；
+- 继续训练的目标输出目录不是空目录。
 
-Full production-data profiling and five-round GPU training are operational
-runs, not unit tests, because they can contain a very large number of fault
-episodes.
+错误信息必须包含数据划分、被处理电路、源路径和操作名称，确保大规模数据集中的失败可以直接定位。
+
+## 验证要求
+
+测试必须覆盖：
+
+1. 按稳定顺序发现全部1024个训练 BENCH 和6个验证 BENCH；
+2. 训练 fault 清单包含所有且仅包含 `outcome == 1` 的 profile；
+3. 验证 fault 清单包含完整 catalog，包括 outcome 不为1的 fault；
+4. profiling、训练、验证、Linux 启动器和 benchmark 元数据的 backtrack 上限均为200；
+5. 确定性 episode 顺序中，每个保留的训练 fault 恰好出现一次；
+6. 验证过程不更新 optimizer 或 RND，并且完全控制最佳模型选择；
+7. 只允许5轮普通训练，且不运行强化阶段；
+8. preparation 可以按电路恢复 profiling，并拒绝哈希发生变化的文件；
+9. 同任务 resume 能恢复精确进度；
+10. 跨 manifest 继续训练能恢复完整学习状态，同时重置进度和最佳验证状态；
+11. 不兼容的历史或12维 checkpoint 会被拒绝；
+12. manifest 和 checkpoint 在仓库迁移到 Linux 路径后仍能使用；
+13. 小型端到端 fixture 能完成训练、验证、resume、切换 manifest 继续训练、导出最佳 V12 模型并准备 benchmark bundle。
+
+生产数据集的完整 profiling 和5轮 GPU 训练可能包含大量 fault episode，属于正式运行验收，不作为普通单元测试执行。
