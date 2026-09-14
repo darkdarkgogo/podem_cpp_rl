@@ -328,7 +328,7 @@ int ATPG::FindType(const string &gatetype) {
     if (targc != 5) error("Bad Gate Record");
     return (NOT);
   }
-  if (gatetype == "buf") {
+  if (gatetype == "buf" || gatetype == "BUF") {
     if (targc != 5) error("Bad Gate Record");
     return (BUF);
   }

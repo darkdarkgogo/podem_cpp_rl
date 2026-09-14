@@ -4,7 +4,7 @@
 
 为 C++ PODEM 项目后续的强化学习生成训练集和验证集。训练集包含恰好 1024 个
 确定、唯一的组合逻辑 BENCH 子电路，源电路来自 ISCAS'89 和 ITC'99 基准电路集。
-验证集使用 DeepTPI 验证集中的 9 个同名基准电路，但重新取得并生成其普通门版本。
+验证集使用 DeepTPI 验证集中的 6 个 ITC99 同名基准电路，并直接使用普通门 BENCH 版本。
 全部输出必须保留普通门级表示，整个流程不得经过 ABC、AIGER、AIG 文件或仅包含
 AIG 门型的图表示。
 
@@ -17,33 +17,25 @@ DeepTPI 的代码和 NPZ 数据不作为生成器输入，也不被修改。这�
 
 - `train/`：恰好 1024 个训练 `.bench`，命名格式为
   `<数据集>_<源电路>_<序号>.bench`，训练代码可以直接用 `*.bench` 扫描。
-- `validation/`：9 个完整验证 `.bench`，文件名为 `b12_C.bench`、
-  `b15_C.bench`、`b17_C.bench`、`b20_C.bench`、`b21_C.bench`、
-  `b22_C.bench`、`i2c.bench`、`mem_ctrl.bench` 和 `max.bench`。
+- `validation/`：6 个完整验证 `.bench`，文件名为 `b12_C.bench`、
+  `b15_C.bench`、`b17_C.bench`、`b20_C.bench`、`b21_C.bench` 和
+  `b22_C.bench`。
 - `manifest.json`：记录数据划分、生成参数、数据来源、源文件及输出文件的
   SHA-256、提取边界和每个电路的统计信息。
-- `summary.json`：分别记录训练集和验证集的源电路、门类型、节点数、深度、
-  输入数和输出数分布。
-
-下载的原始压缩包和解压后的源文件存放在 `PODEM/data/_sources/`，不与最终
-训练电路混放。
+- 生成器脚本和测试位于 `PODEM/scripts/`、`PODEM/tests/`；最终数据目录不混入
+  AIG、NPZ、标签或故障文件。
 
 ## 数据源获取
 
-生成器从 CVUT 数字电路基准库下载公开压缩包：
+本次实际使用的源文件如下，具体绝对路径和源文件 SHA-256 均记录在
+`data/manifest.json`：
 
-- `https://ddd.fit.cvut.cz/www/prj/Benchmarks/ISCAS.7z`
-- `https://ddd.fit.cvut.cz/www/prj/Benchmarks/ITC99.7z`
-- `https://ddd.fit.cvut.cz/www/prj/Benchmarks/IWLS2005.7z`，仅用于取得验证集中的
-  `i2c`、`mem_ctrl` 和 `max` 普通门网表。
-
-如果 `PODEM/sample_circuits/` 中已有对应的原始 BENCH 文件，可以复用，但必须
-在清单中记录电路名称和内容哈希。下载结果会被缓存，压缩包已存在时不重复下载。
-解压阶段支持 `7z`、`7zz`，也允许通过命令行指定本地压缩包路径。
-
-源文件清单记录数据集、压缩包网址或本地路径、压缩包哈希、压缩包内相对路径和
-文件哈希。文件名中包含 `_aig`、`_binary` 或 `_scan` 的已转换文件不进入原始
-数据清单。
+- ISCAS'89：项目已有的普通门 `PODEM/sample_circuits/*.bench`，使用
+  `s13207`、`s15850`、`s38417`、`s38584`、`s5378` 和 `s9234`。
+- ITC'99：官方 I99T 仓库中的普通门 `b14_C.bench`，仅作训练源；验证源的
+  `b12_C`、`b15_C`、`b17_C`、`b20_C`、`b21_C` 和 `b22_C` 不进入训练。
+生成器只接受 BENCH 或组合逻辑 BLIF；带锁存器、子电路或其他时序/黑盒语义的
+BLIF 会拒绝。下载或缓存的源文件不复制到最终 `data/` 目录，避免和输出混放。
 
 ## 普通门归一化
 
@@ -127,7 +119,7 @@ z = BUF(n1)
 只有以下检查全部通过，生成过程才算成功：
 
 1. `data/train/` 中恰好存在 1024 个 `.bench`，`data/validation/` 中恰好存在
-   上述 9 个 `.bench`。
+   上述 6 个 `.bench`。
 2. 训练集和验证集的每个文件都能被
    `rl_podem.smartatpg_features.load_circuit_graph` 解析。
 3. 每个电路都无环，并且驱动、输入和输出完整。
@@ -140,7 +132,7 @@ z = BUF(n1)
 9. 从训练集和验证集分层抽样的文件能够被 C++ PODEM 可执行程序成功加载，且
    解析得到的输入、输出和门数量与生成器记录一致。
 10. 使用相同输入和随机种子重复运行时，清单和电路哈希完全一致。
-11. 9 个验证源电路均未用于生成任何训练子电路。
+11. 6 个验证源电路均未用于生成任何训练子电路。
 
 ## 失败处理
 
