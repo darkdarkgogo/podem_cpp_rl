@@ -3,6 +3,7 @@
 import argparse
 import json
 from pathlib import Path
+import re
 import shutil
 
 from convert_binary_bench import convert_binary_bench
@@ -20,28 +21,42 @@ from smartatpg_portable import (
 )
 
 
-MANIFEST_FORMAT = "SMARTATPG_BENCHMARK_BUNDLE_V8_11D_CO_NO_BUF"
+MANIFEST_FORMAT = "SMARTATPG_BENCHMARK_BUNDLE_V9_DATA_SPLIT_11D_CO_NO_BUF"
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _model_training_protocol(model):
-    protocol = {
-        "heuristic": model.heuristic,
-        "circuit_order": list(model.circuit_order),
-        "faults_per_circuit": model.faults_per_circuit,
-        "normal_rounds": model.normal_rounds,
-        "reinforcement_rounds": model.reinforcement_rounds,
+def _validate_training_protocol(protocol):
+    required = {
+        "manifest_hash",
+        "backtrack_limit",
+        "normal_rounds",
+        "training_circuit_count",
+        "validation_circuit_count",
     }
+    if not isinstance(protocol, dict) or set(protocol) != required:
+        raise ValueError("Benchmark model training protocol is incomplete")
     if (
-        protocol["heuristic"] != "scoap_heuristic"
-        or protocol["circuit_order"] != list(CIRCUITS)
-        or protocol["faults_per_circuit"] != 50
-        or protocol["normal_rounds"] != 8
-        or not isinstance(protocol["reinforcement_rounds"], int)
-        or not 1 <= protocol["reinforcement_rounds"] <= 5
+        not isinstance(protocol["manifest_hash"], str)
+        or re.fullmatch(r"[0-9a-f]{64}", protocol["manifest_hash"]) is None
+        or protocol["backtrack_limit"] != 200
+        or protocol["normal_rounds"] != 5
+        or not isinstance(protocol["training_circuit_count"], int)
+        or protocol["training_circuit_count"] <= 0
+        or not isinstance(protocol["validation_circuit_count"], int)
+        or protocol["validation_circuit_count"] <= 0
     ):
         raise ValueError("Benchmark model training protocol is incompatible")
     return protocol
+
+
+def _model_training_protocol(model):
+    return _validate_training_protocol({
+        "manifest_hash": model.manifest_hash,
+        "backtrack_limit": model.backtrack_limit,
+        "normal_rounds": model.normal_rounds,
+        "training_circuit_count": model.training_circuit_count,
+        "validation_circuit_count": model.validation_circuit_count,
+    })
 
 
 def _atomic_json(path, value):
@@ -80,22 +95,12 @@ def _validate_resume(path):
         raise ValueError("Existing benchmark bundle does not contain all 16 circuits")
     if set(manifest.get("models", {})) != {"smartatpg_gat_gru"}:
         raise ValueError("Benchmark bundle must contain only the GAT-GRU model")
-    protocol = manifest.get("training_protocol")
-    reinforcement_rounds = (
-        protocol.get("reinforcement_rounds") if isinstance(protocol, dict) else None
-    )
-    if (
-        not isinstance(protocol, dict)
-        or protocol.get("heuristic") != "scoap_heuristic"
-        or protocol.get("circuit_order") != list(CIRCUITS)
-        or protocol.get("faults_per_circuit") != 50
-        or protocol.get("normal_rounds") != 8
-        or not isinstance(reinforcement_rounds, int)
-        or not 1 <= reinforcement_rounds <= 5
-    ):
-        raise ValueError("Benchmark bundle training protocol is incompatible")
+    protocol = _validate_training_protocol(manifest.get("training_protocol"))
     records = [*manifest["models"].values(), *manifest["circuits"]]
     for record in records:
+        required = {"path"} if "path" in record else {"circuit", "fault_map"}
+        if set(record.get("artifact_sha256", {})) != required:
+            raise ValueError("Benchmark bundle artifact list is incomplete")
         for key, expected_hash in record["artifact_sha256"].items():
             artifact = _bundle_path(bundle_root, record[key])
             if not artifact.is_file() or sha256_file(artifact) != expected_hash:

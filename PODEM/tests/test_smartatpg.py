@@ -27,7 +27,12 @@ from rl_podem.curriculum import CppPodemCurriculumEvaluator
 from rl_podem.cpp_bridge import (
     _load_cpp_embedding_artifact, catalog_cpp_podem, export_actor_v2_state_dict,
 )
-from rl_podem.smartatpg_artifacts import export_actor, export_descriptors, snapshot_id, policy_from_state
+from rl_podem.smartatpg_artifacts import (
+    export_actor as _export_actor,
+    export_descriptors,
+    snapshot_id,
+    policy_from_state,
+)
 from rl_podem.artifact_paths import training_output_paths
 from smartatpg_portable import (
     CIRCUITS,
@@ -45,6 +50,19 @@ q = NOR(n, b)
 OUTPUT(y)
 OUTPUT(q)
 """
+
+TRAINING_PROTOCOL = {
+    "manifest_hash": "a" * 64,
+    "backtrack_limit": 200,
+    "normal_rounds": 5,
+    "training_circuit_count": 1024,
+    "validation_circuit_count": 6,
+}
+
+
+def export_actor(state, path, **kwargs):
+    kwargs.setdefault("training_protocol", TRAINING_PROTOCOL)
+    return _export_actor(state, path, **kwargs)
 
 
 class SmartATPGTests(unittest.TestCase):
@@ -269,13 +287,7 @@ class SmartATPGTests(unittest.TestCase):
         export_actor(
             GATGRUSmartATPGPolicy().state_dict(), gat,
             best_round=1, best_score=(-1, 2, 3, -4, 1),
-            training_protocol={
-                "heuristic": "scoap_heuristic",
-                "circuit_order": list(CIRCUITS),
-                "faults_per_circuit": 50,
-                "normal_rounds": 8,
-                "reinforcement_rounds": 5,
-            },
+            training_protocol=TRAINING_PROTOCOL,
         )
         bundle = root / "bundle"
         with patch.object(prepare_bundle, "ROOT", root):
@@ -303,6 +315,13 @@ class SmartATPGTests(unittest.TestCase):
             state[name] = state[name][:-1]
             with self.assertRaisesRegex(ValueError, "graph tensor shape"):
                 export_actor(state, Path(self.temp.name) / "bad_graph.txt")
+
+    def test_v12_export_requires_data_split_training_protocol(self):
+        with self.assertRaisesRegex(ValueError, "requires data-split"):
+            _export_actor(
+                SmartATPGPolicy().state_dict(),
+                Path(self.temp.name) / "missing_protocol.txt",
+            )
 
     def test_direct_actor_artifacts_reject_invalid_output_shapes(self):
         for policy_class in (SmartATPGPolicy, GATGRUSmartATPGPolicy):
@@ -359,6 +378,33 @@ class SmartATPGTests(unittest.TestCase):
         self.assertFalse(agent.buffer.steps)
         for key, value in before.items():
             torch.testing.assert_close(value, agent.policy_old.state_dict()[key], rtol=0, atol=0)
+
+    def test_data_split_validation_evaluator_does_not_update_ppo_or_rnd(self):
+        from rl_podem.cpp_bridge import CppPodemBacktraceV2Evaluator
+
+        agent = GATGRUSmartATPGPPOAgent(
+            {"test": self.graph}, rnd_beta=0.05, k_epochs=1
+        )
+        evaluator = CppPodemBacktraceV2Evaluator(self.graph, agent=agent)
+        before = agent.training_state_dict()
+        request = {
+            "mode": "backtrace",
+            "objective_name": "y",
+            "objective_value": 1,
+            "candidate_names": ["n", "b"],
+            "action_mask": [True, True],
+            "sequence": 1,
+        }
+        self.assertIn(evaluator.decision_callback(request), (0, 1))
+        self.assertFalse(agent.buffer.steps)
+        after = agent.training_state_dict()
+        self.assertEqual(after["update_count"], before["update_count"])
+        self.assertEqual(after["optimizer"], before["optimizer"])
+        self.assertEqual(after["rnd_optimizer"], before["rnd_optimizer"])
+        self.assertEqual(after["rnd_error_stats"], before["rnd_error_stats"])
+        for section in ("policy", "policy_old", "rnd"):
+            for key, value in before[section].items():
+                torch.testing.assert_close(value, after[section][key], rtol=0, atol=0)
 
     def test_generated_sidecars_cannot_overwrite_checkpoints(self):
         root = Path(self.temp.name)
@@ -422,12 +468,15 @@ class SmartATPGTests(unittest.TestCase):
             cpp_podem.validate_actor_artifacts(str(embeddings), str(actor), self.graph.circuit_hash,
                                               list(self.graph.names), "smartatpg")
 
-    def test_v10_contains_fanin_mean_encoder_and_portable_inference_matches_torch(self):
+    def test_v12_contains_fanin_mean_encoder_and_portable_inference_matches_torch(self):
         state = self.agent().policy_old.state_dict()
-        model_path = Path(self.temp.name) / "model_v10.txt"
+        model_path = Path(self.temp.name) / "model_v12.txt"
         export_actor(state, model_path, best_round=4, best_score=(-200, 3, 40, -5, 4))
         model = load_portable_model(model_path)
-        self.assertEqual(model.model_format, "SMARTATPG_MODEL_V10")
+        self.assertEqual(model.model_format, "SMARTATPG_MODEL_V12")
+        self.assertEqual(model.manifest_hash, "a" * 64)
+        self.assertEqual(model.backtrack_limit, 200)
+        self.assertEqual(model.normal_rounds, 5)
         self.assertEqual(model.actor_input_dim, 11)
         self.assertEqual(model.best_round, 4)
         self.assertEqual(model.best_score, (-200.0, 3.0, 40.0, -5.0, 4.0))
@@ -440,7 +489,7 @@ class SmartATPGTests(unittest.TestCase):
 
         changed = {key: value.clone() for key, value in state.items()}
         changed["graph_encoder.layer.bias"].add_(0.5)
-        changed_path = Path(self.temp.name) / "changed_v10.txt"
+        changed_path = Path(self.temp.name) / "changed_v12.txt"
         export_actor(changed, changed_path)
         changed_model = load_portable_model(changed_path)
         changed_embedding = compute_portable_embeddings(changed_model, portable_graph)
@@ -467,11 +516,11 @@ class SmartATPGTests(unittest.TestCase):
                 self.assertIsNotNone(parameter.grad)
                 self.assertGreater(float(parameter.grad.abs().sum()), 0.0)
 
-        model_path = Path(self.temp.name) / "gat_gru_v10.txt"
+        model_path = Path(self.temp.name) / "gat_gru_v12.txt"
         export_actor(policy.state_dict(), model_path)
         model = load_portable_model(model_path)
         self.assertEqual(model.encoder_variant, "level_gat_gru")
-        self.assertEqual(model.model_format, "SMARTATPG_MODEL_V10")
+        self.assertEqual(model.model_format, "SMARTATPG_MODEL_V12")
         self.assertEqual(model.actor_input_dim, 12)
         self.assertFalse(any(
             name.startswith(("gate_encoder.", "objective_value_embedding."))
@@ -495,7 +544,7 @@ class SmartATPGTests(unittest.TestCase):
             )
             torch.testing.assert_close(expected, actual, atol=1e-5, rtol=1e-4)
 
-        baseline_path = Path(self.temp.name) / "baseline_v10.txt"
+        baseline_path = Path(self.temp.name) / "baseline_v12.txt"
         export_actor(SmartATPGPolicy().state_dict(), baseline_path)
         with self.assertRaisesRegex(RuntimeError, "graph configuration|encoder variant|snapshot"):
             cpp_podem.validate_actor_artifacts(
@@ -584,10 +633,10 @@ class SmartATPGTests(unittest.TestCase):
                     str(legacy), str(actor), self.graph.circuit_hash,
                     list(self.graph.names), "smartatpg",
                 )
-        for version in range(5, 10):
+        for version in range(5, 12):
             legacy_model = Path(self.temp.name) / f"legacy_model_v{version}.txt"
             legacy_model.write_text(f"SMARTATPG_MODEL_V{version}\n", encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "requires a V10 or V11 model"):
+            with self.assertRaisesRegex(ValueError, "requires a V12 model"):
                 load_portable_model(legacy_model)
 
     def test_embedding_v1_artifact_is_rejected(self):

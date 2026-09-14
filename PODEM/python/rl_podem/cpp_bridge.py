@@ -243,22 +243,23 @@ def export_actor_v2_state_dict(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     temporary = output_path.with_suffix(output_path.suffix + ".tmp")
     protocol_keys = (
-        "heuristic", "circuit_order", "faults_per_circuit",
-        "normal_rounds", "reinforcement_rounds",
+        "manifest_hash", "backtrack_limit", "normal_rounds",
+        "training_circuit_count", "validation_circuit_count",
     )
-    has_protocol = all(key in metadata for key in protocol_keys)
-    if any(key in metadata for key in protocol_keys) and not has_protocol:
+    if not all(key in metadata for key in protocol_keys):
         raise ValueError("SmartATPG training protocol metadata is incomplete")
-    if has_protocol and (
-        metadata["heuristic"] != "scoap_heuristic"
-        or not metadata["circuit_order"]
-        or int(metadata["faults_per_circuit"]) != 50
-        or int(metadata["normal_rounds"]) != 8
-        or not 0 <= int(metadata["reinforcement_rounds"]) <= 5
+    manifest_hash = str(metadata["manifest_hash"])
+    if (
+        len(manifest_hash) != 64
+        or any(char not in "0123456789abcdef" for char in manifest_hash)
+        or int(metadata["backtrack_limit"]) != 200
+        or int(metadata["normal_rounds"]) != 5
+        or int(metadata["training_circuit_count"]) <= 0
+        or int(metadata["validation_circuit_count"]) <= 0
     ):
         raise ValueError("SmartATPG training protocol metadata is invalid")
     with temporary.open("w", encoding="utf-8", newline="\n") as output:
-        output.write("SMARTATPG_MODEL_V11\n" if has_protocol else "SMARTATPG_MODEL_V10\n")
+        output.write("SMARTATPG_MODEL_V12\n")
         for key in (
             "backend", "feature_schema", "encoder_variant", "graph_config",
             "gate_embedding_dim", "actor_input_dim", "action_mask_dim",
@@ -267,9 +268,8 @@ def export_actor_v2_state_dict(
             output.write(f"{key} {metadata[key]}\n")
         output.write(f"best_round {int(metadata.get('best_round', 0))}\n")
         output.write(f"best_score {metadata.get('best_score', 'none')}\n")
-        if has_protocol:
-            for key in protocol_keys:
-                output.write(f"{key} {metadata[key]}\n")
+        for key in protocol_keys:
+            output.write(f"{key} {metadata[key]}\n")
         output.write(f"hidden_dim {hidden_dim}\n")
         for name in tensor_names:
             tensor = state_dict[name].detach().cpu().float().contiguous()
@@ -516,6 +516,10 @@ class CppPodemBacktraceV2Trainer(_CppPodemTrainerBase):
         return summary
 
 class CppPodemBacktraceV2Evaluator(CppPodemBacktraceV2Trainer):
+    def __init__(self, graph, agent: BacktracePPOAgentV2):
+        super().__init__(graph, agent=agent)
+        self.decision_sequences: set[int] = set()
+
     def decision_callback(self, request: dict[str, Any]) -> int:
         if request["mode"] != "backtrace":
             raise ValueError("V2 actor supports backtrace decisions only.")
@@ -526,6 +530,7 @@ class CppPodemBacktraceV2Evaluator(CppPodemBacktraceV2Trainer):
             candidates,
             request.get("action_mask", [True, True]),
         )
+        self.decision_sequences.add(int(request["sequence"]))
         return next(
             index for index, candidate in enumerate(candidates) if candidate is selected
         )
@@ -544,6 +549,7 @@ class CppPodemBacktraceV2Evaluator(CppPodemBacktraceV2Trainer):
     ) -> dict[str, Any]:
         if rl_mode != "backtrace_rl":
             raise ValueError("V2 actor requires rl_mode='backtrace_rl'.")
+        self.decision_sequences = set()
         resolved_circuit_path = Path(circuit_path).resolve()
         actual_hash = _fnv1a_file_hash(resolved_circuit_path)
         if actual_hash != self.circuit_hash:

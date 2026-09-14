@@ -56,23 +56,23 @@ def snapshot_id(state):
 def export_actor(
     state, path, best_round=0, best_score=None, training_protocol=None,
 ):
+    if training_protocol is None:
+        raise ValueError("SMARTATPG_MODEL_V12 requires data-split training metadata")
     identity = snapshot_id(state)
     metadata = inference_metadata(state)
     score_text = (
         "none" if best_score is None
         else ",".join(format(float(value), ".17g") for value in best_score)
     )
-    protocol_metadata = {}
-    if training_protocol is not None:
-        protocol_metadata = {
-            "heuristic": training_protocol["heuristic"],
-            "circuit_order": ",".join(training_protocol["circuit_order"]),
-            "faults_per_circuit": int(training_protocol["faults_per_circuit"]),
-            "normal_rounds": int(training_protocol["normal_rounds"]),
-            "reinforcement_rounds": int(
-                training_protocol["reinforcement_rounds"]
-            ),
-        }
+    protocol_metadata = {
+        "manifest_hash": training_protocol["manifest_hash"],
+        "backtrack_limit": int(training_protocol["backtrack_limit"]),
+        "normal_rounds": int(training_protocol["normal_rounds"]),
+        "training_circuit_count": int(training_protocol["training_circuit_count"]),
+        "validation_circuit_count": int(
+            training_protocol["validation_circuit_count"]
+        ),
+    }
     export_actor_v2_state_dict(state, path, metadata={
         **metadata,
         "snapshot": identity,
@@ -127,19 +127,19 @@ def export_descriptors(state, graph, path, policy=None):
     return len(graph.names), GATE_EMBEDDING_DIM
 
 
-def export_snapshot(state, graphs, actor_path):
+def export_snapshot(state, graphs, actor_path, training_protocol):
     actor_path = Path(actor_path).resolve()
     identity = snapshot_id(state)
     snapshot_dir = actor_path.parent / (actor_path.stem + "_snapshots") / identity
     native_actor = snapshot_dir / "actor.txt"
-    export_actor(state, native_actor)
+    export_actor(state, native_actor, training_protocol=training_protocol)
     policy = policy_from_state(state)
     circuits = {}
     for name, graph in graphs.items():
         path = snapshot_dir / (graph.circuit_hash + ".emb")
         export_descriptors(state, graph, path, policy)
         circuits[name] = {"embeddings": str(path), "circuit_hash": graph.circuit_hash}
-    export_actor(state, actor_path)
+    export_actor(state, actor_path, training_protocol=training_protocol)
     manifest = {"format": "SMARTATPG_INFERENCE_SNAPSHOT_V3_11D_CO_NO_BUF",
                 **smartatpg_metadata(encoder_variant(state)),
                 "snapshot": identity, "actor": str(native_actor), "circuits": circuits}

@@ -10,7 +10,7 @@ import time
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BACKTRACK_LIMIT = 2000
+BACKTRACK_LIMIT = 200
 
 
 def _atomic_json(path, value):
@@ -55,7 +55,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("bundle", type=Path)
     parser.add_argument(
-        "--output-dir", type=Path, default=Path("benchmark_results_bt2000")
+        "--output-dir", type=Path, default=Path("benchmark_results_bt200")
     )
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--seed", type=int, default=14)

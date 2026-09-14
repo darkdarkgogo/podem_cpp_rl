@@ -11,7 +11,17 @@ chmod +x train_smartatpg_linux.sh benchmark_smartatpg_linux.sh tensorboard_smart
 ./train_smartatpg_linux.sh
 ```
 
-训练脚本先为16个电路生成每个50条 hard-detected fault 的固定清单，再在指定 GPU 上训练 GAT-GRU 8轮，并执行最多5轮失败 fault 强化；完成后生成只含 GAT-GRU 模型的评测包。
+训练脚本读取 `data/train` 的全部1024个电路和 `data/validation` 的6个固定验证电路。SCOAP PODEM 在 backtrack 上限200下建立完整 fault catalog；训练只使用 `outcome == 1` 的全部可检测 fault，验证不筛选、测试全部 fault。GAT-GRU 正常训练5轮，不再有额外强化阶段；最佳模型只由每轮验证结果决定。
+
+同一任务中断后直接重跑命令即可从 `training_state.pth` 恢复。要把当前完整 checkpoint 迁移到另一批电路或 fault 清单继续训练，指定新的空输出目录并传入：
+
+```bash
+./train_smartatpg_linux.sh --output-dir artifacts/next_run \
+  --dataset-root /path/to/next/data \
+  --continue-from /path/to/current/best_training_state.pth
+```
+
+该方式完整继承图编码器、Actor、Critic、`policy_old`、PPO/RND 优化器、RND 统计和 PyTorch 随机数状态，但重新开始新任务的5轮进度与最佳验证记录。
 
 TensorBoard：
 

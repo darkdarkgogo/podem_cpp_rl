@@ -134,7 +134,6 @@ private:
   std::size_t action_mask_dim_ = 0;
   std::size_t decision_state_dim_ = 0;
   std::size_t hidden_dim_ = 0;
-  int version_ = 0;
   std::string backend_ = "smartatpg", schema_, encoder_variant_, graph_config_, snapshot_;
   std::unordered_map<std::string, Tensor> tensors_;
   bool fixed_direct_kernel_ = false;

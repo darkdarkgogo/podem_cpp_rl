@@ -26,8 +26,8 @@ from smartatpg_portable import (
 )
 
 
-MANIFEST_FORMAT = "SMARTATPG_BENCHMARK_BUNDLE_V8_11D_CO_NO_BUF"
-BACKTRACK_LIMIT = 2000
+MANIFEST_FORMAT = "SMARTATPG_BENCHMARK_BUNDLE_V9_DATA_SPLIT_11D_CO_NO_BUF"
+BACKTRACK_LIMIT = 200
 
 
 PATTERNS = {
@@ -95,6 +95,30 @@ def _bundle_path(bundle_root, relative):
     return path
 
 
+def _validate_training_protocol(protocol):
+    required = {
+        "manifest_hash",
+        "backtrack_limit",
+        "normal_rounds",
+        "training_circuit_count",
+        "validation_circuit_count",
+    }
+    if not isinstance(protocol, dict) or set(protocol) != required:
+        raise ValueError("Benchmark manifest training protocol is incomplete")
+    if (
+        not isinstance(protocol["manifest_hash"], str)
+        or re.fullmatch(r"[0-9a-f]{64}", protocol["manifest_hash"]) is None
+        or protocol["backtrack_limit"] != BACKTRACK_LIMIT
+        or protocol["normal_rounds"] != 5
+        or not isinstance(protocol["training_circuit_count"], int)
+        or protocol["training_circuit_count"] <= 0
+        or not isinstance(protocol["validation_circuit_count"], int)
+        or protocol["validation_circuit_count"] <= 0
+    ):
+        raise ValueError("Benchmark manifest training protocol is incompatible")
+    return protocol
+
+
 def _validate_manifest(manifest, bundle_root):
     expected = {
         "format": MANIFEST_FORMAT,
@@ -111,20 +135,7 @@ def _validate_manifest(manifest, bundle_root):
     model_records = manifest.get("models", {})
     if set(model_records) != {"smartatpg_gat_gru"}:
         raise ValueError("Benchmark manifest must contain only the GAT-GRU model")
-    protocol = manifest.get("training_protocol")
-    reinforcement_rounds = (
-        protocol.get("reinforcement_rounds") if isinstance(protocol, dict) else None
-    )
-    if (
-        not isinstance(protocol, dict)
-        or protocol.get("heuristic") != "scoap_heuristic"
-        or protocol.get("circuit_order") != list(CIRCUITS)
-        or protocol.get("faults_per_circuit") != 50
-        or protocol.get("normal_rounds") != 8
-        or not isinstance(reinforcement_rounds, int)
-        or not 1 <= reinforcement_rounds <= 5
-    ):
-        raise ValueError("Benchmark manifest training protocol is incompatible")
+    _validate_training_protocol(manifest.get("training_protocol"))
     for item in [*model_records.values(), *circuits]:
         required = {"path"} if "path" in item else {"circuit", "fault_map"}
         if set(item.get("artifact_sha256", {})) != required:
@@ -208,11 +219,13 @@ def _prepare_models(model_paths, manifest, output_dir):
             or model.decision_state_dim != record["decision_state_dim"]
             or model.model_format != MODEL_FORMAT
             or record.get("training_protocol") != manifest["training_protocol"]
-            or model.heuristic != manifest["training_protocol"]["heuristic"]
-            or list(model.circuit_order) != manifest["training_protocol"]["circuit_order"]
-            or model.faults_per_circuit != manifest["training_protocol"]["faults_per_circuit"]
+            or model.manifest_hash != manifest["training_protocol"]["manifest_hash"]
+            or model.backtrack_limit != manifest["training_protocol"]["backtrack_limit"]
             or model.normal_rounds != manifest["training_protocol"]["normal_rounds"]
-            or model.reinforcement_rounds != manifest["training_protocol"]["reinforcement_rounds"]
+            or model.training_circuit_count
+            != manifest["training_protocol"]["training_circuit_count"]
+            or model.validation_circuit_count
+            != manifest["training_protocol"]["validation_circuit_count"]
         ):
             raise ValueError(f"Model selection metadata does not match bundle: {name}")
         portable_models[name] = model

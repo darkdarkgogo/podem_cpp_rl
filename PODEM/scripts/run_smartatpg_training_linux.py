@@ -1,6 +1,7 @@
-"""Train the all-circuit GAT-GRU SmartATPG model and export its bundle."""
+"""Train data-split GAT-GRU SmartATPG on Linux and export its bundle."""
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -8,15 +9,14 @@ import subprocess
 import sys
 import time
 
-import torch
-
-from smartatpg_portable import CIRCUITS
-
+try:
+    import torch
+except ModuleNotFoundError:
+    torch = None
 
 ROOT = Path(__file__).resolve().parents[1]
-BACKTRACK_LIMIT = 2000
-NORMAL_TRAINING_ROUNDS = 8
-GAT_REINFORCEMENT_ROUNDS = 5
+BACKTRACK_LIMIT = 200
+NORMAL_TRAINING_ROUNDS = 5
 
 
 def _atomic_json(path, value):
@@ -27,6 +27,14 @@ def _atomic_json(path, value):
         json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     temporary.replace(path)
+
+
+def _sha256(path):
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _tee_command(command, log_path, environment, prefix="", on_start=None):
@@ -76,42 +84,30 @@ def main(argv=None):
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=ROOT / "artifacts/smartatpg_11d_co_nobuf_all16_8rounds_bt2000",
+        default=ROOT / "artifacts/smartatpg_data_split_5rounds_bt200",
     )
+    parser.add_argument("--dataset-root", type=Path, default=ROOT / "data")
     parser.add_argument("--rounds", type=int, default=NORMAL_TRAINING_ROUNDS)
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--profile-seed", type=int, default=14)
     parser.add_argument("--backtrack-limit", type=int, default=BACKTRACK_LIMIT)
-    parser.add_argument(
-        "--gat-reinforcement-rounds",
-        type=int,
-        default=GAT_REINFORCEMENT_ROUNDS,
-    )
+    parser.add_argument("--continue-from", type=Path)
     parser.add_argument("--gpu", type=int, default=0)
     args = parser.parse_args(argv)
     if not sys.platform.startswith("linux"):
         raise RuntimeError("This training launcher is intended for Linux")
-    if (
-        args.rounds <= 0
-        or args.backtrack_limit <= 0
-        or args.gat_reinforcement_rounds <= 0
-        or args.gat_reinforcement_rounds > GAT_REINFORCEMENT_ROUNDS
-    ):
-        raise ValueError(
-            "Rounds and backtrack limit must be positive; GAT reinforcement "
-            f"rounds must be between 1 and {GAT_REINFORCEMENT_ROUNDS}"
-        )
+    if args.rounds <= 0 or args.backtrack_limit <= 0:
+        raise ValueError("Rounds and backtrack limit must be positive")
     if args.rounds != NORMAL_TRAINING_ROUNDS:
-        raise ValueError(
-            f"GAT reinforcement requires exactly {NORMAL_TRAINING_ROUNDS} "
-            "normal training rounds"
-        )
+        raise ValueError(f"SmartATPG training requires exactly {NORMAL_TRAINING_ROUNDS} rounds")
     if args.gpu < 0:
         raise ValueError("GPU ID must be non-negative")
     if args.backtrack_limit != BACKTRACK_LIMIT:
         raise ValueError(
             f"SmartATPG training requires backtrack limit {BACKTRACK_LIMIT}"
         )
+    if torch is None:
+        raise RuntimeError("Training requires PyTorch in the active environment")
     _check_cpp_extension()
     gpu_count = torch.cuda.device_count()
     if args.gpu >= gpu_count:
@@ -121,6 +117,7 @@ def main(argv=None):
         )
 
     output_dir = args.output_dir.resolve()
+    dataset_root = args.dataset_root.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
     preparation_dir = output_dir / "preparation"
     gat_gru_dir = output_dir / "smartatpg_gat_gru"
@@ -139,12 +136,9 @@ def main(argv=None):
         sys.executable,
         "-u",
         str(ROOT / "scripts/prepare_smartatpg_training.py"),
+        str(dataset_root),
         str(preparation_dir),
-        "--count", "50",
-        "--backtrack-limit", str(args.backtrack_limit),
         "--seed", str(args.profile_seed),
-        "--normal-rounds", str(args.rounds),
-        "--reinforcement-rounds", str(args.gat_reinforcement_rounds),
         "--resume",
     ]
     gat_gru_train_command = [
@@ -156,18 +150,23 @@ def main(argv=None):
         "--rounds", str(args.rounds),
         "--seed", str(args.seed),
         "--encoder", "level_gat_gru",
-        "--reinforcement-rounds", str(args.gat_reinforcement_rounds),
     ]
+    if args.continue_from:
+        gat_gru_train_command.extend([
+            "--continue-from", str(args.continue_from.resolve())
+        ])
+    else:
+        gat_gru_train_command.append("--resume")
     bundle_command = [
         sys.executable,
         "-u",
         str(ROOT / "scripts/prepare_smartatpg_benchmark.py"),
         str(output_dir / "benchmark_bundle"),
-        str(gat_gru_dir / "model_best_reinforced.txt"),
+        str(gat_gru_dir / "model_best.txt"),
         "--resume",
     ]
     metadata = {
-        "format": "SMARTATPG_TRAINING_RUN_V3",
+        "format": "SMARTATPG_TRAINING_RUN_V4_DATA_SPLIT",
         "python": sys.executable,
         "torch": torch.__version__,
         "cuda_available": torch.cuda.is_available(),
@@ -176,17 +175,11 @@ def main(argv=None):
             "smartatpg_gat_gru": args.gpu,
         },
         "rounds": args.rounds,
-        "gat_reinforcement_rounds": args.gat_reinforcement_rounds,
         "seed": args.seed,
         "profile_seed": args.profile_seed,
         "backtrack_limit": args.backtrack_limit,
-        "training_protocol": {
-            "heuristic": "scoap_heuristic",
-            "circuit_order": list(CIRCUITS),
-            "faults_per_circuit": 50,
-            "normal_rounds": args.rounds,
-            "reinforcement_rounds": args.gat_reinforcement_rounds,
-        },
+        "dataset_root": str(dataset_root),
+        "continue_from": str(args.continue_from.resolve()) if args.continue_from else None,
         "commands": [
             prepare_command, gat_gru_train_command, bundle_command,
         ],
@@ -200,12 +193,22 @@ def main(argv=None):
             prepare_command, output_dir / "prepare_training.log", environment
         )
     }
+    manifest_path = preparation_dir / "training_manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    metadata["training_protocol"] = {
+        "manifest_hash": _sha256(manifest_path),
+        "backtrack_limit": manifest["backtrack_limit"],
+        "normal_rounds": manifest["normal_rounds"],
+        "training_circuit_count": len(manifest["train_circuits"]),
+        "validation_circuit_count": len(manifest["validation_circuits"]),
+    }
+    _atomic_json(metadata_path, metadata)
     timings["smartatpg_gat_gru_training_seconds"] = _run(
-        gat_gru_train_command, gat_gru_dir / "train.log", gat_environment
+        gat_gru_train_command, output_dir / "train_gat_gru.log", gat_environment
     )
     required_models = (
         gat_gru_dir / "model_best.txt",
-        gat_gru_dir / "model_best_reinforced.txt",
+        gat_gru_dir / "model_latest.txt",
     )
     for model_path in required_models:
         if not model_path.is_file():

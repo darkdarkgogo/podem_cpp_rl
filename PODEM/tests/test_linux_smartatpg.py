@@ -1,4 +1,5 @@
 import hashlib
+import json
 import sys
 import tempfile
 import unittest
@@ -18,7 +19,6 @@ from benchmark_smartatpg import (
 from run_smartatpg_benchmark_linux import main as run_benchmark_main
 from run_smartatpg_training_linux import main as run_training_main
 from smartatpg_portable import CIRCUITS
-from train_smartatpg import _validate_resume_config, _validate_round_target
 
 
 def sha256(path):
@@ -34,18 +34,18 @@ class SplitLauncherTests(unittest.TestCase):
             self.assertIn('"-march=native"', source)
             self.assertNotIn('"-Ofast"', source)
 
-    def test_benchmark_defaults_to_2000_backtracks(self):
-        self.assertEqual(run_benchmark.__defaults__, (5, 14, 2000))
+    def test_benchmark_defaults_to_200_backtracks(self):
+        self.assertEqual(run_benchmark.__defaults__, (5, 14, 200))
 
     def test_launchers_reject_500_backtracks(self):
         with (
             patch("run_smartatpg_training_linux.sys.platform", "linux"),
-            self.assertRaisesRegex(ValueError, "requires backtrack limit 2000"),
+            self.assertRaisesRegex(ValueError, "requires backtrack limit 200"),
         ):
             run_training_main(["--backtrack-limit", "500"])
         with (
             patch("run_smartatpg_benchmark_linux.sys.platform", "linux"),
-            self.assertRaisesRegex(ValueError, "requires backtrack limit 2000"),
+            self.assertRaisesRegex(ValueError, "requires backtrack limit 200"),
         ):
             run_benchmark_main(["unused", "--backtrack-limit", "500"])
 
@@ -57,6 +57,7 @@ class SplitLauncherTests(unittest.TestCase):
                 "build_native.py",
                 "convert_binary_bench.py",
                 "convert_full_scan_bench.py",
+                "generate_normal_bench_dataset.py",
                 "prepare_smartatpg_benchmark.py",
                 "prepare_smartatpg_training.py",
                 "plot_final_comparison.py",
@@ -72,20 +73,36 @@ class SplitLauncherTests(unittest.TestCase):
             output = Path(directory) / "training"
 
             def fake_command(command, log_path, environment, prefix="", on_start=None):
+                if str(command[2]).endswith("prepare_smartatpg_training.py"):
+                    preparation = Path(command[4])
+                    preparation.mkdir(parents=True, exist_ok=True)
+                    (preparation / "training_manifest.json").write_text(
+                        json.dumps({
+                            "backtrack_limit": 200, "normal_rounds": 5,
+                            "train": [], "validation": [],
+                            "train_circuits": [{"name": "t"}],
+                            "validation_circuits": [{"name": "v"}],
+                        }),
+                        encoding="utf-8",
+                    )
                 if str(command[2]).endswith("train_smartatpg.py"):
                     model_dir = Path(command[4])
                     model_dir.mkdir(parents=True, exist_ok=True)
                     (model_dir / "model_best.txt").write_text("model", encoding="utf-8")
-                    if "level_gat_gru" in command:
-                        (model_dir / "model_best_reinforced.txt").write_text(
-                            "model", encoding="utf-8"
-                        )
+                    (model_dir / "model_latest.txt").write_text(
+                        "model", encoding="utf-8"
+                    )
                 return 0
 
             with (
                 patch("run_smartatpg_training_linux.sys.platform", "linux"),
                 patch("run_smartatpg_training_linux._check_cpp_extension"),
-                patch("run_smartatpg_training_linux.torch.cuda.device_count", return_value=4),
+                patch("run_smartatpg_training_linux.torch", SimpleNamespace(
+                    __version__="test",
+                    cuda=SimpleNamespace(
+                        device_count=lambda: 4, is_available=lambda: True
+                    ),
+                )),
                 patch(
                     "run_smartatpg_training_linux._tee_command",
                     side_effect=fake_command,
@@ -111,65 +128,111 @@ class SplitLauncherTests(unittest.TestCase):
             self.assertNotIn("build_native.py", flattened)
             self.assertNotIn("benchmark_smartatpg.py", flattened)
             for command in (call.args[0] for call in train_calls):
-                self.assertEqual(command[command.index("--rounds") + 1], "8")
+                self.assertEqual(command[command.index("--rounds") + 1], "5")
             gat_command = next(
                 command for command in (call.args[0] for call in train_calls)
                 if "level_gat_gru" in command
             )
-            self.assertEqual(
-                gat_command[gat_command.index("--reinforcement-rounds") + 1], "5"
+            self.assertNotIn("--reinforcement-rounds", gat_command)
+            self.assertIn("--resume", gat_command)
+            train_log = next(
+                call.args[1] for call in tee.call_args_list
+                if str(call.args[0][2]).endswith("train_smartatpg.py")
             )
+            self.assertEqual(Path(train_log), output / "train_gat_gru.log")
             self.assertTrue(
-                str(commands[2][4]).endswith("model_best_reinforced.txt")
+                str(commands[2][4]).endswith("model_best.txt")
             )
             prepare = commands[0]
-            self.assertEqual(prepare[prepare.index("--count") + 1], "50")
-            self.assertEqual(
-                prepare[prepare.index("--backtrack-limit") + 1], "2000"
+            self.assertTrue(str(prepare[3]).endswith("data"))
+            self.assertNotIn("--count", prepare)
+            self.assertNotIn("--backtrack-limit", prepare)
+            metadata = json.loads(
+                (output / "training_run_metadata.json").read_text(encoding="utf-8")
             )
+            self.assertEqual(metadata["training_protocol"]["backtrack_limit"], 200)
+            self.assertEqual(metadata["training_protocol"]["normal_rounds"], 5)
+            self.assertEqual(metadata["training_protocol"]["training_circuit_count"], 1)
+            self.assertEqual(metadata["training_protocol"]["validation_circuit_count"], 1)
 
     def test_training_launcher_requires_one_selected_gpu(self):
         with (
             patch("run_smartatpg_training_linux.sys.platform", "linux"),
             patch("run_smartatpg_training_linux._check_cpp_extension"),
-            patch("run_smartatpg_training_linux.torch.cuda.device_count", return_value=0),
+            patch("run_smartatpg_training_linux.torch", SimpleNamespace(
+                cuda=SimpleNamespace(device_count=lambda: 0)
+            )),
             self.assertRaisesRegex(RuntimeError, "only 0 CUDA device"),
         ):
             run_training_main([])
         with (
             patch("run_smartatpg_training_linux.sys.platform", "linux"),
             patch("run_smartatpg_training_linux._check_cpp_extension"),
-            patch("run_smartatpg_training_linux.torch.cuda.device_count", return_value=1),
+            patch("run_smartatpg_training_linux.torch", SimpleNamespace(
+                cuda=SimpleNamespace(device_count=lambda: 1)
+            )),
             self.assertRaisesRegex(RuntimeError, "only 1 CUDA device"),
         ):
             run_training_main(["--gpu", "1"])
         with (
             patch("run_smartatpg_training_linux.sys.platform", "linux"),
-            self.assertRaisesRegex(ValueError, "between 1 and 5"),
+            self.assertRaisesRegex(ValueError, "exactly 5"),
         ):
-            run_training_main(["--gat-reinforcement-rounds", "6"])
-        with (
-            patch("run_smartatpg_training_linux.sys.platform", "linux"),
-            self.assertRaisesRegex(ValueError, "exactly 8"),
-        ):
-            run_training_main(["--rounds", "7"])
+            run_training_main(["--rounds", "4"])
 
-    def test_training_round_target_cannot_change_on_resume(self):
-        saved = {"rounds": 20, "seed": 2026, "encoder_variant": "level_gat_gru"}
-        current = {"rounds": 8, "seed": 2026, "encoder_variant": "level_gat_gru"}
-        with self.assertRaisesRegex(ValueError, "Training configuration changed"):
-            _validate_resume_config(saved, current)
-        saved = dict(current)
-        self.assertEqual(_validate_resume_config(saved, current), 8)
-        current["seed"] = 14
-        with self.assertRaisesRegex(ValueError, "Training configuration changed"):
-            _validate_resume_config(saved, current)
-        _validate_round_target(8, 99, 8)
-        _validate_round_target(9, 0, 8)
-        with self.assertRaisesRegex(ValueError, "already started round 9"):
-            _validate_round_target(9, 1, 8)
-        with self.assertRaisesRegex(ValueError, "already started round 9"):
-            _validate_round_target(10, 0, 8)
+    def test_training_launcher_passes_cross_manifest_continuation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "training"
+            source = root / "source.pth"
+            source.write_bytes(b"checkpoint")
+
+            def fake_command(command, _log_path, _environment, **_kwargs):
+                if str(command[2]).endswith("prepare_smartatpg_training.py"):
+                    preparation = Path(command[4])
+                    preparation.mkdir(parents=True, exist_ok=True)
+                    (preparation / "training_manifest.json").write_text(
+                        json.dumps({
+                            "backtrack_limit": 200, "normal_rounds": 5,
+                            "train_circuits": [{"name": "t"}],
+                            "validation_circuits": [{"name": "v"}],
+                        }),
+                        encoding="utf-8",
+                    )
+                elif str(command[2]).endswith("train_smartatpg.py"):
+                    model_dir = Path(command[4])
+                    model_dir.mkdir(parents=True, exist_ok=True)
+                    for name in ("model_best.txt", "model_latest.txt"):
+                        (model_dir / name).write_text("model", encoding="utf-8")
+                return 0
+
+            fake_torch = SimpleNamespace(
+                __version__="test",
+                cuda=SimpleNamespace(
+                    device_count=lambda: 1, is_available=lambda: True
+                ),
+            )
+            with (
+                patch("run_smartatpg_training_linux.sys.platform", "linux"),
+                patch("run_smartatpg_training_linux.torch", fake_torch),
+                patch("run_smartatpg_training_linux._check_cpp_extension"),
+                patch(
+                    "run_smartatpg_training_linux._tee_command",
+                    side_effect=fake_command,
+                ) as tee,
+            ):
+                run_training_main([
+                    "--output-dir", str(output),
+                    "--continue-from", str(source),
+                ])
+            train = next(
+                call.args[0] for call in tee.call_args_list
+                if str(call.args[0][2]).endswith("train_smartatpg.py")
+            )
+            self.assertNotIn("--resume", train)
+            self.assertEqual(
+                Path(train[train.index("--continue-from") + 1]), source.resolve()
+            )
 
     def test_benchmark_launcher_only_builds_and_benchmarks(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -196,7 +259,7 @@ class SplitLauncherTests(unittest.TestCase):
             self.assertNotIn(".pth", flattened)
             benchmark = commands[1]
             self.assertEqual(
-                benchmark[benchmark.index("--backtrack-limit") + 1], "2000"
+                benchmark[benchmark.index("--backtrack-limit") + 1], "200"
             )
 
     def test_benchmark_runtime_has_no_torch_dependency(self):
@@ -245,7 +308,7 @@ class BenchmarkSummaryTests(unittest.TestCase):
         self.assertIsNone(percentage_change(0, 1))
 
     def test_benchmark_rejects_any_other_backtrack_limit(self):
-        with self.assertRaisesRegex(ValueError, "requires backtrack limit 2000"):
+        with self.assertRaisesRegex(ValueError, "requires backtrack limit 200"):
             run_benchmark("unused", "unused", "unused", backtrack_limit=500)
 
     def test_summary_compares_atpg_time_only(self):

@@ -4,12 +4,12 @@ set -euo pipefail
 ROOT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
 
-TRAINING_DIR="artifacts/smartatpg_11d_co_nobuf_all16_8rounds_bt2000"
+TRAINING_DIR="artifacts/smartatpg_data_split_5rounds_bt200"
 
 exec "${PYTHON:-python}" -u scripts/run_smartatpg_benchmark_linux.py \
   "$TRAINING_DIR/benchmark_bundle" \
-  --output-dir benchmark_results_11d_co_nobuf_all16_8rounds_bt2000 \
+  --output-dir benchmark_results_data_split_5rounds_bt200 \
   --repeats 5 \
-  --backtrack-limit 2000 \
+  --backtrack-limit 200 \
   --seed 14 \
   "$@"

@@ -10,8 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-MODEL_FORMAT = "SMARTATPG_MODEL_V11"
-DIRECT_MODEL_FORMAT = "SMARTATPG_MODEL_V10"
+MODEL_FORMAT = "SMARTATPG_MODEL_V12"
 EMBEDDING_FORMAT = "SMARTATPG_EMBEDDINGS_V7"
 FEATURE_SCHEMA = "SMARTATPG_FEATURES_V4_11D_CO_NO_BUF"
 GRAPH_CONFIG = "fanin_mean_1x22x11_co_nobuf"
@@ -67,11 +66,11 @@ class PortableModel:
     hidden_dim: int
     actor_input_dim: int
     decision_state_dim: int
-    heuristic: str | None
-    circuit_order: tuple[str, ...]
-    faults_per_circuit: int | None
-    normal_rounds: int | None
-    reinforcement_rounds: int | None
+    manifest_hash: str
+    backtrack_limit: int
+    normal_rounds: int
+    training_circuit_count: int
+    validation_circuit_count: int
     tensors: dict[str, Tensor]
 
     @property
@@ -126,8 +125,8 @@ def load_model(path):
     path = Path(path)
     tokens = iter(path.read_text(encoding="utf-8").split())
     model_format = _next(tokens, "header")
-    if model_format not in (DIRECT_MODEL_FORMAT, MODEL_FORMAT):
-        raise ValueError("SmartATPG benchmark requires a V10 or V11 model")
+    if model_format != MODEL_FORMAT:
+        raise ValueError("SmartATPG benchmark requires a V12 model")
     gate_dim = GATE_EMBEDDING_DIM
     expected_metadata = {
         "backend": "smartatpg", "feature_schema": FEATURE_SCHEMA,
@@ -170,25 +169,20 @@ def load_model(path):
             not math.isfinite(value) for value in best_score
         ):
             raise ValueError("SmartATPG best score must contain five finite values")
-    heuristic = None
-    circuit_order = ()
-    faults_per_circuit = None
-    normal_rounds = None
-    reinforcement_rounds = None
-    if model_format == MODEL_FORMAT:
-        heuristic = _field(tokens, "heuristic")
-        circuit_order = tuple(_field(tokens, "circuit_order").split(","))
-        faults_per_circuit = int(_field(tokens, "faults_per_circuit"))
-        normal_rounds = int(_field(tokens, "normal_rounds"))
-        reinforcement_rounds = int(_field(tokens, "reinforcement_rounds"))
-        if (
-            heuristic != "scoap_heuristic"
-            or circuit_order != CIRCUITS
-            or faults_per_circuit != 50
-            or normal_rounds != 8
-            or not 0 <= reinforcement_rounds <= 5
-        ):
-            raise ValueError("Invalid SmartATPG V11 training protocol")
+    manifest_hash = _field(tokens, "manifest_hash")
+    backtrack_limit = int(_field(tokens, "backtrack_limit"))
+    normal_rounds = int(_field(tokens, "normal_rounds"))
+    training_circuit_count = int(_field(tokens, "training_circuit_count"))
+    validation_circuit_count = int(_field(tokens, "validation_circuit_count"))
+    if (
+        len(manifest_hash) != 64
+        or any(value not in "0123456789abcdef" for value in manifest_hash)
+        or backtrack_limit != 200
+        or normal_rounds != 5
+        or training_circuit_count <= 0
+        or validation_circuit_count <= 0
+    ):
+        raise ValueError("Invalid SmartATPG V12 training protocol")
     hidden_dim = int(_field(tokens, "hidden_dim"))
     if hidden_dim <= 0:
         raise ValueError("SmartATPG model hidden_dim must be positive")
@@ -260,8 +254,8 @@ def load_model(path):
     return PortableModel(
         model_format, encoder_variant, graph_config, snapshot, best_round,
         best_score, hidden_dim, actor_input_dim, decision_state_dim,
-        heuristic, circuit_order, faults_per_circuit, normal_rounds,
-        reinforcement_rounds, tensors,
+        manifest_hash, backtrack_limit, normal_rounds, training_circuit_count,
+        validation_circuit_count, tensors,
     )
 
 

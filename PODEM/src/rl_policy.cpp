@@ -235,9 +235,7 @@ void ActorModel::load(const std::string &path) {
   std::string header;
   std::string key;
   std::getline(input, header);
-  version_ = header == "SMARTATPG_MODEL_V10" ? 10 :
-             (header == "SMARTATPG_MODEL_V11" ? 11 : 0);
-  require(version_ != 0,
+  require(header == "SMARTATPG_MODEL_V12",
           "Unsupported actor format in: " + path);
   backend_ = "smartatpg";
   schema_.clear();
@@ -259,32 +257,29 @@ void ActorModel::load(const std::string &path) {
   require(static_cast<bool>(input >> key >> best_score) &&
               key == "best_score" && !best_score.empty(),
           "Invalid SmartATPG best score in: " + path);
-  if (version_ == 11) {
-    std::string heuristic;
-    std::string circuit_order;
-    int faults_per_circuit = 0;
-    int normal_rounds = 0;
-    int reinforcement_rounds = -1;
-    require(static_cast<bool>(input >> key >> heuristic) &&
-                key == "heuristic" && heuristic == "scoap_heuristic",
-            "Invalid SmartATPG training heuristic in: " + path);
-    require(static_cast<bool>(input >> key >> circuit_order) &&
-                key == "circuit_order" &&
-                circuit_order ==
-                    "c432,c499,c1355,c1908,c2670,c3540,c5315,c6288,"
-                    "c7552,s5378,s9234,s13207,s15850,s35932,s38417,s38584",
-            "Invalid SmartATPG training circuit order in: " + path);
-    require(static_cast<bool>(input >> key >> faults_per_circuit) &&
-                key == "faults_per_circuit" && faults_per_circuit == 50,
-            "Invalid SmartATPG faults-per-circuit metadata in: " + path);
-    require(static_cast<bool>(input >> key >> normal_rounds) &&
-                key == "normal_rounds" && normal_rounds == 8,
-            "Invalid SmartATPG normal-round metadata in: " + path);
-    require(static_cast<bool>(input >> key >> reinforcement_rounds) &&
-                key == "reinforcement_rounds" &&
-                reinforcement_rounds >= 0 && reinforcement_rounds <= 5,
-            "Invalid SmartATPG reinforcement-round metadata in: " + path);
-  }
+  std::string manifest_hash;
+  int backtrack_limit = 0;
+  int normal_rounds = 0;
+  int training_circuit_count = 0;
+  int validation_circuit_count = 0;
+  require(static_cast<bool>(input >> key >> manifest_hash) &&
+              key == "manifest_hash" && manifest_hash.size() == 64 &&
+              manifest_hash.find_first_not_of("0123456789abcdef") ==
+                  std::string::npos,
+          "Invalid SmartATPG training manifest hash in: " + path);
+  require(static_cast<bool>(input >> key >> backtrack_limit) &&
+              key == "backtrack_limit" && backtrack_limit == 200,
+          "Invalid SmartATPG backtrack-limit metadata in: " + path);
+  require(static_cast<bool>(input >> key >> normal_rounds) &&
+              key == "normal_rounds" && normal_rounds == 5,
+          "Invalid SmartATPG normal-round metadata in: " + path);
+  require(static_cast<bool>(input >> key >> training_circuit_count) &&
+              key == "training_circuit_count" && training_circuit_count > 0,
+          "Invalid SmartATPG training-circuit metadata in: " + path);
+  require(static_cast<bool>(input >> key >> validation_circuit_count) &&
+              key == "validation_circuit_count" &&
+              validation_circuit_count > 0,
+          "Invalid SmartATPG validation-circuit metadata in: " + path);
   require(static_cast<bool>(input >> key >> hidden_dim_) && key == "hidden_dim" &&
               hidden_dim_ > 0,
           "Invalid actor hidden dimension in: " + path);
