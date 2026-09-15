@@ -19,6 +19,7 @@ import prepare_smartatpg_training as preparation
 from prepare_smartatpg_training import (
     BACKTRACK_LIMIT,
     FAULT_FILTER,
+    LEGACY_MANIFEST_FORMAT,
     MANIFEST_FORMAT,
     NORMAL_TRAINING_ROUNDS,
     TRAIN_FAULTS_PER_CIRCUIT,
@@ -26,6 +27,7 @@ from prepare_smartatpg_training import (
     prepare,
     select_training_faults,
     select_validation_faults,
+    validation_fault_ids,
 )
 if torch is not None:
     from train_smartatpg import (
@@ -34,11 +36,14 @@ if torch is not None:
         _evaluate_fault,
         _initial_state,
         _append_json_line,
+        _catalog_fault_ids,
         _load_continuation,
+        _load_validation_catalogs,
         _load_validation_state,
         _summarize_validation,
         _training_protocol,
         _validate_resume,
+        _validation_catalog_hash,
         _validation_order,
         validation_score,
     )
@@ -77,6 +82,10 @@ class SmartATPGPreparationTests(unittest.TestCase):
         self.assertEqual(TRAIN_FAULTS_PER_CIRCUIT, 30)
         self.assertEqual(
             MANIFEST_FORMAT,
+            "SMARTATPG_DATA_SPLIT_MANIFEST_V7_LAZY_VALIDATION_CATALOG_11D_CO_NO_BUF",
+        )
+        self.assertEqual(
+            LEGACY_MANIFEST_FORMAT,
             "SMARTATPG_DATA_SPLIT_MANIFEST_V6_TOP30_11D_CO_NO_BUF",
         )
         self.assertEqual(prepare.__defaults__, (14, False))
@@ -157,6 +166,17 @@ class SmartATPGPreparationTests(unittest.TestCase):
                  "backtrace_steps": 1},
             ], circuit_name="empty")
 
+    def test_validation_catalog_rejects_empty_invalid_and_duplicate_ids(self):
+        with self.assertRaisesRegex(ValueError, "empty"):
+            validation_fault_ids({"faults": []}, "v.bench")
+        with self.assertRaisesRegex(ValueError, "invalid"):
+            validation_fault_ids({"faults": [{}]}, "v.bench")
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            validation_fault_ids(
+                {"faults": [{"fault_id": "f0"}, {"fault_id": "f0"}]},
+                "v.bench",
+            )
+
     def test_fresh_preparation_refuses_a_nonempty_output_directory(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "preparation"
@@ -185,7 +205,10 @@ class SmartATPGPreparationTests(unittest.TestCase):
                     expected_validation_names=("v",),
                 )
 
+            profiled_splits = []
+
             def fake_profile(source, split, seed, graph_identity):
+                profiled_splits.append(split)
                 profiles = [
                     {"fault_id": f"{source.stem}:sa0", "outcome": 1,
                      "backtracks": 1, "backtrace_steps": 2},
@@ -219,24 +242,61 @@ class SmartATPGPreparationTests(unittest.TestCase):
                     manifest["train_circuits"][0]["episode_fault_ids"],
                     ["t:hard", "t:sa0"],
                 )
-                self.assertEqual(
-                    manifest["validation_circuits"][0]["episode_fault_ids"],
-                    ["v:sa0", "v:hard", "v:sa1"],
-                )
+                self.assertEqual(profiled_splits, ["train"])
+                validation = manifest["validation_circuits"][0]
+                self.assertNotIn("profile", validation)
+                self.assertNotIn("episode_fault_ids", validation)
+                self.assertNotIn("validation_episode_count", manifest)
+                self.assertFalse((output / "profiles" / "validation").exists())
                 self.assertEqual(preparation.prepare(dataset, output, resume=True), manifest)
                 manifest_path = output / "training_manifest.json"
-                legacy = {
+                unsupported = {
                     **manifest,
                     "format": "SMARTATPG_DATA_SPLIT_TRAINING_V5_11D_CO_NO_BUF",
                 }
-                self.assertNotEqual(legacy["format"], MANIFEST_FORMAT)
+                self.assertNotEqual(unsupported["format"], MANIFEST_FORMAT)
                 with self.assertRaisesRegex(ValueError, "configuration changed"):
-                    preparation._validate_manifest(legacy, manifest_path)
+                    preparation._validate_manifest(unsupported, manifest_path)
                 tampered = json.loads(json.dumps(manifest))
                 tampered["train_circuits"][0]["episode_faults"].reverse()
                 tampered["train_circuits"][0]["episode_fault_ids"].reverse()
                 with self.assertRaisesRegex(ValueError, "fault list changed"):
                     preparation._validate_manifest(tampered, manifest_path)
+                tampered_validation = json.loads(json.dumps(manifest))
+                tampered_validation["validation_circuits"][0][
+                    "circuit_hash"
+                ] = "changed"
+                with self.assertRaisesRegex(ValueError, "graph identity changed"):
+                    preparation._validate_manifest(
+                        tampered_validation, manifest_path
+                    )
+
+                validation_source = dataset / "validation" / "v.bench"
+                validation_text = validation_source.read_text(encoding="utf-8")
+                validation_source.write_text(
+                    validation_text + "\n", encoding="utf-8"
+                )
+                with self.assertRaisesRegex(ValueError, "artifact changed"):
+                    preparation._validate_manifest(manifest, manifest_path)
+                validation_source.write_text(validation_text, encoding="utf-8")
+                validation_identity = (
+                    validation["circuit_hash"], validation["gate_count"]
+                )
+                validation_payload = fake_profile(
+                    validation_source, "validation", 14, validation_identity
+                )
+                validation_profile = output / "profiles" / "validation" / "v.json"
+                preparation._atomic_json(validation_profile, validation_payload)
+                legacy = json.loads(json.dumps(manifest))
+                legacy["format"] = LEGACY_MANIFEST_FORMAT
+                legacy["validation_circuits"] = [preparation._record(
+                    manifest_path, validation_profile, validation_source,
+                    "validation", validation_payload,
+                )]
+                legacy["validation_episode_count"] = 3
+                self.assertIs(
+                    preparation._validate_manifest(legacy, manifest_path), legacy
+                )
                 added = dataset / "train" / "added.bench"
                 added.write_text("INPUT(a)\nOUTPUT(a)\n", encoding="utf-8")
                 with self.assertRaisesRegex(ValueError, "exactly 1"):
@@ -250,6 +310,37 @@ class SmartATPGPreparationTests(unittest.TestCase):
 
 @unittest.skipIf(torch is None, "PyTorch is not installed")
 class SmartATPGTrainingStateTests(unittest.TestCase):
+
+    def test_new_manifest_loads_validation_fault_catalog_at_runtime(self):
+        circuits = [{"name": "v", "circuit": "v.bench"}]
+        catalog = {"faults": [{"fault_id": "f0"}, {"fault_id": "f1"}]}
+        with patch("train_smartatpg.catalog_cpp_podem", return_value=catalog) as load:
+            result = _load_validation_catalogs(
+                {"format": MANIFEST_FORMAT}, circuits
+            )
+        load.assert_called_once_with("v.bench")
+        self.assertIs(result, circuits)
+        self.assertEqual(circuits[0]["episode_fault_ids"], ["f0", "f1"])
+        self.assertEqual(len(_validation_catalog_hash(circuits)), 64)
+
+    def test_legacy_manifest_keeps_stored_validation_fault_order(self):
+        circuits = [{
+            "name": "v", "circuit": "v.bench",
+            "episode_fault_ids": ["f1", "f0"],
+        }]
+        with patch("train_smartatpg.catalog_cpp_podem") as load:
+            result = _load_validation_catalogs(
+                {"format": LEGACY_MANIFEST_FORMAT}, circuits
+            )
+        load.assert_not_called()
+        self.assertEqual(result[0]["episode_fault_ids"], ["f1", "f0"])
+
+    def test_runtime_catalog_rejects_duplicate_fault_ids(self):
+        with patch("train_smartatpg.catalog_cpp_podem", return_value={
+            "faults": [{"fault_id": "f0"}, {"fault_id": "f0"}],
+        }):
+            with self.assertRaisesRegex(ValueError, "duplicate"):
+                _catalog_fault_ids("v.bench")
 
     def test_episode_order_is_deterministic_and_complete(self):
         circuits = [

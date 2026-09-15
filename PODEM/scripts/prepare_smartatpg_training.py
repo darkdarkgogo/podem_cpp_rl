@@ -15,7 +15,10 @@ from smartatpg_portable import (
 )
 
 
-MANIFEST_FORMAT = "SMARTATPG_DATA_SPLIT_MANIFEST_V6_TOP30_11D_CO_NO_BUF"
+LEGACY_MANIFEST_FORMAT = "SMARTATPG_DATA_SPLIT_MANIFEST_V6_TOP30_11D_CO_NO_BUF"
+MANIFEST_FORMAT = (
+    "SMARTATPG_DATA_SPLIT_MANIFEST_V7_LAZY_VALIDATION_CATALOG_11D_CO_NO_BUF"
+)
 PREPARATION_STATE_FORMAT = "SMARTATPG_DATA_SPLIT_PREPARATION_V2"
 PROFILE_FORMAT = "SMARTATPG_HEURISTIC_FAULT_PROFILE_V1"
 FAULT_FILTER = "train_top30_hard_detected_validation_full_catalog"
@@ -151,6 +154,27 @@ def select_validation_faults(profiles):
     return [dict(item) for item in profiles]
 
 
+def validation_fault_ids(catalog, circuit_path):
+    faults = catalog.get("faults") if isinstance(catalog, dict) else None
+    if not isinstance(faults, list) or not faults:
+        raise ValueError(
+            f"Validation circuit has an empty fault catalog: {circuit_path}"
+        )
+    fault_ids = []
+    for entry in faults:
+        fault_id = entry.get("fault_id") if isinstance(entry, dict) else None
+        if not isinstance(fault_id, str) or not fault_id:
+            raise ValueError(
+                f"Validation circuit has an invalid fault ID: {circuit_path}"
+            )
+        fault_ids.append(fault_id)
+    if len(fault_ids) != len(set(fault_ids)):
+        raise ValueError(
+            f"Validation circuit has duplicate fault IDs: {circuit_path}"
+        )
+    return fault_ids
+
+
 def _validate_profiles(profiles, *, split, circuit_name):
     if not isinstance(profiles, list) or not profiles:
         raise ValueError(f"{split} circuit {circuit_name} has an empty fault catalog")
@@ -259,9 +283,22 @@ def _record(manifest_path, profile_path, source, split, payload):
     }
 
 
+def _validation_record(manifest_path, source, graph_identity):
+    return {
+        "name": source.stem,
+        "circuit": _relative_path(source, Path(manifest_path).parent),
+        "artifact_sha256": {"circuit": sha256_file(source)},
+        "circuit_hash": graph_identity[0],
+        "gate_count": int(graph_identity[1]),
+    }
+
+
 def _validate_manifest(manifest, manifest_path):
+    manifest_format = manifest.get("format")
+    if manifest_format not in (LEGACY_MANIFEST_FORMAT, MANIFEST_FORMAT):
+        raise ValueError("Existing data-split SmartATPG manifest configuration changed")
+    legacy = manifest_format == LEGACY_MANIFEST_FORMAT
     expected = {
-        "format": MANIFEST_FORMAT,
         "fault_filter": FAULT_FILTER,
         "train_faults_per_circuit": TRAIN_FAULTS_PER_CIRCUIT,
         "backtrack_limit": BACKTRACK_LIMIT,
@@ -297,7 +334,11 @@ def _validate_manifest(manifest, manifest_path):
             raise ValueError(f"SmartATPG {split} dataset inventory changed")
         all_names.extend(names)
         for item, discovered_path in zip(circuits, discovered_paths):
-            if set(item.get("artifact_sha256", {})) != {"circuit", "profile"}:
+            uses_profile = split == "train" or legacy
+            expected_artifacts = (
+                {"circuit", "profile"} if uses_profile else {"circuit"}
+            )
+            if set(item.get("artifact_sha256", {})) != expected_artifacts:
                 raise ValueError(
                     f"Manifest {split} artifact list is incomplete: {item.get('name')}"
                 )
@@ -305,13 +346,38 @@ def _validate_manifest(manifest, manifest_path):
                 path = resolve_manifest_path(manifest_path, item[artifact_key])
                 if not path.is_file() or sha256_file(path) != expected_hash:
                     raise ValueError(f"Manifest artifact changed: {path}")
-            profile_path = resolve_manifest_path(manifest_path, item["profile"])
-            payload = json.loads(profile_path.read_text(encoding="utf-8"))
             source_path = resolve_manifest_path(manifest_path, item["circuit"])
             if source_path != discovered_path.resolve():
                 raise ValueError(
                     f"Manifest {split} source path changed: {item['name']}"
                 )
+            if not uses_profile:
+                forbidden = {
+                    "profile", "profiled_faults", "episode_faults",
+                    "episode_fault_ids",
+                }
+                if forbidden.intersection(item):
+                    raise ValueError(
+                        f"Manifest validation record contains profile data: "
+                        f"{item['name']}"
+                    )
+                try:
+                    graph = load_graph(source_path)
+                except Exception as error:
+                    raise ValueError(
+                        f"Manifest validation graph is invalid: {item['name']}"
+                    ) from error
+                if (
+                    item.get("circuit_hash") != graph.circuit_hash
+                    or item.get("gate_count") != len(graph.names)
+                ):
+                    raise ValueError(
+                        f"Manifest validation graph identity changed: "
+                        f"{item['name']}"
+                    )
+                continue
+            profile_path = resolve_manifest_path(manifest_path, item["profile"])
+            payload = json.loads(profile_path.read_text(encoding="utf-8"))
             profile_expected = {
                 "format": PROFILE_FORMAT,
                 "split": split,
@@ -345,14 +411,19 @@ def _validate_manifest(manifest, manifest_path):
     expected_train_episodes = sum(
         len(item["episode_fault_ids"]) for item in manifest["train_circuits"]
     )
-    expected_validation_episodes = sum(
-        len(item["episode_fault_ids"]) for item in manifest["validation_circuits"]
-    )
-    if (
-        manifest.get("training_episode_count") != expected_train_episodes
-        or manifest.get("validation_episode_count") != expected_validation_episodes
-    ):
+    if manifest.get("training_episode_count") != expected_train_episodes:
         raise ValueError("SmartATPG manifest episode counts are invalid")
+    if legacy:
+        expected_validation_episodes = sum(
+            len(item["episode_fault_ids"])
+            for item in manifest["validation_circuits"]
+        )
+        if manifest.get("validation_episode_count") != expected_validation_episodes:
+            raise ValueError("SmartATPG manifest episode counts are invalid")
+    elif "validation_episode_count" in manifest:
+        raise ValueError(
+            "Lazy validation manifests must not persist an episode count"
+        )
     return manifest
 
 
@@ -387,18 +458,22 @@ def prepare(dataset_root, output_dir, seed=14, resume=False):
             for key, value in state_expected.items()
         ):
             raise ValueError("Dataset inventory changed since preparation completed")
+        stored_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        profile_splits = (
+            ("train", "validation")
+            if stored_manifest.get("format") == LEGACY_MANIFEST_FORMAT
+            else ("train",)
+        )
         expected_completed = {
             f"{split}/{source.name}": sha256_file(
                 output_dir / "profiles" / split / f"{source.stem}.json"
             )
-            for split in ("train", "validation")
+            for split in profile_splits
             for source in discovered[split]
         }
         if preparation_state.get("completed") != expected_completed:
             raise ValueError("Completed preparation profile hashes changed")
-        manifest = _validate_manifest(
-            json.loads(manifest_path.read_text(encoding="utf-8")), manifest_path
-        )
+        manifest = _validate_manifest(stored_manifest, manifest_path)
         if (
             manifest.get("profile_seed") != seed
             or manifest.get("dataset_root")
@@ -449,46 +524,46 @@ def prepare(dataset_root, output_dir, seed=14, resume=False):
     completed = state.get("completed", {})
     if not isinstance(completed, dict):
         raise ValueError("Preparation state has an invalid completed-profile map")
-    expected_keys = {
-        f"{split}/{source.name}"
-        for split in ("train", "validation")
-        for source in discovered[split]
-    }
+    expected_keys = {f"train/{source.name}" for source in discovered["train"]}
     if not set(completed).issubset(expected_keys):
         raise ValueError("Preparation state contains unknown completed circuits")
-    for split in ("train", "validation"):
-        profile_dir = output_dir / "profiles" / split
-        for index, source in enumerate(discovered[split], 1):
-            profile_path = profile_dir / f"{source.stem}.json"
-            key = f"{split}/{source.name}"
-            if key in completed and (
-                not profile_path.is_file()
-                or sha256_file(profile_path) != completed[key]
-            ):
-                raise ValueError(f"Completed profile changed: {profile_path}")
-            payload = _load_reusable_profile(
-                profile_path, source, split, seed, graph_identities[source]
+    split = "train"
+    profile_dir = output_dir / "profiles" / split
+    for index, source in enumerate(discovered[split], 1):
+        profile_path = profile_dir / f"{source.stem}.json"
+        key = f"{split}/{source.name}"
+        if key in completed and (
+            not profile_path.is_file()
+            or sha256_file(profile_path) != completed[key]
+        ):
+            raise ValueError(f"Completed profile changed: {profile_path}")
+        payload = _load_reusable_profile(
+            profile_path, source, split, seed, graph_identities[source]
+        )
+        if payload is None:
+            print(
+                f"PROFILE split={split} index={index}/{len(discovered[split])} "
+                f"circuit={source.stem}",
+                flush=True,
             )
-            if payload is None:
-                print(
-                    f"PROFILE split={split} index={index}/{len(discovered[split])} "
-                    f"circuit={source.stem}",
-                    flush=True,
-                )
-                payload = _profile_payload(
-                    source, split, seed, graph_identities[source]
-                )
-                _atomic_json(profile_path, payload)
-            profile_digest = sha256_file(profile_path)
-            if key in completed and completed[key] != profile_digest:
-                raise ValueError(f"Completed profile changed: {profile_path}")
-            if key not in completed:
-                completed[key] = profile_digest
-                state["completed"] = dict(sorted(completed.items()))
-                _atomic_json(state_path, state)
-            records[split].append(
-                _record(manifest_path, profile_path, source, split, payload)
+            payload = _profile_payload(
+                source, split, seed, graph_identities[source]
             )
+            _atomic_json(profile_path, payload)
+        profile_digest = sha256_file(profile_path)
+        if key in completed and completed[key] != profile_digest:
+            raise ValueError(f"Completed profile changed: {profile_path}")
+        if key not in completed:
+            completed[key] = profile_digest
+            state["completed"] = dict(sorted(completed.items()))
+            _atomic_json(state_path, state)
+        records[split].append(
+            _record(manifest_path, profile_path, source, split, payload)
+        )
+    records["validation"] = [
+        _validation_record(manifest_path, source, graph_identities[source])
+        for source in discovered["validation"]
+    ]
 
     manifest = {
         "format": MANIFEST_FORMAT,
@@ -504,9 +579,6 @@ def prepare(dataset_root, output_dir, seed=14, resume=False):
         "validation_circuit_count": len(records["validation"]),
         "training_episode_count": sum(
             len(item["episode_fault_ids"]) for item in records["train"]
-        ),
-        "validation_episode_count": sum(
-            len(item["episode_fault_ids"]) for item in records["validation"]
         ),
         "train_circuits": records["train"],
         "validation_circuits": records["validation"],

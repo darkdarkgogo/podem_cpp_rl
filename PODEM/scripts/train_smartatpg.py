@@ -12,15 +12,18 @@ import torch
 from prepare_smartatpg_training import (
     BACKTRACK_LIMIT,
     HEURISTIC,
+    LEGACY_MANIFEST_FORMAT,
     MANIFEST_FORMAT,
     NORMAL_TRAINING_ROUNDS,
     _validate_manifest as _validate_prepared_manifest,
     resolve_manifest_path,
     sha256_file,
+    validation_fault_ids,
 )
 from rl_podem.cpp_bridge import (
     CppPodemBacktraceV2Evaluator,
     CppPodemBacktraceV2Trainer,
+    catalog_cpp_podem,
     smartatpg_pi_reward,
 )
 from rl_podem.gat_gru import GATGRUSmartATPGPPOAgent
@@ -120,15 +123,44 @@ def _resolve_circuit_records(manifest, manifest_path):
             item["circuit"] = str(
                 resolve_manifest_path(manifest_path, raw["circuit"])
             )
-            item["profile"] = str(
-                resolve_manifest_path(manifest_path, raw["profile"])
-            )
+            if "profile" in raw:
+                item["profile"] = str(
+                    resolve_manifest_path(manifest_path, raw["profile"])
+                )
             records.append(item)
         result[split] = records
     names = [item["name"] for split in result.values() for item in split]
     if len(names) != len(set(names)):
         raise ValueError("Training and validation circuit names must be disjoint")
     return result["train"], result["validation"]
+
+
+def _catalog_fault_ids(circuit_path):
+    return validation_fault_ids(catalog_cpp_podem(circuit_path), circuit_path)
+
+
+def _load_validation_catalogs(manifest, circuits):
+    if manifest.get("format") == LEGACY_MANIFEST_FORMAT:
+        return circuits
+    for index, item in enumerate(circuits, 1):
+        item["episode_fault_ids"] = _catalog_fault_ids(item["circuit"])
+        print(
+            f"CATALOG split=validation index={index}/{len(circuits)} "
+            f"circuit={item['name']} faults={len(item['episode_fault_ids'])}",
+            flush=True,
+        )
+    return circuits
+
+
+def _validation_catalog_hash(circuits):
+    payload = [
+        {"name": item["name"], "fault_ids": item["episode_fault_ids"]}
+        for item in circuits
+    ]
+    encoded = json.dumps(
+        payload, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _episode_order(circuits, seed, round_number):
@@ -392,10 +424,13 @@ def main(argv=None):
 
     args.manifest = args.manifest.resolve()
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
-    if manifest.get("format") != MANIFEST_FORMAT:
-        raise ValueError("Training requires the current data-split manifest")
+    if manifest.get("format") not in (LEGACY_MANIFEST_FORMAT, MANIFEST_FORMAT):
+        raise ValueError("Training requires a supported data-split manifest")
     train_circuits, validation_circuits = _resolve_circuit_records(
         manifest, args.manifest
+    )
+    validation_circuits = _load_validation_catalogs(
+        manifest, validation_circuits
     )
     if int(manifest["normal_rounds"]) != args.rounds:
         raise ValueError("Requested rounds do not match the training manifest")
@@ -475,6 +510,10 @@ def main(argv=None):
         "heuristic": HEURISTIC,
         "manifest_hash": manifest_digest,
     }
+    if manifest.get("format") == MANIFEST_FORMAT:
+        config["validation_catalog_hash"] = _validation_catalog_hash(
+            validation_circuits
+        )
     state = _initial_state(manifest_digest, config)
     if args.resume:
         if not checkpoint_path.is_file():
