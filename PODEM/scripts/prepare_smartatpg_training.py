@@ -15,12 +15,13 @@ from smartatpg_portable import (
 )
 
 
-MANIFEST_FORMAT = "SMARTATPG_DATA_SPLIT_TRAINING_V5_11D_CO_NO_BUF"
+MANIFEST_FORMAT = "SMARTATPG_DATA_SPLIT_MANIFEST_V6_TOP30_11D_CO_NO_BUF"
 PREPARATION_STATE_FORMAT = "SMARTATPG_DATA_SPLIT_PREPARATION_V2"
 PROFILE_FORMAT = "SMARTATPG_HEURISTIC_FAULT_PROFILE_V1"
-FAULT_FILTER = "train_outcome_1_validation_full_catalog"
+FAULT_FILTER = "train_top30_hard_detected_validation_full_catalog"
 BACKTRACK_LIMIT = 200
 NORMAL_TRAINING_ROUNDS = 5
+TRAIN_FAULTS_PER_CIRCUIT = 30
 HEURISTIC = "scoap_heuristic"
 TRAIN_CIRCUIT_COUNT = 1024
 VALIDATION_NAMES = ("b12_C", "b15_C", "b17_C", "b20_C", "b21_C", "b22_C")
@@ -131,11 +132,19 @@ def discover_dataset(
     return {"train": train_paths, "validation": validation_paths}
 
 
-def select_training_faults(profiles):
-    selected = [dict(item) for item in profiles if int(item["outcome"]) == 1]
-    if not selected:
-        raise RuntimeError("No heuristic-detected faults are available for training")
-    return selected
+def select_training_faults(profiles, *, circuit_name=None):
+    detected = [dict(item) for item in profiles if int(item["outcome"]) == 1]
+    if not detected:
+        location = f" for train circuit {circuit_name}" if circuit_name else ""
+        raise RuntimeError(
+            f"No heuristic-detected faults are available for training{location}"
+        )
+    detected.sort(key=lambda item: (
+        -int(item["backtracks"]),
+        -int(item["backtrace_steps"]),
+        str(item["fault_id"]),
+    ))
+    return detected[:TRAIN_FAULTS_PER_CIRCUIT]
 
 
 def select_validation_faults(profiles):
@@ -230,7 +239,7 @@ def _load_reusable_profile(path, source, split, seed, graph_identity):
 def _record(manifest_path, profile_path, source, split, payload):
     profiles = payload["profiles"]
     selected = (
-        select_training_faults(profiles)
+        select_training_faults(profiles, circuit_name=source.stem)
         if split == "train"
         else select_validation_faults(profiles)
     )
@@ -254,6 +263,7 @@ def _validate_manifest(manifest, manifest_path):
     expected = {
         "format": MANIFEST_FORMAT,
         "fault_filter": FAULT_FILTER,
+        "train_faults_per_circuit": TRAIN_FAULTS_PER_CIRCUIT,
         "backtrack_limit": BACKTRACK_LIMIT,
         "normal_rounds": NORMAL_TRAINING_ROUNDS,
         "heuristic": HEURISTIC,
@@ -320,7 +330,7 @@ def _validate_manifest(manifest, manifest_path):
                 payload.get("profiles"), split=split, circuit_name=item["name"]
             )
             selected = (
-                select_training_faults(profiles)
+                select_training_faults(profiles, circuit_name=item["name"])
                 if split == "train"
                 else select_validation_faults(profiles)
             )
@@ -483,6 +493,7 @@ def prepare(dataset_root, output_dir, seed=14, resume=False):
     manifest = {
         "format": MANIFEST_FORMAT,
         "fault_filter": FAULT_FILTER,
+        "train_faults_per_circuit": TRAIN_FAULTS_PER_CIRCUIT,
         **smartatpg_metadata(),
         "dataset_root": _relative_path(dataset_root, manifest_path.parent),
         "backtrack_limit": BACKTRACK_LIMIT,

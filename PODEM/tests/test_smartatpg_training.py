@@ -1,3 +1,4 @@
+import json
 import sys
 import tempfile
 import unittest
@@ -18,7 +19,9 @@ import prepare_smartatpg_training as preparation
 from prepare_smartatpg_training import (
     BACKTRACK_LIMIT,
     FAULT_FILTER,
+    MANIFEST_FORMAT,
     NORMAL_TRAINING_ROUNDS,
+    TRAIN_FAULTS_PER_CIRCUIT,
     discover_dataset,
     prepare,
     select_training_faults,
@@ -71,9 +74,14 @@ class SmartATPGPreparationTests(unittest.TestCase):
     def test_fixed_training_contract(self):
         self.assertEqual(BACKTRACK_LIMIT, 200)
         self.assertEqual(NORMAL_TRAINING_ROUNDS, 5)
+        self.assertEqual(TRAIN_FAULTS_PER_CIRCUIT, 30)
+        self.assertEqual(
+            MANIFEST_FORMAT,
+            "SMARTATPG_DATA_SPLIT_MANIFEST_V6_TOP30_11D_CO_NO_BUF",
+        )
         self.assertEqual(prepare.__defaults__, (14, False))
         self.assertEqual(
-            FAULT_FILTER, "train_outcome_1_validation_full_catalog"
+            FAULT_FILTER, "train_top30_hard_detected_validation_full_catalog"
         )
 
     def test_dataset_discovery_uses_train_and_validation_directories(self):
@@ -100,24 +108,54 @@ class SmartATPGPreparationTests(unittest.TestCase):
                 [path.stem for path in result["validation"]], ["v1", "v2"]
             )
 
-    def test_training_keeps_all_and_only_detectable_faults(self):
+    def test_training_selects_detectable_faults_by_heuristic_difficulty(self):
         profiles = [
-            {"fault_id": "d1", "outcome": 1, "backtracks": 1},
-            {"fault_id": "aborted", "outcome": 2, "backtracks": 200},
-            {"fault_id": "redundant", "outcome": 0, "backtracks": 3},
-            {"fault_id": "d2", "outcome": 1, "backtracks": 0},
+            {"fault_id": "d3", "outcome": 1, "backtracks": 1,
+             "backtrace_steps": 9},
+            {"fault_id": "aborted", "outcome": 2, "backtracks": 200,
+             "backtrace_steps": 999},
+            {"fault_id": "redundant", "outcome": 0, "backtracks": 3,
+             "backtrace_steps": 999},
+            {"fault_id": "d2", "outcome": 1, "backtracks": 1,
+             "backtrace_steps": 10},
+            {"fault_id": "d1", "outcome": 1, "backtracks": 1,
+             "backtrace_steps": 10},
+            {"fault_id": "hardest", "outcome": 1, "backtracks": 2,
+             "backtrace_steps": 1},
         ]
         selected = select_training_faults(profiles)
-        self.assertEqual([item["fault_id"] for item in selected], ["d1", "d2"])
+        self.assertEqual(
+            [item["fault_id"] for item in selected],
+            ["hardest", "d1", "d2", "d3"],
+        )
         self.assertEqual(select_validation_faults(profiles), profiles)
         self.assertIsNot(select_validation_faults(profiles)[0], profiles[0])
 
+    def test_training_limits_each_circuit_to_thirty_faults(self):
+        profiles = [
+            {
+                "fault_id": f"f{index:02d}",
+                "outcome": 1,
+                "backtracks": index,
+                "backtrace_steps": index * 2,
+            }
+            for index in range(35)
+        ]
+        selected = select_training_faults(profiles)
+        self.assertEqual(len(selected), 30)
+        self.assertEqual(
+            [item["fault_id"] for item in selected],
+            [f"f{index:02d}" for index in range(34, 4, -1)],
+        )
+
     def test_training_rejects_a_circuit_without_detectable_faults(self):
-        with self.assertRaisesRegex(RuntimeError, "No heuristic-detected"):
+        with self.assertRaisesRegex(RuntimeError, "train circuit empty"):
             select_training_faults([
-                {"fault_id": "a", "outcome": 2},
-                {"fault_id": "b", "outcome": 0},
-            ])
+                {"fault_id": "a", "outcome": 2, "backtracks": 200,
+                 "backtrace_steps": 10},
+                {"fault_id": "b", "outcome": 0, "backtracks": 0,
+                 "backtrace_steps": 1},
+            ], circuit_name="empty")
 
     def test_fresh_preparation_refuses_a_nonempty_output_directory(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -151,6 +189,8 @@ class SmartATPGPreparationTests(unittest.TestCase):
                 profiles = [
                     {"fault_id": f"{source.stem}:sa0", "outcome": 1,
                      "backtracks": 1, "backtrace_steps": 2},
+                    {"fault_id": f"{source.stem}:hard", "outcome": 1,
+                     "backtracks": 2, "backtrace_steps": 1},
                     {"fault_id": f"{source.stem}:sa1", "outcome": 2,
                      "backtracks": 200, "backtrace_steps": 3},
                 ]
@@ -173,16 +213,30 @@ class SmartATPGPreparationTests(unittest.TestCase):
                 patch.object(preparation, "_profile_payload", fake_profile),
             ):
                 manifest = preparation.prepare(dataset, output)
+                self.assertEqual(manifest["train_faults_per_circuit"], 30)
                 self.assertFalse(Path(manifest["train_circuits"][0]["circuit"]).is_absolute())
                 self.assertEqual(
                     manifest["train_circuits"][0]["episode_fault_ids"],
-                    ["t:sa0"],
+                    ["t:hard", "t:sa0"],
                 )
                 self.assertEqual(
                     manifest["validation_circuits"][0]["episode_fault_ids"],
-                    ["v:sa0", "v:sa1"],
+                    ["v:sa0", "v:hard", "v:sa1"],
                 )
                 self.assertEqual(preparation.prepare(dataset, output, resume=True), manifest)
+                manifest_path = output / "training_manifest.json"
+                legacy = {
+                    **manifest,
+                    "format": "SMARTATPG_DATA_SPLIT_TRAINING_V5_11D_CO_NO_BUF",
+                }
+                self.assertNotEqual(legacy["format"], MANIFEST_FORMAT)
+                with self.assertRaisesRegex(ValueError, "configuration changed"):
+                    preparation._validate_manifest(legacy, manifest_path)
+                tampered = json.loads(json.dumps(manifest))
+                tampered["train_circuits"][0]["episode_faults"].reverse()
+                tampered["train_circuits"][0]["episode_fault_ids"].reverse()
+                with self.assertRaisesRegex(ValueError, "fault list changed"):
+                    preparation._validate_manifest(tampered, manifest_path)
                 added = dataset / "train" / "added.bench"
                 added.write_text("INPUT(a)\nOUTPUT(a)\n", encoding="utf-8")
                 with self.assertRaisesRegex(ValueError, "exactly 1"):
