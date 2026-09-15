@@ -32,7 +32,7 @@ data/
 
 准备阶段对每个训练和验证电路运行传统 SCOAP 启发式 PODEM，backtrack 上限统一为200，并遍历完整 collapsed fault catalog。
 
-- 训练集：保留全部且仅保留启发式结果 `outcome == 1` 的 fault。不再按难度排序，不截取固定数量，也不使用 aborted 或 redundant fault 训练。
+- 训练集：只从启发式结果 `outcome == 1` 的 fault 中选择。按 backtracks 降序、backtrace steps 降序、fault ID 升序稳定排序，每个电路最多保留最难检测的30个；可检测 fault 不足30个时全部保留，不使用 aborted 或 redundant fault 补足。
 - 验证集：保留完整 fault catalog，`outcome == 0/1/2` 都进入每轮验证，不根据启发式结果筛选。
 
 生成的 fault profile 会记录 `outcome`、backtracks 和 backtrace steps。准备过程可以按电路断点恢复；源电路、配置或已生成 profile 的哈希发生变化时会拒绝混用。
@@ -41,7 +41,7 @@ data/
 
 训练固定执行5轮，每轮分为训练和验证两个阶段：
 
-1. 将1024个训练电路中所有 `outcome == 1` 的 fault 合并成当轮 episode 清单。
+1. 将1024个训练电路各自选出的最多30个难检测 fault 合并成当轮 episode 清单。
 2. 使用 `seed + round` 对完整清单做可复现打乱；每个 fault 在这一轮恰好训练一次。
 3. 每个 episode 都用 GAT-GRU 策略运行 PODEM，backtrack 上限为200，并立即进行一次 PPO/RND 更新。
 4. 训练清单全部完成后，切换为确定性策略，在6个验证电路的完整 fault catalog 上逐项测试。验证阶段不写入 rollout、不更新模型。
@@ -64,7 +64,7 @@ chmod +x train_smartatpg_linux.sh benchmark_smartatpg_linux.sh \
 ./train_smartatpg_linux.sh
 ```
 
-默认输出目录是 `artifacts/smartatpg_data_split_5rounds_bt200`。`--gpu` 指定物理 GPU；子进程通过 `CUDA_VISIBLE_DEVICES` 只看到该卡，所以 PyTorch 内显示为 `cuda:0`。
+默认输出目录是 `artifacts/smartatpg_top30_hard_5rounds_bt200`。`--gpu` 指定物理 GPU；子进程通过 `CUDA_VISIBLE_DEVICES` 只看到该卡，所以 PyTorch 内显示为 `cuda:0`。
 
 主要输出：
 
@@ -116,4 +116,4 @@ chmod +x train_smartatpg_linux.sh benchmark_smartatpg_linux.sh \
 
 当前唯一支持的推理模型格式是 `SMARTATPG_MODEL_V12`，embedding 格式是 `SMARTATPG_EMBEDDINGS_V7`，benchmark bundle 格式是 `SMARTATPG_BENCHMARK_BUNDLE_V9_DATA_SPLIT_11D_CO_NO_BUF`。V12 模型记录训练 manifest 哈希、backtrack=200、normal rounds=5，以及训练/验证电路数量。
 
-不保留旧模型兼容性。旧 manifest、checkpoint、V10/V11 model 或其他 embedding 格式会在加载阶段被拒绝；需要用当前代码重新准备、训练和导出。
+训练 manifest 使用 `SMARTATPG_DATA_SPLIT_MANIFEST_V6_TOP30_11D_CO_NO_BUF`，并记录 `train_faults_per_circuit=30`。旧 manifest 不能用于恢复 Top-30 任务；兼容的11维 V6 checkpoint 仍可通过 `--continue-from` 初始化新的 Top-30 训练，但不能通过 `--resume` 混入新 manifest。更早格式的 checkpoint、V10/V11 model 或其他 embedding 格式会在加载阶段被拒绝。新任务应使用空输出目录重新准备、训练和导出。

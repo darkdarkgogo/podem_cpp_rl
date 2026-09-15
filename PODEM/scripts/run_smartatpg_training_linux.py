@@ -84,7 +84,7 @@ def main(argv=None):
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=ROOT / "artifacts/smartatpg_data_split_5rounds_bt200",
+        default=ROOT / "artifacts/smartatpg_top30_hard_5rounds_bt200",
     )
     parser.add_argument("--dataset-root", type=Path, default=ROOT / "data")
     parser.add_argument("--rounds", type=int, default=NORMAL_TRAINING_ROUNDS)
