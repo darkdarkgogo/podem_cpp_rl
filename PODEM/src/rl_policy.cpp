@@ -235,7 +235,8 @@ void ActorModel::load(const std::string &path) {
   std::string header;
   std::string key;
   std::getline(input, header);
-  require(header == "SMARTATPG_MODEL_V12",
+  const bool batched_protocol = header == "SMARTATPG_MODEL_V13_BATCH8_EPOCH1";
+  require(header == "SMARTATPG_MODEL_V12" || batched_protocol,
           "Unsupported actor format in: " + path);
   backend_ = "smartatpg";
   schema_.clear();
@@ -260,6 +261,8 @@ void ActorModel::load(const std::string &path) {
   std::string manifest_hash;
   int backtrack_limit = 0;
   int normal_rounds = 0;
+  int faults_per_update = 0;
+  int k_epochs = 0;
   int training_circuit_count = 0;
   int validation_circuit_count = 0;
   require(static_cast<bool>(input >> key >> manifest_hash) &&
@@ -271,8 +274,17 @@ void ActorModel::load(const std::string &path) {
               key == "backtrack_limit" && backtrack_limit == 200,
           "Invalid SmartATPG backtrack-limit metadata in: " + path);
   require(static_cast<bool>(input >> key >> normal_rounds) &&
-              key == "normal_rounds" && normal_rounds == 5,
+              key == "normal_rounds" &&
+              normal_rounds == (batched_protocol ? 2 : 5),
           "Invalid SmartATPG normal-round metadata in: " + path);
+  if (batched_protocol) {
+    require(static_cast<bool>(input >> key >> faults_per_update) &&
+                key == "faults_per_update" && faults_per_update == 8,
+            "Invalid SmartATPG fault-batch metadata in: " + path);
+    require(static_cast<bool>(input >> key >> k_epochs) &&
+                key == "k_epochs" && k_epochs == 1,
+            "Invalid SmartATPG PPO-epoch metadata in: " + path);
+  }
   require(static_cast<bool>(input >> key >> training_circuit_count) &&
               key == "training_circuit_count" && training_circuit_count > 0,
           "Invalid SmartATPG training-circuit metadata in: " + path);

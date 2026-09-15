@@ -78,7 +78,8 @@ class SplitLauncherTests(unittest.TestCase):
                     preparation.mkdir(parents=True, exist_ok=True)
                     (preparation / "training_manifest.json").write_text(
                         json.dumps({
-                            "backtrack_limit": 200, "normal_rounds": 5,
+                            "backtrack_limit": 200, "normal_rounds": 2,
+                            "faults_per_update": 8, "k_epochs": 1,
                             "train": [], "validation": [],
                             "train_circuits": [{"name": "t"}],
                             "validation_circuits": [{"name": "v"}],
@@ -128,7 +129,8 @@ class SplitLauncherTests(unittest.TestCase):
             self.assertNotIn("build_native.py", flattened)
             self.assertNotIn("benchmark_smartatpg.py", flattened)
             for command in (call.args[0] for call in train_calls):
-                self.assertEqual(command[command.index("--rounds") + 1], "5")
+                self.assertEqual(command[command.index("--rounds") + 1], "2")
+                self.assertEqual(command[command.index("--k-epochs") + 1], "1")
             gat_command = next(
                 command for command in (call.args[0] for call in train_calls)
                 if "level_gat_gru" in command
@@ -151,7 +153,9 @@ class SplitLauncherTests(unittest.TestCase):
                 (output / "training_run_metadata.json").read_text(encoding="utf-8")
             )
             self.assertEqual(metadata["training_protocol"]["backtrack_limit"], 200)
-            self.assertEqual(metadata["training_protocol"]["normal_rounds"], 5)
+            self.assertEqual(metadata["training_protocol"]["normal_rounds"], 2)
+            self.assertEqual(metadata["training_protocol"]["faults_per_update"], 8)
+            self.assertEqual(metadata["training_protocol"]["k_epochs"], 1)
             self.assertEqual(metadata["training_protocol"]["training_circuit_count"], 1)
             self.assertEqual(metadata["training_protocol"]["validation_circuit_count"], 1)
 
@@ -176,7 +180,7 @@ class SplitLauncherTests(unittest.TestCase):
             run_training_main(["--gpu", "1"])
         with (
             patch("run_smartatpg_training_linux.sys.platform", "linux"),
-            self.assertRaisesRegex(ValueError, "exactly 5"),
+            self.assertRaisesRegex(ValueError, "exactly 2"),
         ):
             run_training_main(["--rounds", "4"])
 
@@ -193,7 +197,8 @@ class SplitLauncherTests(unittest.TestCase):
                     preparation.mkdir(parents=True, exist_ok=True)
                     (preparation / "training_manifest.json").write_text(
                         json.dumps({
-                            "backtrack_limit": 200, "normal_rounds": 5,
+                            "backtrack_limit": 200, "normal_rounds": 2,
+                            "faults_per_update": 8, "k_epochs": 1,
                             "train_circuits": [{"name": "t"}],
                             "validation_circuits": [{"name": "v"}],
                         }),

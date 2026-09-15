@@ -242,8 +242,13 @@ def export_actor_v2_state_dict(
     output_path = Path(path).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     temporary = output_path.with_suffix(output_path.suffix + ".tmp")
+    batch_keys = ("faults_per_update", "k_epochs")
+    has_batch_protocol = all(key in metadata for key in batch_keys)
+    if any(key in metadata for key in batch_keys) and not has_batch_protocol:
+        raise ValueError("SmartATPG batching metadata is incomplete")
     protocol_keys = (
         "manifest_hash", "backtrack_limit", "normal_rounds",
+        *(batch_keys if has_batch_protocol else ()),
         "training_circuit_count", "validation_circuit_count",
     )
     if not all(key in metadata for key in protocol_keys):
@@ -253,13 +258,23 @@ def export_actor_v2_state_dict(
         len(manifest_hash) != 64
         or any(char not in "0123456789abcdef" for char in manifest_hash)
         or int(metadata["backtrack_limit"]) != 200
-        or int(metadata["normal_rounds"]) != 5
+        or int(metadata["normal_rounds"]) != (2 if has_batch_protocol else 5)
         or int(metadata["training_circuit_count"]) <= 0
         or int(metadata["validation_circuit_count"]) <= 0
+        or (
+            has_batch_protocol
+            and (
+                int(metadata["faults_per_update"]) != 8
+                or int(metadata["k_epochs"]) != 1
+            )
+        )
     ):
         raise ValueError("SmartATPG training protocol metadata is invalid")
     with temporary.open("w", encoding="utf-8", newline="\n") as output:
-        output.write("SMARTATPG_MODEL_V12\n")
+        output.write(
+            "SMARTATPG_MODEL_V13_BATCH8_EPOCH1\n"
+            if has_batch_protocol else "SMARTATPG_MODEL_V12\n"
+        )
         for key in (
             "backend", "feature_schema", "encoder_variant", "graph_config",
             "gate_embedding_dim", "actor_input_dim", "action_mask_dim",
@@ -381,8 +396,10 @@ class CppPodemBacktraceV2Trainer(_CppPodemTrainerBase):
         self,
         graph,
         agent: BacktracePPOAgentV2,
+        auto_update: bool = True,
     ):
         super().__init__(graph, agent=agent)
+        self.auto_update = bool(auto_update)
         self.reward_alpha = 7.5
         self.reward_beta = 0.07
         self.non_pi_reward = -0.1
@@ -391,6 +408,7 @@ class CppPodemBacktraceV2Trainer(_CppPodemTrainerBase):
         self.episode_metrics: list[dict[str, Any]] = []
         self.run_metrics: dict[str, Any] = {}
         self._episode_extrinsic_reward = 0.0
+        self._episode_start_step = 0
 
     def decision_callback(self, request: dict[str, Any]) -> int:
         if request["mode"] != "backtrace":
@@ -416,6 +434,7 @@ class CppPodemBacktraceV2Trainer(_CppPodemTrainerBase):
         if event_type == "episode_start":
             self.sequence_to_step.clear()
             self._episode_extrinsic_reward = 0.0
+            self._episode_start_step = len(self.agent.buffer.steps)
             return
         if event_type == "backtrack":
             return
@@ -445,20 +464,29 @@ class CppPodemBacktraceV2Trainer(_CppPodemTrainerBase):
             if int(event["outcome"]) == 1
             else self.undetected_reward
         )
-        self.agent.finish_episode(terminal_reward)
+        if len(self.agent.buffer.steps) > self._episode_start_step:
+            self.agent.finish_episode(terminal_reward)
         self._episode_extrinsic_reward += terminal_reward
-        self.last_metrics = self.agent.update()
-        metrics = dict(self.last_metrics or {
-            "steps": 0,
+        episode_steps = self.agent.buffer.steps[self._episode_start_step:]
+        episode_intrinsic_reward = sum(
+            step.intrinsic_reward for step in episode_steps
+        )
+        base_metrics = {
+            "steps": len(episode_steps),
             "total_loss": 0.0,
             "policy_loss": 0.0,
             "value_loss": 0.0,
             "entropy": 0.0,
             "ratio_mean": 0.0,
             "rnd_loss": 0.0,
-            "intrinsic_reward_sum": 0.0,
+            "intrinsic_reward_sum": episode_intrinsic_reward,
             "reward_sum": self._episode_extrinsic_reward,
-        })
+        }
+        self.last_metrics = self.agent.update() if self.auto_update else None
+        metrics = dict(base_metrics)
+        if self.last_metrics is not None:
+            metrics.update(self.last_metrics)
+        metrics["updated"] = self.last_metrics is not None
         metrics["extrinsic_reward_sum"] = self._episode_extrinsic_reward
         metrics["scaled_intrinsic_reward_sum"] = (
             self.agent.rnd_beta * metrics["intrinsic_reward_sum"]
@@ -489,7 +517,10 @@ class CppPodemBacktraceV2Trainer(_CppPodemTrainerBase):
             "ratio_mean": "ratio_mean",
             "rnd_loss_mean": "rnd_loss",
         }
-        update_count = len(self.episode_metrics)
+        updated_metrics = [
+            item for item in self.episode_metrics if item.get("updated", True)
+        ]
+        update_count = len(updated_metrics)
         self.run_metrics = {
             "episodes": int(summary["episodes"]),
             "episodes_with_updates": update_count,
@@ -509,7 +540,7 @@ class CppPodemBacktraceV2Trainer(_CppPodemTrainerBase):
         }
         for output_key, source_key in metric_keys.items():
             self.run_metrics[output_key] = (
-                sum(item[source_key] for item in self.episode_metrics) / update_count
+                sum(item[source_key] for item in updated_metrics) / update_count
                 if update_count
                 else 0.0
             )

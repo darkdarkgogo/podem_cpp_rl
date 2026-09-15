@@ -58,6 +58,12 @@ TRAINING_PROTOCOL = {
     "training_circuit_count": 1024,
     "validation_circuit_count": 6,
 }
+BATCHED_TRAINING_PROTOCOL = {
+    **TRAINING_PROTOCOL,
+    "normal_rounds": 2,
+    "faults_per_update": 8,
+    "k_epochs": 1,
+}
 
 
 def export_actor(state, path, **kwargs):
@@ -225,6 +231,69 @@ class SmartATPGTests(unittest.TestCase):
         agent = SmartATPGPPOAgent({"test": self.graph}, rnd_beta=0)
         self.assertEqual(agent.lr_actor, 0.001)
         self.assertEqual(agent.lr_critic, 0.01)
+
+    def test_deferred_trainer_collects_eight_faults_for_one_update(self):
+        from rl_podem.cpp_bridge import CppPodemBacktraceV2Trainer
+
+        agent = SmartATPGPPOAgent(
+            {"test": self.graph}, rnd_beta=0, k_epochs=1,
+        )
+        trainer = CppPodemBacktraceV2Trainer(
+            self.graph, agent=agent, auto_update=False,
+        )
+        for index in range(8):
+            trainer.event_callback({"event": "episode_start"})
+            trainer.decision_callback({
+                "mode": "backtrace",
+                "objective_name": "y",
+                "objective_value": 1,
+                "candidate_names": ["n", "b"],
+                "action_mask": [True, True],
+                "sequence": index + 1,
+            })
+            trainer.event_callback({
+                "event": "episode_end", "fault_id": f"f{index}",
+                "outcome": 1, "backtracks": 0,
+                "backtrace_steps": 1, "pi_visits": 1,
+            })
+            self.assertEqual(agent.update_count, 0)
+        self.assertEqual(len(agent.buffer.steps), 8)
+        metrics = agent.update()
+        self.assertEqual(agent.update_count, 1)
+        self.assertEqual(metrics["epochs"], 1)
+        self.assertEqual(metrics["steps"], 8)
+        self.assertEqual(len(agent.buffer.steps), 0)
+
+    def test_deferred_empty_fault_does_not_reward_previous_trajectory(self):
+        from rl_podem.cpp_bridge import CppPodemBacktraceV2Trainer
+
+        agent = SmartATPGPPOAgent(
+            {"test": self.graph}, rnd_beta=0, k_epochs=1,
+        )
+        trainer = CppPodemBacktraceV2Trainer(
+            self.graph, agent=agent, auto_update=False,
+        )
+        trainer.event_callback({"event": "episode_start"})
+        trainer.decision_callback({
+            "mode": "backtrace", "objective_name": "y",
+            "objective_value": 1, "candidate_names": ["n", "b"],
+            "action_mask": [True, True], "sequence": 1,
+        })
+        trainer.event_callback({
+            "event": "episode_end", "fault_id": "with-step", "outcome": 1,
+            "backtracks": 0, "backtrace_steps": 1, "pi_visits": 1,
+        })
+        previous_reward = agent.buffer.steps[-1].reward
+
+        trainer.event_callback({"event": "episode_start"})
+        trainer.event_callback({
+            "event": "episode_end", "fault_id": "without-step", "outcome": 0,
+            "backtracks": 0, "backtrace_steps": 0, "pi_visits": 0,
+        })
+
+        self.assertEqual(len(agent.buffer.steps), 1)
+        self.assertEqual(agent.buffer.steps[-1].reward, previous_reward)
+        self.assertEqual(trainer.episode_metrics[-1]["steps"], 0)
 
     def test_direct_actor_inputs_and_objective_concatenation(self):
         from rl_podem.cpp_bridge import CppPodemBacktraceV2Trainer
@@ -494,6 +563,46 @@ class SmartATPGTests(unittest.TestCase):
         changed_model = load_portable_model(changed_path)
         changed_embedding = compute_portable_embeddings(changed_model, portable_graph)
         self.assertNotEqual(changed_embedding, tuple(map(tuple, portable.tolist())))
+
+    def test_v13_records_two_round_batch8_epoch1_protocol(self):
+        import cpp_podem
+        import benchmark_smartatpg as benchmark
+        import prepare_smartatpg_benchmark as prepare_bundle
+
+        state = self.agent().policy_old.state_dict()
+        model_path = Path(self.temp.name) / "model_v13.txt"
+        embedding_path = Path(self.temp.name) / "model_v13.emb"
+        _export_actor(
+            state, model_path, training_protocol=BATCHED_TRAINING_PROTOCOL,
+        )
+        export_descriptors(state, self.graph, embedding_path)
+        model = load_portable_model(model_path)
+        self.assertEqual(
+            model.model_format, "SMARTATPG_MODEL_V13_BATCH8_EPOCH1"
+        )
+        self.assertEqual(model.normal_rounds, 2)
+        self.assertEqual(model.faults_per_update, 8)
+        self.assertEqual(model.k_epochs, 1)
+        cpp_podem.validate_actor_artifacts(
+            str(embedding_path), str(model_path), self.graph.circuit_hash,
+            list(self.graph.names), "smartatpg",
+        )
+        self.assertEqual(
+            prepare_bundle._validate_training_protocol(
+                dict(BATCHED_TRAINING_PROTOCOL)
+            ),
+            BATCHED_TRAINING_PROTOCOL,
+        )
+        self.assertEqual(
+            benchmark._validate_training_protocol(
+                dict(BATCHED_TRAINING_PROTOCOL)
+            ),
+            BATCHED_TRAINING_PROTOCOL,
+        )
+        with self.assertRaisesRegex(ValueError, "incompatible"):
+            benchmark._validate_training_protocol({
+                **BATCHED_TRAINING_PROTOCOL, "k_epochs": 8,
+            })
 
     def test_gat_gru_dimensions_gradients_and_portable_parity(self):
         import cpp_podem

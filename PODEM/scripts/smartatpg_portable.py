@@ -8,9 +8,11 @@ import math
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Optional
 
 
-MODEL_FORMAT = "SMARTATPG_MODEL_V12"
+LEGACY_MODEL_FORMAT = "SMARTATPG_MODEL_V12"
+MODEL_FORMAT = "SMARTATPG_MODEL_V13_BATCH8_EPOCH1"
 EMBEDDING_FORMAT = "SMARTATPG_EMBEDDINGS_V7"
 FEATURE_SCHEMA = "SMARTATPG_FEATURES_V4_11D_CO_NO_BUF"
 GRAPH_CONFIG = "fanin_mean_1x22x11_co_nobuf"
@@ -69,6 +71,8 @@ class PortableModel:
     manifest_hash: str
     backtrack_limit: int
     normal_rounds: int
+    faults_per_update: Optional[int]
+    k_epochs: Optional[int]
     training_circuit_count: int
     validation_circuit_count: int
     tensors: dict[str, Tensor]
@@ -125,8 +129,8 @@ def load_model(path):
     path = Path(path)
     tokens = iter(path.read_text(encoding="utf-8").split())
     model_format = _next(tokens, "header")
-    if model_format != MODEL_FORMAT:
-        raise ValueError("SmartATPG benchmark requires a V12 model")
+    if model_format not in (LEGACY_MODEL_FORMAT, MODEL_FORMAT):
+        raise ValueError("SmartATPG benchmark requires a V12 or V13 model")
     gate_dim = GATE_EMBEDDING_DIM
     expected_metadata = {
         "backend": "smartatpg", "feature_schema": FEATURE_SCHEMA,
@@ -172,17 +176,27 @@ def load_model(path):
     manifest_hash = _field(tokens, "manifest_hash")
     backtrack_limit = int(_field(tokens, "backtrack_limit"))
     normal_rounds = int(_field(tokens, "normal_rounds"))
+    if model_format == MODEL_FORMAT:
+        faults_per_update = int(_field(tokens, "faults_per_update"))
+        k_epochs = int(_field(tokens, "k_epochs"))
+    else:
+        faults_per_update = None
+        k_epochs = None
     training_circuit_count = int(_field(tokens, "training_circuit_count"))
     validation_circuit_count = int(_field(tokens, "validation_circuit_count"))
     if (
         len(manifest_hash) != 64
         or any(value not in "0123456789abcdef" for value in manifest_hash)
         or backtrack_limit != 200
-        or normal_rounds != 5
+        or normal_rounds != (2 if model_format == MODEL_FORMAT else 5)
+        or (
+            model_format == MODEL_FORMAT
+            and (faults_per_update != 8 or k_epochs != 1)
+        )
         or training_circuit_count <= 0
         or validation_circuit_count <= 0
     ):
-        raise ValueError("Invalid SmartATPG V12 training protocol")
+        raise ValueError("Invalid SmartATPG training protocol")
     hidden_dim = int(_field(tokens, "hidden_dim"))
     if hidden_dim <= 0:
         raise ValueError("SmartATPG model hidden_dim must be positive")
@@ -254,8 +268,8 @@ def load_model(path):
     return PortableModel(
         model_format, encoder_variant, graph_config, snapshot, best_round,
         best_score, hidden_dim, actor_input_dim, decision_state_dim,
-        manifest_hash, backtrack_limit, normal_rounds, training_circuit_count,
-        validation_circuit_count, tensors,
+        manifest_hash, backtrack_limit, normal_rounds, faults_per_update,
+        k_epochs, training_circuit_count, validation_circuit_count, tensors,
     )
 
 

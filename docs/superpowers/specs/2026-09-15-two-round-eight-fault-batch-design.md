@@ -62,8 +62,10 @@ V8 checkpoint 只在完成一次批次更新后保存。checkpoint 中的 `episo
 `completed_episodes` 因此始终位于批次边界。
 
 如果进程在尚未凑满 8 个 fault 时中断，尚未更新的 rollout buffer 不持久化；恢复时
-从最近的批次边界重新执行，最多重跑 7 个 fault。这样不需要序列化带梯度相关状态的
-临时 rollout，并能保证恢复后的优化结果仍来自完整、确定的批次。
+从最近的批次边界重新执行，最多重跑一个完整批次（8 个 fault）。通常在第 8 个 fault
+开始前崩溃时最多重跑 7 个；若在第 8 个 fault 完成到新 checkpoint 原子替换之间崩溃，
+则会重跑完整 8 个。这样不需要序列化带梯度相关状态的临时 rollout，并能保证恢复后的
+优化结果仍来自完整、确定的批次。
 
 每轮最后的不足 8 个 fault 在更新和保存 checkpoint 后，才切换到 validation 状态。
 
@@ -83,7 +85,7 @@ batch 和单 epoch。发现不一致时立即停止，不能静默采用默认�
 2. 前 7 个 fault 不执行优化，第 8 个 fault 后只执行一次 optimizer step。
 3. 每轮末尾不足 8 个 fault 时执行一次最终更新。
 4. Validation 不向 rollout buffer 添加训练数据，也不更新模型。
-5. Checkpoint 只在更新边界推进，恢复时最多重跑 7 个 fault。
+5. Checkpoint 只在更新边界推进，恢复时最多重跑一个完整批次（8 个 fault）。
 6. 每轮执行一次 validation，并从两轮结果中选择最佳模型。
 7. V6/V7 checkpoint 保持原有五轮、单 fault 更新行为。
 8. 新旧模型均可通过便携加载和 benchmark 协议校验。

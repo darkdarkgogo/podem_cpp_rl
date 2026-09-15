@@ -16,6 +16,7 @@ from smartatpg_portable import (
     FEATURE_SCHEMA,
     GATE_EMBEDDING_DIM,
     MODEL_FORMAT,
+    LEGACY_MODEL_FORMAT,
     load_model,
     sha256_file,
 )
@@ -26,20 +27,31 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _validate_training_protocol(protocol):
-    required = {
+    legacy_required = {
         "manifest_hash",
         "backtrack_limit",
         "normal_rounds",
         "training_circuit_count",
         "validation_circuit_count",
     }
-    if not isinstance(protocol, dict) or set(protocol) != required:
+    batched_required = legacy_required | {"faults_per_update", "k_epochs"}
+    if not isinstance(protocol, dict) or set(protocol) not in (
+        legacy_required, batched_required,
+    ):
         raise ValueError("Benchmark model training protocol is incomplete")
+    batched = set(protocol) == batched_required
     if (
         not isinstance(protocol["manifest_hash"], str)
         or re.fullmatch(r"[0-9a-f]{64}", protocol["manifest_hash"]) is None
         or protocol["backtrack_limit"] != 200
-        or protocol["normal_rounds"] != 5
+        or protocol["normal_rounds"] != (2 if batched else 5)
+        or (
+            batched
+            and (
+                protocol["faults_per_update"] != 8
+                or protocol["k_epochs"] != 1
+            )
+        )
         or not isinstance(protocol["training_circuit_count"], int)
         or protocol["training_circuit_count"] <= 0
         or not isinstance(protocol["validation_circuit_count"], int)
@@ -50,13 +62,17 @@ def _validate_training_protocol(protocol):
 
 
 def _model_training_protocol(model):
-    return _validate_training_protocol({
+    protocol = {
         "manifest_hash": model.manifest_hash,
         "backtrack_limit": model.backtrack_limit,
         "normal_rounds": model.normal_rounds,
         "training_circuit_count": model.training_circuit_count,
         "validation_circuit_count": model.validation_circuit_count,
-    })
+    }
+    if model.faults_per_update is not None:
+        protocol["faults_per_update"] = model.faults_per_update
+        protocol["k_epochs"] = model.k_epochs
+    return _validate_training_protocol(protocol)
 
 
 def _atomic_json(path, value):
@@ -145,7 +161,15 @@ def prepare(output_dir, gat_gru_model_path, resume=False):
         if model.encoder_variant != variant or model.graph_config != graph_config:
             raise ValueError(f"Wrong encoder variant for benchmark model {name}")
         expected_dim = ACTOR_INPUT_DIM + int(variant == "level_gat_gru")
-        if model.model_format != MODEL_FORMAT or model.actor_input_dim != expected_dim:
+        expected_model_format = (
+            MODEL_FORMAT
+            if model.faults_per_update is not None
+            else LEGACY_MODEL_FORMAT
+        )
+        if (
+            model.model_format != expected_model_format
+            or model.actor_input_dim != expected_dim
+        ):
             raise ValueError(f"Benchmark requires a direct Actor model for {name}")
         if model.best_round <= 0 or model.best_score is None:
             raise ValueError(f"Benchmark requires a best checkpoint for {name}")

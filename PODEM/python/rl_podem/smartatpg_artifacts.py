@@ -73,6 +73,11 @@ def export_actor(
             training_protocol["validation_circuit_count"]
         ),
     }
+    if "faults_per_update" in training_protocol:
+        protocol_metadata["faults_per_update"] = int(
+            training_protocol["faults_per_update"]
+        )
+        protocol_metadata["k_epochs"] = int(training_protocol["k_epochs"])
     export_actor_v2_state_dict(state, path, metadata={
         **metadata,
         "snapshot": identity,

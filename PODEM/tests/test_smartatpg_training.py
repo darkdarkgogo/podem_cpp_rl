@@ -18,10 +18,13 @@ if str(SCRIPTS) not in sys.path:
 import prepare_smartatpg_training as preparation
 from prepare_smartatpg_training import (
     BACKTRACK_LIMIT,
+    FAULTS_PER_UPDATE,
     FAULT_FILTER,
     LEGACY_MANIFEST_FORMAT,
+    LAZY_VALIDATION_MANIFEST_FORMAT,
     MANIFEST_FORMAT,
     NORMAL_TRAINING_ROUNDS,
+    PPO_EPOCHS_PER_UPDATE,
     TRAIN_FAULTS_PER_CIRCUIT,
     discover_dataset,
     prepare,
@@ -34,6 +37,7 @@ if torch is not None:
         BEST_CHECKPOINT_FORMAT,
         _episode_order,
         _evaluate_fault,
+        _fault_update_boundary,
         _initial_state,
         _append_json_line,
         _catalog_fault_ids,
@@ -78,11 +82,13 @@ class _FakeAgent:
 class SmartATPGPreparationTests(unittest.TestCase):
     def test_fixed_training_contract(self):
         self.assertEqual(BACKTRACK_LIMIT, 200)
-        self.assertEqual(NORMAL_TRAINING_ROUNDS, 5)
+        self.assertEqual(NORMAL_TRAINING_ROUNDS, 2)
+        self.assertEqual(FAULTS_PER_UPDATE, 8)
+        self.assertEqual(PPO_EPOCHS_PER_UPDATE, 1)
         self.assertEqual(TRAIN_FAULTS_PER_CIRCUIT, 30)
         self.assertEqual(
             MANIFEST_FORMAT,
-            "SMARTATPG_DATA_SPLIT_MANIFEST_V7_LAZY_VALIDATION_CATALOG_11D_CO_NO_BUF",
+            "SMARTATPG_DATA_SPLIT_MANIFEST_V8_TWO_ROUND_BATCH8_EPOCH1_11D_CO_NO_BUF",
         )
         self.assertEqual(
             LEGACY_MANIFEST_FORMAT,
@@ -244,6 +250,9 @@ class SmartATPGPreparationTests(unittest.TestCase):
                 )
                 self.assertEqual(profiled_splits, ["train"])
                 validation = manifest["validation_circuits"][0]
+                self.assertEqual(manifest["normal_rounds"], 2)
+                self.assertEqual(manifest["faults_per_update"], 8)
+                self.assertEqual(manifest["k_epochs"], 1)
                 self.assertNotIn("profile", validation)
                 self.assertNotIn("episode_fault_ids", validation)
                 self.assertNotIn("validation_episode_count", manifest)
@@ -289,6 +298,9 @@ class SmartATPGPreparationTests(unittest.TestCase):
                 preparation._atomic_json(validation_profile, validation_payload)
                 legacy = json.loads(json.dumps(manifest))
                 legacy["format"] = LEGACY_MANIFEST_FORMAT
+                legacy["normal_rounds"] = 5
+                legacy.pop("faults_per_update")
+                legacy.pop("k_epochs")
                 legacy["validation_circuits"] = [preparation._record(
                     manifest_path, validation_profile, validation_source,
                     "validation", validation_payload,
@@ -296,6 +308,15 @@ class SmartATPGPreparationTests(unittest.TestCase):
                 legacy["validation_episode_count"] = 3
                 self.assertIs(
                     preparation._validate_manifest(legacy, manifest_path), legacy
+                )
+                legacy_lazy = json.loads(json.dumps(manifest))
+                legacy_lazy["format"] = LAZY_VALIDATION_MANIFEST_FORMAT
+                legacy_lazy["normal_rounds"] = 5
+                legacy_lazy.pop("faults_per_update")
+                legacy_lazy.pop("k_epochs")
+                self.assertIs(
+                    preparation._validate_manifest(legacy_lazy, manifest_path),
+                    legacy_lazy,
                 )
                 added = dataset / "train" / "added.bench"
                 added.write_text("INPUT(a)\nOUTPUT(a)\n", encoding="utf-8")
@@ -310,6 +331,13 @@ class SmartATPGPreparationTests(unittest.TestCase):
 
 @unittest.skipIf(torch is None, "PyTorch is not installed")
 class SmartATPGTrainingStateTests(unittest.TestCase):
+
+    def test_fault_update_boundary_batches_eight_and_flushes_remainder(self):
+        boundaries = [
+            index for index in range(1, 11)
+            if _fault_update_boundary(index, 10, 8)
+        ]
+        self.assertEqual(boundaries, [8, 10])
 
     def test_new_manifest_loads_validation_fault_catalog_at_runtime(self):
         circuits = [{"name": "v", "circuit": "v.bench"}]
@@ -424,6 +452,19 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "configuration changed"):
             _validate_resume(state, "a" * 64, {**config, "rounds": 4})
 
+    def test_batched_resume_requires_an_update_boundary(self):
+        config = {
+            "rounds": 2, "manifest_hash": "a" * 64,
+            "backtrack_limit": 200, "training_episode_count": 10,
+            "faults_per_update": 8,
+        }
+        state = _initial_state("a" * 64, config)
+        state.update(episode_index=8, completed_episodes=8)
+        self.assertIs(_validate_resume(state, "a" * 64, config), state)
+        state.update(episode_index=7, completed_episodes=7)
+        with self.assertRaisesRegex(ValueError, "update boundary"):
+            _validate_resume(state, "a" * 64, config)
+
     def test_cross_manifest_continuation_loads_the_complete_agent_state(self):
         full_agent_state = {
             "policy": {"actor": 1, "critic": 2, "encoder": 3},
@@ -468,6 +509,18 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
             "normal_rounds": 5,
             "training_circuit_count": 1024,
             "validation_circuit_count": 6,
+        })
+        batched = {
+            **config, "rounds": 2, "faults_per_update": 8, "k_epochs": 1,
+        }
+        self.assertEqual(_training_protocol(batched), {
+            "manifest_hash": "a" * 64,
+            "backtrack_limit": 200,
+            "normal_rounds": 2,
+            "training_circuit_count": 1024,
+            "validation_circuit_count": 6,
+            "faults_per_update": 8,
+            "k_epochs": 1,
         })
 
 if __name__ == "__main__":

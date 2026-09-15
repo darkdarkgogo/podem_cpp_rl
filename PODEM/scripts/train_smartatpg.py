@@ -1,4 +1,4 @@
-"""Train five-round 11D SmartATPG and select the best model on validation."""
+"""Train versioned 11D SmartATPG and select the best model on validation."""
 
 import argparse
 import hashlib
@@ -11,10 +11,14 @@ import torch
 
 from prepare_smartatpg_training import (
     BACKTRACK_LIMIT,
+    FAULTS_PER_UPDATE,
     HEURISTIC,
     LEGACY_MANIFEST_FORMAT,
+    LEGACY_TRAINING_ROUNDS,
+    LAZY_VALIDATION_MANIFEST_FORMAT,
     MANIFEST_FORMAT,
     NORMAL_TRAINING_ROUNDS,
+    PPO_EPOCHS_PER_UPDATE,
     _validate_manifest as _validate_prepared_manifest,
     resolve_manifest_path,
     sha256_file,
@@ -163,6 +167,12 @@ def _validation_catalog_hash(circuits):
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _fault_update_boundary(next_index, total_faults, batch_size):
+    if batch_size <= 0 or not 1 <= next_index <= total_faults:
+        raise ValueError("Fault-update boundary arguments are invalid")
+    return next_index == total_faults or next_index % batch_size == 0
+
+
 def _episode_order(circuits, seed, round_number):
     episodes = [
         (item["name"], fault_id)
@@ -276,13 +286,17 @@ def _restore_torch_rng(saved):
 
 
 def _training_protocol(config):
-    return {
+    protocol = {
         "manifest_hash": config["manifest_hash"],
         "backtrack_limit": config["backtrack_limit"],
         "normal_rounds": config["rounds"],
         "training_circuit_count": config["training_circuit_count"],
         "validation_circuit_count": config["validation_circuit_count"],
     }
+    if "faults_per_update" in config:
+        protocol["faults_per_update"] = config["faults_per_update"]
+        protocol["k_epochs"] = config["k_epochs"]
+    return protocol
 
 
 def _initial_state(manifest_digest, config, continuation=None):
@@ -313,7 +327,8 @@ def _validate_resume(saved, manifest_digest, config):
         raise ValueError("Checkpoint phase is invalid")
     current_round = int(saved.get("current_round", 0))
     episode_index = int(saved.get("episode_index", -1))
-    if not 1 <= current_round <= NORMAL_TRAINING_ROUNDS + 1 or episode_index < 0:
+    rounds = int(config["rounds"])
+    if not 1 <= current_round <= rounds + 1 or episode_index < 0:
         raise ValueError("Checkpoint training position is invalid")
     phase = saved["phase"]
     episodes_per_round = int(config["training_episode_count"])
@@ -321,7 +336,7 @@ def _validate_resume(saved, manifest_digest, config):
         raise ValueError("Checkpoint episode position exceeds the training fault set")
     if phase == "validation" and episode_index != 0:
         raise ValueError("Validation checkpoint must not contain a training position")
-    if current_round == NORMAL_TRAINING_ROUNDS + 1 and (
+    if current_round == rounds + 1 and (
         phase != "training" or episode_index != 0
     ):
         raise ValueError("Completed checkpoint has an invalid phase")
@@ -332,6 +347,13 @@ def _validate_resume(saved, manifest_digest, config):
         expected_completed += episodes_per_round
     if int(saved.get("completed_episodes", -1)) != expected_completed:
         raise ValueError("Checkpoint completed-episode count is inconsistent")
+    batch_size = int(config.get("faults_per_update", 1))
+    if (
+        phase == "training"
+        and episode_index not in (0, episodes_per_round)
+        and episode_index % batch_size != 0
+    ):
+        raise ValueError("Checkpoint is not at a fault-update boundary")
     return saved
 
 
@@ -404,10 +426,10 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("manifest", type=Path)
     parser.add_argument("output_dir", type=Path)
-    parser.add_argument("--rounds", type=int, default=NORMAL_TRAINING_ROUNDS)
+    parser.add_argument("--rounds", type=int)
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--rnd-beta", type=float, default=0.05)
-    parser.add_argument("--k-epochs", type=int, default=8)
+    parser.add_argument("--k-epochs", type=int)
     parser.add_argument(
         "--encoder", choices=tuple(AGENT_TYPES), default="level_gat_gru"
     )
@@ -415,17 +437,33 @@ def main(argv=None):
     mode.add_argument("--resume", action="store_true")
     mode.add_argument("--continue-from", type=Path)
     args = parser.parse_args(argv)
-    if args.rounds != NORMAL_TRAINING_ROUNDS:
+    args.manifest = args.manifest.resolve()
+    manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
+    supported_formats = (
+        LEGACY_MANIFEST_FORMAT,
+        LAZY_VALIDATION_MANIFEST_FORMAT,
+        MANIFEST_FORMAT,
+    )
+    if manifest.get("format") not in supported_formats:
+        raise ValueError("Training requires a supported data-split manifest")
+    batched_training = manifest.get("format") == MANIFEST_FORMAT
+    expected_rounds = (
+        NORMAL_TRAINING_ROUNDS if batched_training else LEGACY_TRAINING_ROUNDS
+    )
+    if args.rounds is None:
+        args.rounds = expected_rounds
+    if args.k_epochs is None:
+        args.k_epochs = PPO_EPOCHS_PER_UPDATE if batched_training else 8
+    if args.rounds != expected_rounds:
         raise ValueError(
-            f"SmartATPG training requires exactly {NORMAL_TRAINING_ROUNDS} rounds"
+            f"This SmartATPG manifest requires exactly {expected_rounds} rounds"
         )
     if args.k_epochs <= 0:
         raise ValueError("PPO epochs must be positive")
-
-    args.manifest = args.manifest.resolve()
-    manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
-    if manifest.get("format") not in (LEGACY_MANIFEST_FORMAT, MANIFEST_FORMAT):
-        raise ValueError("Training requires a supported data-split manifest")
+    if batched_training and args.k_epochs != PPO_EPOCHS_PER_UPDATE:
+        raise ValueError(
+            f"V8 SmartATPG training requires k_epochs={PPO_EPOCHS_PER_UPDATE}"
+        )
     train_circuits, validation_circuits = _resolve_circuit_records(
         manifest, args.manifest
     )
@@ -479,7 +517,10 @@ def main(argv=None):
         k_epochs=args.k_epochs,
     )
     trainers = {
-        item["name"]: CppPodemBacktraceV2Trainer(graphs[item["name"]], agent=agent)
+        item["name"]: CppPodemBacktraceV2Trainer(
+            graphs[item["name"]], agent=agent,
+            auto_update=not batched_training,
+        )
         for item in train_circuits
     }
     evaluators = {
@@ -510,10 +551,12 @@ def main(argv=None):
         "heuristic": HEURISTIC,
         "manifest_hash": manifest_digest,
     }
-    if manifest.get("format") == MANIFEST_FORMAT:
+    if manifest.get("format") != LEGACY_MANIFEST_FORMAT:
         config["validation_catalog_hash"] = _validation_catalog_hash(
             validation_circuits
         )
+    if batched_training:
+        config["faults_per_update"] = FAULTS_PER_UPDATE
     state = _initial_state(manifest_digest, config)
     if args.resume:
         if not checkpoint_path.is_file():
@@ -587,19 +630,16 @@ def main(argv=None):
                     state["episode_index"] = index + 1
                     state["completed_episodes"] += 1
                     step = int(state["completed_episodes"])
-                    for key in (
-                        "backtracks", "backtrace_steps", "detected", "total_loss",
-                        "rnd_loss", "extrinsic_reward_sum",
-                        "scaled_intrinsic_reward_sum", "combined_reward_sum",
-                    ):
+                    episode_keys = [
+                        "backtracks", "backtrace_steps", "detected",
+                        "extrinsic_reward_sum", "scaled_intrinsic_reward_sum",
+                        "combined_reward_sum",
+                    ]
+                    if not batched_training:
+                        episode_keys.extend(("total_loss", "rnd_loss"))
+                    for key in episode_keys:
                         writer.add_scalar(f"episode/{key}", metrics[key], step)
                     writer.flush()
-                    export_actor(
-                        agent.policy_old.state_dict(),
-                        model_latest_path,
-                        training_protocol=training_protocol,
-                    )
-                    _save_state(checkpoint_path, agent, state)
                     print(
                         f"EPISODE round={round_number}/{args.rounds} "
                         f"index={index + 1}/{len(order)} circuit={circuit_name} "
@@ -607,6 +647,45 @@ def main(argv=None):
                         f"backtrace_steps={metrics['backtrace_steps']}",
                         flush=True,
                     )
+                    update_boundary = _fault_update_boundary(
+                        index + 1, len(order),
+                        FAULTS_PER_UPDATE if batched_training else 1,
+                    )
+                    if batched_training and update_boundary:
+                        update_metrics = agent.update()
+                        batch_faults = (index + 1) % FAULTS_PER_UPDATE
+                        if batch_faults == 0:
+                            batch_faults = FAULTS_PER_UPDATE
+                        update_step = (
+                            int(agent.update_count)
+                            if update_metrics is not None
+                            else (index + 1 + FAULTS_PER_UPDATE - 1)
+                            // FAULTS_PER_UPDATE
+                        )
+                        if update_metrics is not None:
+                            for key in (
+                                "total_loss", "policy_loss", "value_loss",
+                                "entropy", "rnd_loss", "steps",
+                            ):
+                                writer.add_scalar(
+                                    f"update/{key}", update_metrics[key],
+                                    update_step,
+                                )
+                            writer.flush()
+                        print(
+                            f"UPDATE round={round_number}/{args.rounds} "
+                            f"faults={batch_faults} completed={index + 1}/"
+                            f"{len(order)} optimizer_step="
+                            f"{int(update_metrics is not None)}",
+                            flush=True,
+                        )
+                    if not batched_training or update_boundary:
+                        export_actor(
+                            agent.policy_old.state_dict(),
+                            model_latest_path,
+                            training_protocol=training_protocol,
+                        )
+                        _save_state(checkpoint_path, agent, state)
                 state["phase"] = "validation"
                 state["episode_index"] = 0
                 _save_state(checkpoint_path, agent, state)

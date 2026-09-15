@@ -16,7 +16,9 @@ except ModuleNotFoundError:
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKTRACK_LIMIT = 200
-NORMAL_TRAINING_ROUNDS = 5
+NORMAL_TRAINING_ROUNDS = 2
+FAULTS_PER_UPDATE = 8
+PPO_EPOCHS_PER_UPDATE = 1
 
 
 def _atomic_json(path, value):
@@ -84,7 +86,7 @@ def main(argv=None):
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=ROOT / "artifacts/smartatpg_top30_hard_5rounds_bt200",
+        default=ROOT / "artifacts/smartatpg_top30_hard_2rounds_batch8_bt200",
     )
     parser.add_argument("--dataset-root", type=Path, default=ROOT / "data")
     parser.add_argument("--rounds", type=int, default=NORMAL_TRAINING_ROUNDS)
@@ -149,6 +151,7 @@ def main(argv=None):
         str(gat_gru_dir),
         "--rounds", str(args.rounds),
         "--seed", str(args.seed),
+        "--k-epochs", str(PPO_EPOCHS_PER_UPDATE),
         "--encoder", "level_gat_gru",
     ]
     if args.continue_from:
@@ -201,6 +204,8 @@ def main(argv=None):
         "normal_rounds": manifest["normal_rounds"],
         "training_circuit_count": len(manifest["train_circuits"]),
         "validation_circuit_count": len(manifest["validation_circuits"]),
+        "faults_per_update": manifest["faults_per_update"],
+        "k_epochs": manifest["k_epochs"],
     }
     _atomic_json(metadata_path, metadata)
     timings["smartatpg_gat_gru_training_seconds"] = _run(

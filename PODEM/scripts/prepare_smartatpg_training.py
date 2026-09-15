@@ -1,4 +1,4 @@
-"""Prepare data/train and data/validation for five-round SmartATPG training."""
+"""Prepare data/train and data/validation for versioned SmartATPG training."""
 
 import argparse
 import hashlib
@@ -16,14 +16,20 @@ from smartatpg_portable import (
 
 
 LEGACY_MANIFEST_FORMAT = "SMARTATPG_DATA_SPLIT_MANIFEST_V6_TOP30_11D_CO_NO_BUF"
-MANIFEST_FORMAT = (
+LAZY_VALIDATION_MANIFEST_FORMAT = (
     "SMARTATPG_DATA_SPLIT_MANIFEST_V7_LAZY_VALIDATION_CATALOG_11D_CO_NO_BUF"
+)
+MANIFEST_FORMAT = (
+    "SMARTATPG_DATA_SPLIT_MANIFEST_V8_TWO_ROUND_BATCH8_EPOCH1_11D_CO_NO_BUF"
 )
 PREPARATION_STATE_FORMAT = "SMARTATPG_DATA_SPLIT_PREPARATION_V2"
 PROFILE_FORMAT = "SMARTATPG_HEURISTIC_FAULT_PROFILE_V1"
 FAULT_FILTER = "train_top30_hard_detected_validation_full_catalog"
 BACKTRACK_LIMIT = 200
-NORMAL_TRAINING_ROUNDS = 5
+LEGACY_TRAINING_ROUNDS = 5
+NORMAL_TRAINING_ROUNDS = 2
+FAULTS_PER_UPDATE = 8
+PPO_EPOCHS_PER_UPDATE = 1
 TRAIN_FAULTS_PER_CIRCUIT = 30
 HEURISTIC = "scoap_heuristic"
 TRAIN_CIRCUIT_COUNT = 1024
@@ -295,14 +301,24 @@ def _validation_record(manifest_path, source, graph_identity):
 
 def _validate_manifest(manifest, manifest_path):
     manifest_format = manifest.get("format")
-    if manifest_format not in (LEGACY_MANIFEST_FORMAT, MANIFEST_FORMAT):
+    supported_formats = (
+        LEGACY_MANIFEST_FORMAT,
+        LAZY_VALIDATION_MANIFEST_FORMAT,
+        MANIFEST_FORMAT,
+    )
+    if manifest_format not in supported_formats:
         raise ValueError("Existing data-split SmartATPG manifest configuration changed")
-    legacy = manifest_format == LEGACY_MANIFEST_FORMAT
+    profiled_validation = manifest_format == LEGACY_MANIFEST_FORMAT
+    expected_rounds = (
+        NORMAL_TRAINING_ROUNDS
+        if manifest_format == MANIFEST_FORMAT
+        else LEGACY_TRAINING_ROUNDS
+    )
     expected = {
         "fault_filter": FAULT_FILTER,
         "train_faults_per_circuit": TRAIN_FAULTS_PER_CIRCUIT,
         "backtrack_limit": BACKTRACK_LIMIT,
-        "normal_rounds": NORMAL_TRAINING_ROUNDS,
+        "normal_rounds": expected_rounds,
         "heuristic": HEURISTIC,
         **smartatpg_metadata(),
     }
@@ -334,7 +350,7 @@ def _validate_manifest(manifest, manifest_path):
             raise ValueError(f"SmartATPG {split} dataset inventory changed")
         all_names.extend(names)
         for item, discovered_path in zip(circuits, discovered_paths):
-            uses_profile = split == "train" or legacy
+            uses_profile = split == "train" or profiled_validation
             expected_artifacts = (
                 {"circuit", "profile"} if uses_profile else {"circuit"}
             )
@@ -413,7 +429,7 @@ def _validate_manifest(manifest, manifest_path):
     )
     if manifest.get("training_episode_count") != expected_train_episodes:
         raise ValueError("SmartATPG manifest episode counts are invalid")
-    if legacy:
+    if profiled_validation:
         expected_validation_episodes = sum(
             len(item["episode_fault_ids"])
             for item in manifest["validation_circuits"]
@@ -424,6 +440,14 @@ def _validate_manifest(manifest, manifest_path):
         raise ValueError(
             "Lazy validation manifests must not persist an episode count"
         )
+    if manifest_format == MANIFEST_FORMAT:
+        if (
+            manifest.get("faults_per_update") != FAULTS_PER_UPDATE
+            or manifest.get("k_epochs") != PPO_EPOCHS_PER_UPDATE
+        ):
+            raise ValueError("V8 SmartATPG batching configuration changed")
+    elif "faults_per_update" in manifest or "k_epochs" in manifest:
+        raise ValueError("Legacy SmartATPG manifests must not define V8 batching")
     return manifest
 
 
@@ -575,6 +599,8 @@ def prepare(dataset_root, output_dir, seed=14, resume=False):
         "profile_seed": seed,
         "heuristic": HEURISTIC,
         "normal_rounds": NORMAL_TRAINING_ROUNDS,
+        "faults_per_update": FAULTS_PER_UPDATE,
+        "k_epochs": PPO_EPOCHS_PER_UPDATE,
         "train_circuit_count": len(records["train"]),
         "validation_circuit_count": len(records["validation"]),
         "training_episode_count": sum(

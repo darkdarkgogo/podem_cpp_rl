@@ -19,6 +19,7 @@ from smartatpg_portable import (
     GATE_EMBEDDING_DIM,
     GRAPH_CONFIG,
     MODEL_FORMAT,
+    LEGACY_MODEL_FORMAT,
     export_embeddings,
     load_graph,
     load_model,
@@ -96,20 +97,31 @@ def _bundle_path(bundle_root, relative):
 
 
 def _validate_training_protocol(protocol):
-    required = {
+    legacy_required = {
         "manifest_hash",
         "backtrack_limit",
         "normal_rounds",
         "training_circuit_count",
         "validation_circuit_count",
     }
-    if not isinstance(protocol, dict) or set(protocol) != required:
+    batched_required = legacy_required | {"faults_per_update", "k_epochs"}
+    if not isinstance(protocol, dict) or set(protocol) not in (
+        legacy_required, batched_required,
+    ):
         raise ValueError("Benchmark manifest training protocol is incomplete")
+    batched = set(protocol) == batched_required
     if (
         not isinstance(protocol["manifest_hash"], str)
         or re.fullmatch(r"[0-9a-f]{64}", protocol["manifest_hash"]) is None
         or protocol["backtrack_limit"] != BACKTRACK_LIMIT
-        or protocol["normal_rounds"] != 5
+        or protocol["normal_rounds"] != (2 if batched else 5)
+        or (
+            batched
+            and (
+                protocol["faults_per_update"] != 8
+                or protocol["k_epochs"] != 1
+            )
+        )
         or not isinstance(protocol["training_circuit_count"], int)
         or protocol["training_circuit_count"] <= 0
         or not isinstance(protocol["validation_circuit_count"], int)
@@ -217,7 +229,11 @@ def _prepare_models(model_paths, manifest, output_dir):
             or model.encoder_variant != record["encoder_variant"]
             or model.actor_input_dim != record["actor_input_dim"]
             or model.decision_state_dim != record["decision_state_dim"]
-            or model.model_format != MODEL_FORMAT
+            or model.model_format != (
+                MODEL_FORMAT
+                if model.faults_per_update is not None
+                else LEGACY_MODEL_FORMAT
+            )
             or record.get("training_protocol") != manifest["training_protocol"]
             or model.manifest_hash != manifest["training_protocol"]["manifest_hash"]
             or model.backtrack_limit != manifest["training_protocol"]["backtrack_limit"]
