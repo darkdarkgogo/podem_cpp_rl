@@ -96,3 +96,50 @@ best row. This cross-task producer/consumer mismatch was reported to the parent
 task and was not changed here because Task 2 is outside this task's scope.
 
 No reviewer or sub-agent was used, as required by the task brief.
+
+## Review Fix Round 1/5: Complete and Consistent Model Metrics
+
+The Important review finding was reproduced before implementation. New tests
+mutated an otherwise valid model round in four ways: one circuit episode short
+of its runtime catalog, a TOTAL additive metric inconsistent with circuit rows,
+an invalid derived fault coverage, and an invalid derived mean.
+
+RED command:
+
+```powershell
+& 'C:\Users\acer\.conda\envs\d2l\python.exe' -m unittest PODEM.tests.test_linux_smartatpg.ValidationComparisonTests.test_rejects_incomplete_or_inconsistent_round_metrics
+```
+
+RED key output:
+
+```text
+Ran 1 test in 0.059s
+FAILED (failures=4)
+AssertionError: ValueError not raised
+```
+
+The comparison loader now validates both model runs after resolving the
+runtime catalog and before starting or reusing SCOAP. Every circuit episode
+count must match its catalog, TOTAL episodes must match the complete validation
+order, all additive raw totals/counts/work/time must equal the circuit-row sum,
+and coverage plus backtracks/backtrace/return means must match their raw totals.
+
+GREEN commands:
+
+```powershell
+& 'C:\Users\acer\.conda\envs\d2l\python.exe' -m unittest PODEM.tests.test_linux_smartatpg.ValidationComparisonTests.test_rejects_incomplete_or_inconsistent_round_metrics
+& 'C:\Users\acer\.conda\envs\d2l\python.exe' -m unittest PODEM.tests.test_linux_smartatpg
+```
+
+GREEN key output:
+
+```text
+Ran 1 test in 0.046s
+OK
+Ran 21 tests in 0.191s
+OK
+```
+
+`py_compile` and `git diff --check` also completed successfully with no
+output. The two Minor review notes were intentionally left unchanged for later
+rounds, as directed. No sub-agent was used.

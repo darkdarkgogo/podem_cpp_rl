@@ -297,6 +297,41 @@ class ValidationComparisonTests(unittest.TestCase):
             ):
                 build_validation_comparison(manifest, gat, mean, output)
 
+    def test_rejects_incomplete_or_inconsistent_round_metrics(self):
+        def missing_fault_episode(round_summary):
+            round_summary["circuits"][0]["episodes"] = 1
+
+        def inconsistent_total(round_summary):
+            round_summary["backtracks_total"] += 2
+            round_summary["backtracks_mean"] = (
+                round_summary["backtracks_total"] / round_summary["episodes"]
+            )
+
+        def inconsistent_coverage(round_summary):
+            round_summary["circuits"][0]["fault_coverage"] = 0.75
+
+        def inconsistent_mean(round_summary):
+            round_summary["circuits"][0]["backtracks_mean"] += 1.0
+
+        cases = (
+            ("missing_fault_episode", missing_fault_episode),
+            ("inconsistent_total", inconsistent_total),
+            ("inconsistent_coverage", inconsistent_coverage),
+            ("inconsistent_mean", inconsistent_mean),
+        )
+        for label, mutate in cases:
+            with self.subTest(case=label), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                manifest, gat, mean, output, patches = self._build(root)
+                metrics_path = gat / "validation_metrics.json"
+                metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+                mutate(metrics[0])
+                metrics_path.write_text(json.dumps(metrics), encoding="utf-8")
+                with patches[0], patches[1], patches[2], self.assertRaisesRegex(
+                    ValueError, "validation metrics"
+                ):
+                    build_validation_comparison(manifest, gat, mean, output)
+
 class SplitLauncherTests(_SplitLauncherInventoryTests, unittest.TestCase):
     def test_training_launcher_only_trains_and_exports_bundle(self):
         with tempfile.TemporaryDirectory() as directory:

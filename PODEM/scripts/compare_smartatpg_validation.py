@@ -3,6 +3,7 @@
 import argparse
 import csv
 import json
+import math
 from pathlib import Path
 
 from train_smartatpg import (
@@ -63,6 +64,23 @@ REDUCTION_METRICS = (
     "backtrace_steps_total",
     "atpg_seconds",
 )
+ADDITIVE_METRICS = (
+    "episodes",
+    "detected_faults",
+    "redundant_faults",
+    "aborted_faults",
+    "test_vectors",
+    "backtracks_total",
+    "backtrace_steps_total",
+    "return_total",
+    "atpg_seconds",
+)
+DERIVED_METRICS = {
+    "fault_coverage": "detected_faults",
+    "backtracks_mean": "backtracks_total",
+    "backtrace_steps_mean": "backtrace_steps_total",
+    "return_mean": "return_total",
+}
 
 
 class ScoapValidationEvaluator:
@@ -158,6 +176,74 @@ def _load_run(name, directory):
     if len(best) != 1:
         raise ValueError(f"Expected exactly one best validation round for {name}")
     return identity, rounds
+
+
+def _metrics_equal(actual, expected):
+    if isinstance(actual, bool) or not isinstance(actual, (int, float)):
+        return False
+    return math.isclose(
+        float(actual), float(expected), rel_tol=1.0e-9, abs_tol=1.0e-9
+    )
+
+
+def _validate_scope_metrics(name, round_number, scope, row):
+    episodes = row["episodes"]
+    if isinstance(episodes, bool) or not isinstance(episodes, int) or episodes < 0:
+        raise ValueError(
+            f"Inconsistent validation metrics for {name} round {round_number}: "
+            f"invalid episodes for {scope}"
+        )
+    if sum(row[key] for key in (
+        "detected_faults", "redundant_faults", "aborted_faults"
+    )) != episodes:
+        raise ValueError(
+            f"Inconsistent validation metrics for {name} round {round_number}: "
+            f"outcome counts for {scope}"
+        )
+    if row["test_vectors"] != row["detected_faults"]:
+        raise ValueError(
+            f"Inconsistent validation metrics for {name} round {round_number}: "
+            f"test vectors for {scope}"
+        )
+    divisor = max(1, episodes)
+    for derived, total in DERIVED_METRICS.items():
+        expected = row[total] / divisor
+        if not _metrics_equal(row[derived], expected):
+            raise ValueError(
+                f"Inconsistent validation metrics for {name} round "
+                f"{round_number}: {derived} for {scope}"
+            )
+
+
+def _validate_run_metrics(name, rounds, circuits):
+    expected_total_episodes = len(_validation_order(circuits))
+    expected_circuit_episodes = {
+        item["name"]: len(item["episode_fault_ids"]) for item in circuits
+    }
+    for summary in rounds:
+        round_number = summary["round"]
+        if summary["episodes"] != expected_total_episodes:
+            raise ValueError(
+                f"Incomplete validation metrics for {name} round {round_number}: "
+                "total episodes do not cover the runtime fault catalog"
+            )
+        for row in summary["circuits"]:
+            circuit = row["circuit"]
+            if row["episodes"] != expected_circuit_episodes[circuit]:
+                raise ValueError(
+                    f"Incomplete validation metrics for {name} round "
+                    f"{round_number}: {circuit} episodes do not cover the "
+                    "runtime fault catalog"
+                )
+            _validate_scope_metrics(name, round_number, circuit, row)
+        _validate_scope_metrics(name, round_number, "TOTAL", summary)
+        for key in ADDITIVE_METRICS:
+            expected = sum(row[key] for row in summary["circuits"])
+            if not _metrics_equal(summary[key], expected):
+                raise ValueError(
+                    f"Inconsistent validation metrics for {name} round "
+                    f"{round_number}: TOTAL {key} does not equal circuit rows"
+                )
 
 
 def percentage_reduction(baseline, candidate):
@@ -319,6 +405,8 @@ def build_validation_comparison(
         raise ValueError("Validation run identity mismatch: validation_circuits")
     if _validation_catalog_hash(circuits) != gat_identity["validation_catalog_hash"]:
         raise ValueError("Validation run identity mismatch: validation_catalog_hash")
+    for name, data in runs.items():
+        _validate_run_metrics(name, data["rounds"], circuits)
 
     baseline_payload = _load_or_run_scoap(
         output_dir, gat_identity, circuits, seed
