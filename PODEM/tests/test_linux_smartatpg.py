@@ -2,6 +2,7 @@ import hashlib
 import json
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -22,6 +23,10 @@ from compare_smartatpg_validation import (
 from run_smartatpg_benchmark_linux import main as run_benchmark_main
 from run_smartatpg_training_linux import main as run_training_main
 from smartatpg_portable import CIRCUITS
+
+from run_dual_smartatpg_training_linux import (
+    _run_parallel_training, main as run_dual_training_main,
+)
 
 
 def sha256(path):
@@ -67,6 +72,7 @@ class _SplitLauncherInventoryTests:
                 "plot_final_comparison.py",
                 "run_smartatpg_benchmark_linux.py",
                 "run_smartatpg_training_linux.py",
+                "run_dual_smartatpg_training_linux.py",
                 "smartatpg_portable.py",
                 "train_smartatpg.py",
             },
@@ -786,6 +792,179 @@ cputime for test pattern generation (one circuit): 1.250000s 1.500000s
         self.assertEqual(
             result["models"]["smartatpg_gat_gru"]["actor_parameter_count"], 6
         )
+
+
+class DualTrainingLauncherTests(unittest.TestCase):
+    @staticmethod
+    def _fake_torch(device_count=2):
+        return SimpleNamespace(
+            __version__="test",
+            cuda=SimpleNamespace(
+                device_count=lambda: device_count, is_available=lambda: True
+            ),
+        )
+
+    def test_dual_launcher_prepares_once_trains_both_and_then_compares(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "training"
+            commands = []
+
+            def fake_command(command, _log_path, _environment, **_kwargs):
+                commands.append(command)
+                if str(command[2]).endswith("prepare_smartatpg_training.py"):
+                    preparation = Path(command[4])
+                    preparation.mkdir(parents=True, exist_ok=True)
+                    (preparation / "training_manifest.json").write_text(
+                        json.dumps({
+                            "backtrack_limit": 200, "normal_rounds": 2,
+                            "faults_per_update": 8, "k_epochs": 1,
+                            "train_circuits": [{"name": "t"}],
+                            "validation_circuits": [{"name": "v"}],
+                        }),
+                        encoding="utf-8",
+                    )
+                if str(command[2]).endswith("compare_smartatpg_validation.py"):
+                    for run_name in ("smartatpg_gat_gru", "smartatpg_mean"):
+                        self.assertTrue((output / run_name / "model_best.txt").is_file())
+                return 0
+
+            def fake_parallel(jobs):
+                for job in jobs:
+                    directory = Path(job["output_prefix"])
+                    directory.mkdir(parents=True, exist_ok=True)
+                    for name in (
+                        "model_best.txt", "model_latest.txt",
+                        "validation_identity.json", "validation_metrics.json",
+                    ):
+                        (directory / name).write_text("{}", encoding="utf-8")
+                return {job["name"]: 1.0 for job in jobs}
+
+            with (
+                patch("run_dual_smartatpg_training_linux.sys.platform", "linux"),
+                patch("run_dual_smartatpg_training_linux.torch", self._fake_torch(4)),
+                patch("run_dual_smartatpg_training_linux._check_cpp_extension"),
+                patch(
+                    "run_dual_smartatpg_training_linux._tee_command",
+                    side_effect=fake_command,
+                ),
+                patch(
+                    "run_dual_smartatpg_training_linux._run_parallel_training",
+                    side_effect=fake_parallel,
+                ) as parallel,
+            ):
+                run_dual_training_main(["--output-dir", str(output)])
+
+            self.assertEqual(sum(
+                str(command[2]).endswith("prepare_smartatpg_training.py")
+                for command in commands
+            ), 1)
+            self.assertEqual(sum(
+                str(command[2]).endswith("compare_smartatpg_validation.py")
+                for command in commands
+            ), 1)
+            self.assertEqual(parallel.call_count, 1)
+            jobs = parallel.call_args.args[0]
+            train_commands = [job["command"] for job in jobs]
+            gpu_by_encoder = {
+                command[command.index("--encoder") + 1]: job["environment"]["CUDA_VISIBLE_DEVICES"]
+                for command, job in zip(train_commands, jobs)
+            }
+            self.assertEqual(gpu_by_encoder, {
+                "level_gat_gru": "0", "fanin_mean": "1",
+            })
+            for command in train_commands:
+                self.assertEqual(command[command.index("--rounds") + 1], "2")
+                self.assertEqual(command[command.index("--k-epochs") + 1], "1")
+                self.assertEqual(
+                    Path(command[3]), output / "preparation" / "training_manifest.json"
+                )
+            flattened = " ".join(" ".join(map(str, command)) for command in commands)
+            self.assertNotIn("prepare_smartatpg_benchmark.py", flattened)
+            self.assertNotIn("benchmark_smartatpg.py", flattened)
+            self.assertNotIn("benchmark_bundle", flattened)
+            metadata = json.loads((output / "training_run_metadata.json").read_text("utf-8"))
+            self.assertIn("validation_comparison", metadata)
+            self.assertNotIn("benchmark_bundle", metadata)
+
+    def test_dual_launcher_rejects_invalid_gpu_and_platform_configurations(self):
+        cases = (
+            ("linux", 1, [], RuntimeError, "only 1 CUDA device"),
+            ("linux", 2, ["--gat-gpu", "0", "--mean-gpu", "0"], ValueError,
+             "must be distinct"),
+            ("linux", 2, ["--gat-gpu", "-1"], ValueError, "non-negative"),
+            ("linux", 2, ["--mean-gpu", "2"], RuntimeError, "Requested GPU 2"),
+            ("win32", 2, [], RuntimeError, "intended for Linux"),
+        )
+        for platform, devices, arguments, error, message in cases:
+            with self.subTest(platform=platform, devices=devices, arguments=arguments):
+                with (
+                    patch("run_dual_smartatpg_training_linux.sys.platform", platform),
+                    patch("run_dual_smartatpg_training_linux.torch", self._fake_torch(devices)),
+                    patch("run_dual_smartatpg_training_linux._check_cpp_extension"),
+                    self.assertRaisesRegex(error, message),
+                ):
+                    run_dual_training_main(arguments)
+
+    def test_parallel_training_terminates_active_peer_after_failure(self):
+        started = threading.Event()
+        terminated = threading.Event()
+
+        class Process:
+            def __init__(self, active=True):
+                self.active = active
+                self.terminate_calls = 0
+
+            def poll(self):
+                return None if self.active else 0
+
+            def terminate(self):
+                self.terminate_calls += 1
+                self.active = False
+                terminated.set()
+
+        gat = Process(active=False)
+        mean = Process()
+
+        def fake_command(command, _log, _environment, on_start=None, **_kwargs):
+            process = gat if command[0] == "gat" else mean
+            on_start(process)
+            if command[0] == "gat":
+                started.wait(1)
+                return 9
+            started.set()
+            terminated.wait(2)
+            return 0
+
+        jobs = [
+            {"name": "gat", "command": ["gat"], "log_path": "gat.log", "environment": {}, "output_prefix": "gat"},
+            {"name": "mean", "command": ["mean"], "log_path": "mean.log", "environment": {}, "output_prefix": "mean"},
+        ]
+        with patch(
+            "run_dual_smartatpg_training_linux._tee_command", side_effect=fake_command
+        ):
+            with self.assertRaisesRegex(SystemExit, "9"):
+                _run_parallel_training(jobs)
+        self.assertEqual(mean.terminate_calls, 1)
+
+    def test_parallel_training_returns_timings_after_both_jobs_succeed(self):
+        class Process:
+            def poll(self):
+                return 0
+
+        def fake_command(_command, _log, _environment, on_start=None, **_kwargs):
+            on_start(Process())
+            return 0
+
+        jobs = [
+            {"name": "gat", "command": ["gat"], "log_path": "gat.log", "environment": {}, "output_prefix": "gat"},
+            {"name": "mean", "command": ["mean"], "log_path": "mean.log", "environment": {}, "output_prefix": "mean"},
+        ]
+        with patch(
+            "run_dual_smartatpg_training_linux._tee_command", side_effect=fake_command
+        ):
+            timings = _run_parallel_training(jobs)
+        self.assertEqual(set(timings), {"gat", "mean"})
+        self.assertTrue(all(value >= 0 for value in timings.values()))
 
 
 if __name__ == "__main__":
