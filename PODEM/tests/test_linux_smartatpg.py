@@ -16,6 +16,9 @@ from benchmark_smartatpg import (
     _parse_native_output, _stage_circuit_copy, _summarize,
     _summarize_preprocessing, _write_reports, percentage_change, run_benchmark,
 )
+from compare_smartatpg_validation import (
+    ScoapValidationEvaluator, build_validation_comparison,
+)
 from run_smartatpg_benchmark_linux import main as run_benchmark_main
 from run_smartatpg_training_linux import main as run_training_main
 from smartatpg_portable import CIRCUITS
@@ -25,7 +28,7 @@ def sha256(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-class SplitLauncherTests(unittest.TestCase):
+class _SplitLauncherInventoryTests:
     def test_native_linux_build_enables_local_cpu_optimization(self):
         build_script = (SCRIPTS / "build_native.py").read_text(encoding="utf-8")
         setup_script = (SCRIPTS.parent / "setup.py").read_text(encoding="utf-8")
@@ -55,6 +58,7 @@ class SplitLauncherTests(unittest.TestCase):
             {
                 "benchmark_smartatpg.py",
                 "build_native.py",
+                "compare_smartatpg_validation.py",
                 "convert_binary_bench.py",
                 "convert_full_scan_bench.py",
                 "generate_normal_bench_dataset.py",
@@ -68,6 +72,232 @@ class SplitLauncherTests(unittest.TestCase):
             },
         )
 
+
+class ValidationComparisonTests(unittest.TestCase):
+    IDENTITY_KEYS = {
+        "format", "manifest_hash", "encoder_variant", "normal_rounds",
+        "faults_per_update", "k_epochs", "backtrack_limit",
+        "validation_catalog_hash", "validation_circuits",
+    }
+
+    @staticmethod
+    def _summary(round_number, backtracks, is_best, seconds=1.0):
+        return {
+            "round": round_number,
+            "episodes": 2,
+            "detected_faults": 1,
+            "redundant_faults": 1,
+            "aborted_faults": 0,
+            "backtracks_total": backtracks,
+            "backtrace_steps_total": backtracks * 2,
+            "return_total": 0.0,
+            "test_vectors": 1,
+            "atpg_seconds": seconds,
+            "fault_coverage": 0.5,
+            "backtracks_mean": backtracks / 2,
+            "backtrace_steps_mean": backtracks,
+            "return_mean": 0.0,
+            "circuits": [{
+                "circuit": "v",
+                "episodes": 2,
+                "detected_faults": 1,
+                "redundant_faults": 1,
+                "aborted_faults": 0,
+                "backtracks_total": backtracks,
+                "backtrace_steps_total": backtracks * 2,
+                "return_total": 0.0,
+                "test_vectors": 1,
+                "atpg_seconds": seconds,
+                "fault_coverage": 0.5,
+                "backtracks_mean": backtracks / 2,
+                "backtrace_steps_mean": backtracks,
+                "return_mean": 0.0,
+            }],
+            "is_best": is_best,
+        }
+
+    def _write_run(
+        self, root, name, encoder, best_round, manifest_hash, catalog_hash
+    ):
+        directory = root / name
+        directory.mkdir()
+        identity = {
+            "format": "SMARTATPG_VALIDATION_IDENTITY_V1",
+            "manifest_hash": manifest_hash,
+            "encoder_variant": encoder,
+            "normal_rounds": 2,
+            "faults_per_update": 8,
+            "k_epochs": 1,
+            "backtrack_limit": 200,
+            "validation_catalog_hash": catalog_hash,
+            "validation_circuits": ["v"],
+        }
+        self.assertEqual(set(identity), self.IDENTITY_KEYS)
+        (directory / "validation_identity.json").write_text(
+            json.dumps(identity), encoding="utf-8"
+        )
+        rounds = [
+            self._summary(1, 8, best_round == 1),
+            self._summary(2, 4, best_round == 2),
+        ]
+        (directory / "validation_metrics.json").write_text(
+            json.dumps(rounds), encoding="utf-8"
+        )
+        return directory
+
+    @staticmethod
+    def _baseline_record(_evaluator, item, fault_id, _limit, _seed):
+        detected = int(fault_id == "f0")
+        return {
+            "circuit": item["name"], "fault_id": fault_id,
+            "outcome": 1 if detected else 0, "detected": detected,
+            "redundant": 1 - detected, "aborted": 0,
+            "backtracks": 10, "backtrace_steps": 20, "return": 0.0,
+            "test_vectors": detected, "atpg_seconds": 2.0,
+        }
+
+    def _build(self, root, **identity_changes):
+        manifest = root / "manifest.json"
+        manifest.write_text(json.dumps({"format": "test"}), encoding="utf-8")
+        circuits = [{
+            "name": "v", "circuit": str(root / "v.bench"),
+            "episode_fault_ids": ["f0", "f1"],
+        }]
+        catalog_payload = [{"name": "v", "fault_ids": ["f0", "f1"]}]
+        catalog_hash = hashlib.sha256(json.dumps(
+            catalog_payload, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")).hexdigest()
+        gat = self._write_run(
+            root, "gat", "level_gat_gru", 1, sha256(manifest), catalog_hash
+        )
+        mean = self._write_run(
+            root, "mean", "fanin_mean", 2, sha256(manifest), catalog_hash
+        )
+        for run_name, changes in identity_changes.items():
+            path = {"gat": gat, "mean": mean}[run_name] / "validation_identity.json"
+            identity = json.loads(path.read_text(encoding="utf-8"))
+            identity.update(changes)
+            path.write_text(json.dumps(identity), encoding="utf-8")
+        output = root / "comparison"
+        patches = (
+            patch(
+                "compare_smartatpg_validation._resolve_circuit_records",
+                return_value=([], circuits),
+            ),
+            patch(
+                "compare_smartatpg_validation._load_validation_catalogs",
+                side_effect=lambda _manifest, items: items,
+            ),
+            patch(
+                "compare_smartatpg_validation._evaluate_fault",
+                side_effect=self._baseline_record,
+            ),
+        )
+        return manifest, gat, mean, output, patches
+
+    def test_builds_two_run_comparison_with_one_cached_scoap_baseline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest, gat, mean, output, patches = self._build(root)
+            with patches[0], patches[1], patches[2] as evaluate:
+                result = build_validation_comparison(
+                    manifest, gat, mean, output
+                )
+                resumed = build_validation_comparison(
+                    manifest, gat, mean, output
+                )
+            self.assertEqual(result, resumed)
+            self.assertEqual(evaluate.call_count, 2)
+            self.assertEqual(
+                result["format"], "SMARTATPG_DUAL_VALIDATION_COMPARISON_V1"
+            )
+            self.assertEqual(result["models"]["smartatpg_gat_gru"]["best_round"], 1)
+            self.assertEqual(result["models"]["smartatpg_mean"]["best_round"], 2)
+            self.assertEqual(len(result["comparisons"]), 4)
+            self.assertEqual(len(result["direct_comparisons"]), 2)
+            self.assertEqual(
+                {row["scope"] for row in result["comparisons"][0]["rows"]},
+                {"total", "circuit"},
+            )
+            self.assertTrue((output / "scoap_validation.json").is_file())
+            self.assertTrue((output / "validation_comparison.json").is_file())
+            self.assertTrue((output / "validation_comparison.csv").is_file())
+            csv_text = (output / "validation_comparison.csv").read_text("utf-8")
+            for field in (
+                "detected_faults", "redundant_faults", "aborted_faults",
+                "test_vectors", "backtracks_total", "backtrace_steps_total",
+                "return_total", "atpg_seconds", "scoap_backtracks_total",
+                "gat_minus_mean",
+            ):
+                self.assertIn(field, csv_text)
+
+    def test_scoap_evaluator_uses_native_backtrace_heuristic_protocol(self):
+        captured = {}
+
+        def run_stuck_at(*args):
+            captured["args"] = args
+            return {"episodes": 1, "atpg_seconds": 0.25}
+
+        event_callback = object()
+        with patch.dict(sys.modules, {
+            "cpp_podem": SimpleNamespace(run_stuck_at=run_stuck_at),
+        }):
+            result = ScoapValidationEvaluator().run(
+                "v.bench", backtrack_limit=200, seed=2026,
+                fault_ids=["f0"], use_scoap=False,
+                event_callback=event_callback,
+            )
+        args = captured["args"]
+        self.assertEqual(result["episodes"], 1)
+        self.assertEqual(args[2], event_callback)
+        self.assertEqual(args[3:6], (200, 2026, ["f0"]))
+        self.assertEqual(args[7], "backtrace_rl")
+        self.assertIs(args[9], True)
+        self.assertEqual(args[1]({"heuristic_action": 1}), 1)
+
+    def test_rejects_incompatible_run_identity_and_rounds(self):
+        cases = (
+            ("manifest_hash", {"mean": {"manifest_hash": "c" * 64}}, "manifest_hash"),
+            ("catalog_hash", {"mean": {"validation_catalog_hash": "c" * 64}},
+             "validation_catalog_hash"),
+            ("wrong_encoder", {"gat": {"encoder_variant": "fanin_mean"}},
+             "Wrong encoder variant"),
+            ("wrong_protocol", {"mean": {"faults_per_update": 4}},
+             "Wrong V8 training protocol"),
+        )
+        for label, changes, message in cases:
+            with self.subTest(case=label), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                manifest, gat, mean, output, patches = self._build(root, **changes)
+                with patches[0], patches[1], patches[2], self.assertRaisesRegex(
+                    ValueError, message
+                ):
+                    build_validation_comparison(manifest, gat, mean, output)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest, gat, mean, output, patches = self._build(root)
+            metrics_path = mean / "validation_metrics.json"
+            metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+            metrics_path.write_text(json.dumps(metrics[:1]), encoding="utf-8")
+            with patches[0], patches[1], patches[2], self.assertRaisesRegex(
+                ValueError, "Incomplete validation rounds"
+            ):
+                build_validation_comparison(manifest, gat, mean, output)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest, gat, mean, output, patches = self._build(root)
+            metrics_path = gat / "validation_metrics.json"
+            metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+            metrics[1]["is_best"] = True
+            metrics_path.write_text(json.dumps(metrics), encoding="utf-8")
+            with patches[0], patches[1], patches[2], self.assertRaisesRegex(
+                ValueError, "exactly one best"
+            ):
+                build_validation_comparison(manifest, gat, mean, output)
+
+class SplitLauncherTests(_SplitLauncherInventoryTests, unittest.TestCase):
     def test_training_launcher_only_trains_and_exports_bundle(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "training"

@@ -1,0 +1,98 @@
+# Task 3 Report: Dual Validation Comparison with One SCOAP Baseline
+
+## Status
+
+Implemented the Task 3 comparison workflow with strict V8 run validation,
+one resumable SCOAP validation baseline, and atomic JSON/CSV reports.
+
+The agreed JSON schema contains exactly four `comparisons` groups (two models
+times two rounds). Each group contains ordered `rows=[TOTAL, circuit...]`.
+`direct_comparisons` contains exactly two round groups with the same ordered
+row scopes. CSV flattens every model-vs-SCOAP and GAT-minus-MEAN row.
+
+## RED
+
+Command:
+
+```powershell
+& 'C:\Users\acer\.conda\envs\d2l\python.exe' -m unittest PODEM.tests.test_linux_smartatpg
+```
+
+Key output:
+
+```text
+ModuleNotFoundError: No module named 'compare_smartatpg_validation'
+Ran 1 test in 0.001s
+FAILED (errors=1)
+```
+
+## GREEN
+
+Focused command:
+
+```powershell
+& 'C:\Users\acer\.conda\envs\d2l\python.exe' -m unittest PODEM.tests.test_linux_smartatpg
+```
+
+Key output:
+
+```text
+Ran 20 tests in 0.107s
+OK
+```
+
+Regression command:
+
+```powershell
+& 'C:\Users\acer\.conda\envs\d2l\python.exe' -m unittest PODEM.tests.test_linux_smartatpg PODEM.tests.test_smartatpg_training
+```
+
+Key output:
+
+```text
+Ran 45 tests in 0.261s
+OK
+```
+
+Additional checks:
+
+```powershell
+& 'C:\Users\acer\.conda\envs\d2l\python.exe' -m py_compile PODEM/scripts/compare_smartatpg_validation.py PODEM/tests/test_linux_smartatpg.py
+git diff --check
+```
+
+Both completed successfully with no output.
+
+## Modified Files
+
+- Created `PODEM/scripts/compare_smartatpg_validation.py`.
+- Modified `PODEM/tests/test_linux_smartatpg.py`.
+- Created this report.
+
+## Implementation and Self-Review
+
+- V8 identity keys are exact; format, encoder, 2/8/1/200 protocol, manifest
+  hash, runtime validation catalog hash, circuit order, and rounds 1/2 are
+  checked before SCOAP evaluation.
+- Zero or multiple `is_best=True` rows are rejected.
+- `ScoapValidationEvaluator` selects `heuristic_action` through native
+  `backtrace_rl`, forces SCOAP on, and uses the same `_evaluate_fault` event
+  callback path as learned validation.
+- The complete runtime fault order is evaluated only once. The cache stores
+  identity, per-fault records, and summary; resume recomputes and validates the
+  summary before reuse.
+- JSON and CSV retain total/per-circuit raw counts, work, return, timing,
+  coverage, SCOAP deltas/reductions, and same-round GAT-minus-MEAN values.
+- Reports use temporary files followed by replacement.
+- No dual-GPU orchestrator was added.
+
+## Concerns
+
+The existing Task 2 training code marks every newly improved round
+`is_best=True` without clearing an earlier best row. If round 2 improves over
+round 1, its emitted metrics may therefore contain two best rows. Task 3
+intentionally rejects that file because the brief explicitly requires a unique
+best row. This cross-task producer/consumer mismatch was reported to the parent
+task and was not changed here because Task 2 is outside this task's scope.
+
+No reviewer or sub-agent was used, as required by the task brief.
