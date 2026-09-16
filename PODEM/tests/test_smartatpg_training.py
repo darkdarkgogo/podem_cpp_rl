@@ -34,6 +34,7 @@ from prepare_smartatpg_training import (
 )
 if torch is not None:
     from train_smartatpg import (
+        AGENT_TYPES,
         BEST_CHECKPOINT_FORMAT,
         _episode_order,
         _evaluate_fault,
@@ -51,6 +52,8 @@ if torch is not None:
         _validation_order,
         validation_score,
     )
+    from rl_podem.gat_gru import GATGRUSmartATPGPPOAgent
+    from rl_podem.smartatpg import SmartATPGPPOAgent
 
 
 class _FakeEvaluator:
@@ -331,6 +334,11 @@ class SmartATPGPreparationTests(unittest.TestCase):
 
 @unittest.skipIf(torch is None, "PyTorch is not installed")
 class SmartATPGTrainingStateTests(unittest.TestCase):
+
+    def test_trainer_exposes_both_encoder_agents(self):
+        self.assertEqual(set(AGENT_TYPES), {"fanin_mean", "level_gat_gru"})
+        self.assertIs(AGENT_TYPES["fanin_mean"], SmartATPGPPOAgent)
+        self.assertIs(AGENT_TYPES["level_gat_gru"], GATGRUSmartATPGPPOAgent)
 
     def test_fault_update_boundary_batches_eight_and_flushes_remainder(self):
         boundaries = [

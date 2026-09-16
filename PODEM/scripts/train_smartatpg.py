@@ -32,6 +32,7 @@ from rl_podem.cpp_bridge import (
 )
 from rl_podem.gat_gru import GATGRUSmartATPGPPOAgent
 from rl_podem.ppo import device
+from rl_podem.smartatpg import SmartATPGPPOAgent
 from rl_podem.smartatpg_artifacts import export_actor
 from rl_podem.smartatpg_features import load_circuit_graph
 
@@ -39,7 +40,10 @@ from rl_podem.smartatpg_features import load_circuit_graph
 CHECKPOINT_FORMAT = "SMARTATPG_DATA_SPLIT_TRAINING_V6_11D_CO_NO_BUF"
 BEST_CHECKPOINT_FORMAT = "SMARTATPG_DATA_SPLIT_BEST_V6_11D_CO_NO_BUF"
 VALIDATION_STATE_FORMAT = "SMARTATPG_DATA_SPLIT_VALIDATION_STATE_V2_JSONL"
-AGENT_TYPES = {"level_gat_gru": GATGRUSmartATPGPPOAgent}
+AGENT_TYPES = {
+    "fanin_mean": SmartATPGPPOAgent,
+    "level_gat_gru": GATGRUSmartATPGPPOAgent,
+}
 PAPER_REWARD = {
     "non_pi": -0.1,
     "alpha": 7.5,
