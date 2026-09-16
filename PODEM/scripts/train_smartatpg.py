@@ -599,18 +599,18 @@ def main(argv=None):
         )
     if batched_training:
         config["faults_per_update"] = FAULTS_PER_UPDATE
-    identity_path = output_dir / "validation_identity.json"
-    validation_identity = _validation_identity(config, validation_circuits)
-    if args.resume:
-        if not identity_path.is_file():
-            raise FileNotFoundError(
-                "--resume requires validation_identity.json in the training directory"
-            )
-        saved_identity = json.loads(identity_path.read_text(encoding="utf-8"))
-        if saved_identity != validation_identity:
-            raise ValueError("Validation identity changed since the training run")
-    else:
-        _atomic_json(identity_path, validation_identity)
+        identity_path = output_dir / "validation_identity.json"
+        validation_identity = _validation_identity(config, validation_circuits)
+        if args.resume:
+            if not identity_path.is_file():
+                raise FileNotFoundError(
+                    "--resume requires validation_identity.json in the training directory"
+                )
+            saved_identity = json.loads(identity_path.read_text(encoding="utf-8"))
+            if saved_identity != validation_identity:
+                raise ValueError("Validation identity changed since the training run")
+        else:
+            _atomic_json(identity_path, validation_identity)
     state = _initial_state(manifest_digest, config)
     if args.resume:
         if not checkpoint_path.is_file():

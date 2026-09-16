@@ -33,6 +33,7 @@ from prepare_smartatpg_training import (
     validation_fault_ids,
 )
 if torch is not None:
+    import train_smartatpg as training
     from train_smartatpg import (
         AGENT_TYPES,
         BEST_CHECKPOINT_FORMAT,
@@ -480,6 +481,58 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
         self.assertEqual(identity["encoder_variant"], "fanin_mean")
         self.assertEqual(identity["validation_circuits"], ["b12_C", "b15_C"])
         self.assertEqual(identity["faults_per_update"], 8)
+
+    def test_legacy_main_config_assembly_skips_v8_validation_identity(self):
+        train_circuits = [{
+            "name": "t", "circuit": "t.bench", "episode_fault_ids": ["t0"],
+        }]
+        validation_circuits = [{
+            "name": "v", "circuit": "v.bench", "episode_fault_ids": ["v0"],
+        }]
+        for manifest_format in (
+            LEGACY_MANIFEST_FORMAT, LAZY_VALIDATION_MANIFEST_FORMAT,
+        ):
+            with self.subTest(manifest_format=manifest_format):
+                with tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    manifest_path = root / "manifest.json"
+                    manifest_path.write_text(json.dumps({
+                        "format": manifest_format,
+                        "normal_rounds": 5,
+                        "backtrack_limit": BACKTRACK_LIMIT,
+                    }), encoding="utf-8")
+                    output_dir = root / "training"
+                    with (
+                        patch.object(
+                            training, "_resolve_circuit_records",
+                            return_value=(train_circuits, validation_circuits),
+                        ),
+                        patch.object(
+                            training, "_load_validation_catalogs",
+                            return_value=validation_circuits,
+                        ),
+                        patch.object(training, "load_circuit_graph", return_value=object()),
+                        patch.object(training, "AGENT_TYPES", {
+                            "level_gat_gru": lambda *_args, **_kwargs: object(),
+                        }),
+                        patch.object(
+                            training, "CppPodemBacktraceV2Trainer",
+                            return_value=object(),
+                        ),
+                        patch.object(
+                            training, "CppPodemBacktraceV2Evaluator",
+                            return_value=object(),
+                        ),
+                        patch.object(
+                            training, "_initial_state",
+                            side_effect=RuntimeError("reached initial state"),
+                        ) as initial_state,
+                    ):
+                        with self.assertRaisesRegex(RuntimeError, "reached initial state"):
+                            training.main([str(manifest_path), str(output_dir)])
+                    config = initial_state.call_args.args[1]
+                    self.assertNotIn("faults_per_update", config)
+                    self.assertFalse((output_dir / "validation_identity.json").exists())
 
     def test_validation_jsonl_recovers_an_appended_record_before_state_update(self):
         with tempfile.TemporaryDirectory() as directory:
