@@ -118,6 +118,18 @@ def validation_score(summary, round_number):
     )
 
 
+def _record_validation_metric(state, evaluation, score):
+    """Append one validation result while keeping exactly one best marker."""
+    is_best = state["best_score"] is None or score < tuple(state["best_score"])
+    if is_best:
+        state["best_score"] = list(score)
+        state["best_round"] = int(evaluation["round"])
+    state["validation_metrics"].append(evaluation)
+    for metric in state["validation_metrics"]:
+        metric["is_best"] = int(metric["round"]) == state["best_round"]
+    return is_best
+
+
 def _resolve_circuit_records(manifest, manifest_path):
     _validate_prepared_manifest(manifest, manifest_path)
     result = {}
@@ -784,12 +796,8 @@ def main(argv=None):
                 validation_records, validation_circuits, round_number
             )
             score = validation_score(evaluation, round_number)
-            is_best = state["best_score"] is None or score < tuple(state["best_score"])
-            evaluation["is_best"] = bool(is_best)
-            state["validation_metrics"].append(evaluation)
+            is_best = _record_validation_metric(state, evaluation, score)
             if is_best:
-                state["best_score"] = list(score)
-                state["best_round"] = round_number
                 state["best_agent"] = _clone(agent.training_state_dict())
                 best_payload = {
                     "format": BEST_CHECKPOINT_FORMAT,

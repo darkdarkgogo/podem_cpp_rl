@@ -46,6 +46,7 @@ if torch is not None:
         _load_continuation,
         _load_validation_catalogs,
         _load_validation_state,
+        _record_validation_metric,
         _summarize_validation,
         _training_protocol,
         _validate_resume,
@@ -563,6 +564,66 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
             validation_score(base, 1),
         )
         self.assertLess(validation_score(base, 1), validation_score(base, 2))
+
+    def test_new_best_validation_round_clears_the_previous_best_marker(self):
+        state = _initial_state("a" * 64, {"rounds": 2})
+        round_one = {
+            "round": 1,
+            "detected_faults": 10,
+            "backtracks_total": 20,
+            "backtrace_steps_total": 30,
+            "return_total": 40.0,
+        }
+        round_two = {
+            "round": 2,
+            "detected_faults": 11,
+            "backtracks_total": 20,
+            "backtrace_steps_total": 30,
+            "return_total": 40.0,
+        }
+
+        self.assertTrue(_record_validation_metric(
+            state, round_one, validation_score(round_one, 1)
+        ))
+        self.assertTrue(_record_validation_metric(
+            state, round_two, validation_score(round_two, 2)
+        ))
+
+        self.assertEqual(state["best_round"], 2)
+        self.assertEqual(
+            [item["is_best"] for item in state["validation_metrics"]],
+            [False, True],
+        )
+
+    def test_non_best_validation_round_preserves_the_previous_best_marker(self):
+        state = _initial_state("a" * 64, {"rounds": 2})
+        round_one = {
+            "round": 1,
+            "detected_faults": 11,
+            "backtracks_total": 20,
+            "backtrace_steps_total": 30,
+            "return_total": 40.0,
+        }
+        round_two = {
+            "round": 2,
+            "detected_faults": 10,
+            "backtracks_total": 20,
+            "backtrace_steps_total": 30,
+            "return_total": 40.0,
+        }
+
+        self.assertTrue(_record_validation_metric(
+            state, round_one, validation_score(round_one, 1)
+        ))
+        self.assertFalse(_record_validation_metric(
+            state, round_two, validation_score(round_two, 2)
+        ))
+
+        self.assertEqual(state["best_round"], 1)
+        self.assertEqual(
+            [item["is_best"] for item in state["validation_metrics"]],
+            [True, False],
+        )
 
     def test_same_task_resume_requires_exact_manifest_and_config(self):
         config = {
