@@ -25,7 +25,7 @@ from run_smartatpg_training_linux import main as run_training_main
 from smartatpg_portable import CIRCUITS
 
 from run_dual_smartatpg_training_linux import (
-    _run_parallel_training, main as run_dual_training_main,
+    _run_parallel_training, _validate_args, main as run_dual_training_main,
 )
 
 
@@ -965,6 +965,128 @@ class DualTrainingLauncherTests(unittest.TestCase):
             timings = _run_parallel_training(jobs)
         self.assertEqual(set(timings), {"gat", "mean"})
         self.assertTrue(all(value >= 0 for value in timings.values()))
+
+    def test_parallel_training_terminates_peer_when_a_worker_raises(self):
+        gat_started = threading.Event()
+        terminated = threading.Event()
+
+        class Process:
+            def __init__(self):
+                self.active = True
+                self.terminate_calls = 0
+
+            def poll(self):
+                return None if self.active else 0
+
+            def terminate(self):
+                self.active = False
+                self.terminate_calls += 1
+                terminated.set()
+
+        gat = Process()
+
+        def fake_command(command, _log, _environment, on_start=None, **_kwargs):
+            if command[0] == "gat":
+                gat_started.set()
+                on_start(gat)
+                terminated.wait(2)
+                return 0
+            gat_started.wait(1)
+            raise OSError("simulated stream failure")
+
+        jobs = [
+            {"name": "gat", "command": ["gat"], "log_path": "gat.log", "environment": {}, "output_prefix": "gat"},
+            {"name": "mean", "command": ["mean"], "log_path": "mean.log", "environment": {}, "output_prefix": "mean"},
+        ]
+        with patch(
+            "run_dual_smartatpg_training_linux._tee_command", side_effect=fake_command
+        ):
+            with self.assertRaisesRegex(OSError, "simulated stream failure"):
+                _run_parallel_training(jobs)
+        self.assertEqual(gat.terminate_calls, 1)
+
+    def test_parallel_training_registers_both_processes_before_an_instant_failure(self):
+        gat_entered = threading.Event()
+        mean_registered = threading.Event()
+        terminated = threading.Event()
+
+        class Process:
+            def __init__(self):
+                self.active = True
+                self.terminate_calls = 0
+
+            def poll(self):
+                return None if self.active else 0
+
+            def terminate(self):
+                self.active = False
+                self.terminate_calls += 1
+                terminated.set()
+
+        gat = Process()
+        mean = Process()
+
+        def fake_command(command, _log, _environment, on_start=None, **_kwargs):
+            if command[0] == "gat":
+                gat_entered.set()
+                on_start(gat)
+                self.assertTrue(mean_registered.is_set())
+                return 9
+            gat_entered.wait(1)
+            on_start(mean)
+            mean_registered.set()
+            terminated.wait(2)
+            return 0
+
+        jobs = [
+            {"name": "gat", "command": ["gat"], "log_path": "gat.log", "environment": {}, "output_prefix": "gat"},
+            {"name": "mean", "command": ["mean"], "log_path": "mean.log", "environment": {}, "output_prefix": "mean"},
+        ]
+        with patch(
+            "run_dual_smartatpg_training_linux._tee_command", side_effect=fake_command
+        ):
+            with self.assertRaisesRegex(SystemExit, "9"):
+                _run_parallel_training(jobs)
+        self.assertEqual(mean.terminate_calls, 1)
+
+    def test_gpu_validation_uses_numeric_inherited_physical_gpu_mask(self):
+        args = SimpleNamespace(
+            rounds=2, backtrack_limit=200, gat_gpu=0, mean_gpu=1,
+        )
+        fake_torch = self._fake_torch(2)
+        with (
+            patch("run_dual_smartatpg_training_linux.sys.platform", "linux"),
+            patch("run_dual_smartatpg_training_linux.torch", fake_torch),
+            patch("run_dual_smartatpg_training_linux._check_cpp_extension"),
+            patch.dict(
+                "run_dual_smartatpg_training_linux.os.environ",
+                {"CUDA_VISIBLE_DEVICES": "2,3"}, clear=True,
+            ),
+            self.assertRaisesRegex(RuntimeError, "outside inherited CUDA_VISIBLE_DEVICES"),
+        ):
+            _validate_args(args)
+        args.gat_gpu, args.mean_gpu = 2, 3
+        with (
+            patch("run_dual_smartatpg_training_linux.sys.platform", "linux"),
+            patch("run_dual_smartatpg_training_linux.torch", fake_torch),
+            patch("run_dual_smartatpg_training_linux._check_cpp_extension"),
+            patch.dict(
+                "run_dual_smartatpg_training_linux.os.environ",
+                {"CUDA_VISIBLE_DEVICES": "2,3"}, clear=True,
+            ),
+        ):
+            self.assertIsNone(_validate_args(args))
+        with (
+            patch("run_dual_smartatpg_training_linux.sys.platform", "linux"),
+            patch("run_dual_smartatpg_training_linux.torch", fake_torch),
+            patch("run_dual_smartatpg_training_linux._check_cpp_extension"),
+            patch.dict(
+                "run_dual_smartatpg_training_linux.os.environ",
+                {"CUDA_VISIBLE_DEVICES": "GPU-uuid"}, clear=True,
+            ),
+            self.assertRaisesRegex(ValueError, "numeric physical GPU IDs"),
+        ):
+            _validate_args(args)
 
 
 if __name__ == "__main__":

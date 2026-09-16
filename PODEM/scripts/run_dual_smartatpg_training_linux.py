@@ -54,6 +54,7 @@ def _run_parallel_training(jobs: list[dict]) -> dict[str, float]:
     """Run the two training commands and stop the peer on the first failure."""
     processes = {}
     process_lock = threading.Lock()
+    launch_gate = threading.Event()
 
     def run_job(job):
         started = time.perf_counter()
@@ -61,6 +62,12 @@ def _run_parallel_training(jobs: list[dict]) -> dict[str, float]:
         def on_start(process):
             with process_lock:
                 processes[job["name"]] = process
+                if len(processes) == len(jobs):
+                    launch_gate.set()
+            # A process can exit immediately.  Hold its stream loop until both
+            # children are registered so the coordinator always has a peer it
+            # can terminate on the first non-zero exit.
+            launch_gate.wait()
 
         code = _tee_command(
             job["command"],
@@ -71,7 +78,7 @@ def _run_parallel_training(jobs: list[dict]) -> dict[str, float]:
         )
         return job["name"], code, time.perf_counter() - started
 
-    def terminate_peers(except_name):
+    def terminate_processes(except_name=None):
         with process_lock:
             active = [
                 process for name, process in processes.items()
@@ -88,18 +95,52 @@ def _run_parallel_training(jobs: list[dict]) -> dict[str, float]:
         timings = {}
         for future in as_completed(futures):
             name = futures[future]
-            job_name, code, elapsed = future.result()
-            if code:
-                terminate_peers(name)
+            try:
+                job_name, code, elapsed = future.result()
+            except BaseException:
+                # An exception can occur before on_start (for example Popen or
+                # stream setup).  Release a registered child from the startup
+                # gate, terminate it, and then propagate the original error.
+                launch_gate.set()
+                terminate_processes()
                 for peer in futures:
                     if peer is not future:
                         try:
                             peer.result()
-                        except Exception:
+                        except BaseException:
+                            pass
+                raise
+            if code:
+                launch_gate.set()
+                terminate_processes(name)
+                for peer in futures:
+                    if peer is not future:
+                        try:
+                            peer.result()
+                        except BaseException:
                             pass
                 raise SystemExit(code)
             timings[job_name] = elapsed
     return timings
+
+
+def _allowed_physical_gpu_ids(gpu_count):
+    """Return the physical GPU IDs assigned to this controller process."""
+    inherited_mask = os.environ.get("CUDA_VISIBLE_DEVICES")
+    if inherited_mask is None:
+        return set(range(gpu_count))
+    tokens = [token.strip() for token in inherited_mask.split(",")]
+    if not tokens or any(not token.isdigit() for token in tokens):
+        raise ValueError(
+            "CUDA_VISIBLE_DEVICES must contain numeric physical GPU IDs; "
+            "UUID and malformed masks are unsupported"
+        )
+    physical_ids = [int(token) for token in tokens]
+    if len(physical_ids) != len(set(physical_ids)):
+        raise ValueError(
+            "CUDA_VISIBLE_DEVICES must contain distinct numeric physical GPU IDs"
+        )
+    return set(physical_ids)
 
 
 def _validate_args(args):
@@ -128,8 +169,20 @@ def _validate_args(args):
             f"Dual training requires two CUDA devices, but PyTorch sees only "
             f"{gpu_count} CUDA device(s)"
         )
+    allowed_gpu_ids = _allowed_physical_gpu_ids(gpu_count)
+    if len(allowed_gpu_ids) < 2:
+        raise RuntimeError(
+            "Dual training requires two physical GPU IDs in "
+            "CUDA_VISIBLE_DEVICES"
+        )
     for gpu in (args.gat_gpu, args.mean_gpu):
-        if gpu >= gpu_count:
+        if gpu not in allowed_gpu_ids:
+            inherited_mask = os.environ.get("CUDA_VISIBLE_DEVICES")
+            if inherited_mask is not None:
+                raise RuntimeError(
+                    f"Requested GPU {gpu} is outside inherited "
+                    f"CUDA_VISIBLE_DEVICES={inherited_mask}"
+                )
             raise RuntimeError(
                 f"Requested GPU {gpu}, but PyTorch sees only {gpu_count} "
                 "CUDA device(s)"
