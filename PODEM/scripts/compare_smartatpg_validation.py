@@ -81,6 +81,22 @@ DERIVED_METRICS = {
     "backtrace_steps_mean": "backtrace_steps_total",
     "return_mean": "return_total",
 }
+NONNEGATIVE_INTEGER_METRICS = (
+    "episodes",
+    "detected_faults",
+    "redundant_faults",
+    "aborted_faults",
+    "backtracks_total",
+    "backtrace_steps_total",
+    "test_vectors",
+)
+FINITE_NUMBER_METRICS = (
+    "return_total",
+    "fault_coverage",
+    "backtracks_mean",
+    "backtrace_steps_mean",
+    "return_mean",
+)
 
 
 class ScoapValidationEvaluator:
@@ -179,20 +195,40 @@ def _load_run(name, directory):
 
 
 def _metrics_equal(actual, expected):
-    if isinstance(actual, bool) or not isinstance(actual, (int, float)):
+    if not _is_finite_number(actual) or not _is_finite_number(expected):
         return False
-    return math.isclose(
-        float(actual), float(expected), rel_tol=1.0e-9, abs_tol=1.0e-9
+    return math.isclose(actual, expected, rel_tol=1.0e-9, abs_tol=1.0e-9)
+
+
+def _is_finite_number(value):
+    return (
+        not isinstance(value, bool)
+        and isinstance(value, (int, float))
+        and (isinstance(value, int) or math.isfinite(value))
     )
 
 
 def _validate_scope_metrics(name, round_number, scope, row):
-    episodes = row["episodes"]
-    if isinstance(episodes, bool) or not isinstance(episodes, int) or episodes < 0:
+    """Reject malformed raw and derived metrics before arithmetic checks."""
+    for key in NONNEGATIVE_INTEGER_METRICS:
+        value = row[key]
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(
+                f"Invalid validation metrics for {name} round {round_number}: "
+                f"{key} for {scope} must be a nonnegative integer"
+            )
+    for key in FINITE_NUMBER_METRICS:
+        if not _is_finite_number(row[key]):
+            raise ValueError(
+                f"Invalid validation metrics for {name} round {round_number}: "
+                f"{key} for {scope} must be a finite number"
+            )
+    if not _is_finite_number(row["atpg_seconds"]) or row["atpg_seconds"] < 0:
         raise ValueError(
-            f"Inconsistent validation metrics for {name} round {round_number}: "
-            f"invalid episodes for {scope}"
+            f"Invalid validation metrics for {name} round {round_number}: "
+            f"atpg_seconds for {scope} must be a finite nonnegative number"
         )
+    episodes = row["episodes"]
     if sum(row[key] for key in (
         "detected_faults", "redundant_faults", "aborted_faults"
     )) != episodes:
@@ -222,6 +258,7 @@ def _validate_run_metrics(name, rounds, circuits):
     }
     for summary in rounds:
         round_number = summary["round"]
+        _validate_scope_metrics(name, round_number, "TOTAL", summary)
         if summary["episodes"] != expected_total_episodes:
             raise ValueError(
                 f"Incomplete validation metrics for {name} round {round_number}: "
@@ -229,14 +266,13 @@ def _validate_run_metrics(name, rounds, circuits):
             )
         for row in summary["circuits"]:
             circuit = row["circuit"]
+            _validate_scope_metrics(name, round_number, circuit, row)
             if row["episodes"] != expected_circuit_episodes[circuit]:
                 raise ValueError(
                     f"Incomplete validation metrics for {name} round "
                     f"{round_number}: {circuit} episodes do not cover the "
                     "runtime fault catalog"
                 )
-            _validate_scope_metrics(name, round_number, circuit, row)
-        _validate_scope_metrics(name, round_number, "TOTAL", summary)
         for key in ADDITIVE_METRICS:
             expected = sum(row[key] for row in summary["circuits"])
             if not _metrics_equal(summary[key], expected):

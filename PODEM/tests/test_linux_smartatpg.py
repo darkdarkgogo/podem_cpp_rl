@@ -332,6 +332,68 @@ class ValidationComparisonTests(unittest.TestCase):
                 ):
                     build_validation_comparison(manifest, gat, mean, output)
 
+    def test_rejects_invalid_metric_types_and_ranges(self):
+        def set_both(round_summary, key, value):
+            round_summary[key] = value
+            round_summary["circuits"][0][key] = value
+
+        def bool_count(round_summary):
+            round_summary["circuits"][0]["detected_faults"] = True
+            round_summary["circuits"][0]["test_vectors"] = True
+
+        def float_counts(round_summary):
+            set_both(round_summary, "detected_faults", 1.5)
+            set_both(round_summary, "redundant_faults", 0.5)
+            set_both(round_summary, "test_vectors", 1.5)
+            set_both(round_summary, "fault_coverage", 0.75)
+
+        def negative_counts(round_summary):
+            set_both(round_summary, "detected_faults", -1)
+            set_both(round_summary, "redundant_faults", 3)
+            set_both(round_summary, "test_vectors", -1)
+            set_both(round_summary, "fault_coverage", -0.5)
+
+        def float_work(round_summary):
+            set_both(round_summary, "backtracks_total", 1.5)
+            set_both(round_summary, "backtracks_mean", 0.75)
+
+        def negative_work(round_summary):
+            set_both(round_summary, "backtrace_steps_total", -2)
+            set_both(round_summary, "backtrace_steps_mean", -1.0)
+
+        def negative_time(round_summary):
+            set_both(round_summary, "atpg_seconds", -1.0)
+
+        def infinite_time(round_summary):
+            set_both(round_summary, "atpg_seconds", float("inf"))
+
+        def infinite_return(round_summary):
+            set_both(round_summary, "return_total", float("inf"))
+            set_both(round_summary, "return_mean", float("inf"))
+
+        cases = (
+            ("bool_count", bool_count),
+            ("float_counts", float_counts),
+            ("negative_counts", negative_counts),
+            ("float_work", float_work),
+            ("negative_work", negative_work),
+            ("negative_time", negative_time),
+            ("infinite_time", infinite_time),
+            ("infinite_return", infinite_return),
+        )
+        for label, mutate in cases:
+            with self.subTest(case=label), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                manifest, gat, mean, output, patches = self._build(root)
+                metrics_path = gat / "validation_metrics.json"
+                metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+                mutate(metrics[0])
+                metrics_path.write_text(json.dumps(metrics), encoding="utf-8")
+                with patches[0], patches[1], patches[2], self.assertRaisesRegex(
+                    ValueError, "validation metrics"
+                ):
+                    build_validation_comparison(manifest, gat, mean, output)
+
 class SplitLauncherTests(_SplitLauncherInventoryTests, unittest.TestCase):
     def test_training_launcher_only_trains_and_exports_bundle(self):
         with tempfile.TemporaryDirectory() as directory:

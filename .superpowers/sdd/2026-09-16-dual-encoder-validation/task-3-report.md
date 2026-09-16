@@ -97,6 +97,56 @@ task and was not changed here because Task 2 is outside this task's scope.
 
 No reviewer or sub-agent was used, as required by the task brief.
 
+## Review Fix Round 2/5: Strict Metric Types and Ranges
+
+The Important review finding was reproduced with a new regression case that
+mutates otherwise valid metrics. The old loader accepted synchronised floating
+and negative outcome/test-vector counts; it could therefore write a comparison
+report with invalid count values.
+
+RED command:
+
+```powershell
+& 'C:\Users\acer\.conda\envs\d2l\python.exe' -m unittest PODEM.tests.test_linux_smartatpg.ValidationComparisonTests.test_rejects_invalid_metric_types_and_ranges
+```
+
+RED key output:
+
+```text
+FAILED (failures=2)
+AssertionError: ValueError not raised
+```
+
+`_validate_scope_metrics` now rejects booleans, floats, and negative values
+for episodes, outcome counts, test vectors, backtracks, and backtrace steps.
+It also requires ATPG time to be finite and nonnegative, and requires return
+total, coverage, and all means to be non-boolean finite numeric values before
+checking their existing arithmetic relationships. Negative finite return values
+remain valid. The regression covers boolean, floating, and negative counts,
+plus malformed work, timing, and return values.
+
+GREEN commands:
+
+```powershell
+& 'C:\Users\acer\.conda\envs\d2l\python.exe' -m unittest PODEM.tests.test_linux_smartatpg.ValidationComparisonTests.test_rejects_invalid_metric_types_and_ranges
+& 'C:\Users\acer\.conda\envs\d2l\python.exe' -m unittest PODEM.tests.test_linux_smartatpg
+& 'C:\Users\acer\.conda\envs\d2l\python.exe' -m py_compile PODEM/scripts/compare_smartatpg_validation.py PODEM/tests/test_linux_smartatpg.py
+git diff --check
+```
+
+GREEN key output:
+
+```text
+Ran 1 test in 0.052s
+OK
+Ran 22 tests in 0.210s
+OK
+```
+
+## Concerns (Round 2)
+
+None within this fix scope. No sub-agent was used.
+
 ## Review Fix Round 1/5: Complete and Consistent Model Metrics
 
 The Important review finding was reproduced before implementation. New tests
