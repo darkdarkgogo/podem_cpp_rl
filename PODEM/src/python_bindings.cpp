@@ -4,6 +4,7 @@
 #include "atpg.h"
 #include "rl_policy.h"
 
+#include <chrono>
 #include <memory>
 #include <string>
 
@@ -154,6 +155,7 @@ py::dict run_stuck_at(const std::string &circuit_path,
   atpg.set_quiet(quiet);
   atpg.set_fault_map_path(fault_map_path);
 
+  double atpg_seconds = 0.0;
   {
     py::gil_scoped_release release;
     atpg.input(circuit_path);
@@ -165,13 +167,19 @@ py::dict run_stuck_at(const std::string &circuit_path,
       atpg.retain_faults(selected_faults);
       atpg.set_drop_detected_faults(false);
     }
+    const auto atpg_started = std::chrono::steady_clock::now();
     atpg.test();
+    atpg_seconds = std::chrono::duration<double>(
+                       std::chrono::steady_clock::now() - atpg_started)
+                       .count();
     if (!has_fault_filter) {
       atpg.compute_fault_coverage();
     }
   }
   atpg.disable_rl_policy();
-  return policy->summary();
+  py::dict result = policy->summary();
+  result["atpg_seconds"] = atpg_seconds;
+  return result;
 }
 
 py::list profile_stuck_at(const std::string &circuit_path,

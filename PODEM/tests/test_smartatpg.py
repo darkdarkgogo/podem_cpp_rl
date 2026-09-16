@@ -728,6 +728,18 @@ class SmartATPGTests(unittest.TestCase):
         ))
         self.assertGreater(max(Counter(backtrace_steps).values()), 1)
 
+    def test_native_summary_reports_nonnegative_atpg_seconds(self):
+        import cpp_podem
+        fault_id = catalog_cpp_podem(self.path)["faults"][0]["fault_id"]
+
+        summary = cpp_podem.run_stuck_at(
+            str(self.path),
+            lambda request: 0 if request["action_mask"][0] else 1,
+            None, 20, 14, [fault_id], True,
+        )
+
+        self.assertGreaterEqual(summary["atpg_seconds"], 0.0)
+
     def test_old_smartatpg_artifacts_are_rejected(self):
         import cpp_podem
         actor = Path(self.temp.name) / "actor.txt"

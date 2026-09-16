@@ -49,6 +49,7 @@ if torch is not None:
         _training_protocol,
         _validate_resume,
         _validation_catalog_hash,
+        _validation_identity,
         _validation_order,
         validation_score,
     )
@@ -71,6 +72,7 @@ class _FakeEvaluator:
         return {
             "episodes": 1, "detected": 1, "redundant": 0, "aborted": 0,
             "backtracks": 2, "backtrace_steps": 3,
+            "atpg_seconds": 0.125,
         }
 
 
@@ -398,6 +400,10 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
         )
         self.assertEqual(record["outcome"], 1)
         self.assertEqual(record["detected"], 1)
+        self.assertEqual(record["redundant"], 0)
+        self.assertEqual(record["aborted"], 0)
+        self.assertEqual(record["test_vectors"], 1)
+        self.assertEqual(record["atpg_seconds"], 0.125)
         self.assertEqual(record["backtracks"], 2)
         self.assertEqual(record["backtrace_steps"], 3)
 
@@ -405,11 +411,13 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
         circuits = [{"name": "v", "episode_fault_ids": ["f0", "f1"]}]
         records = [
             {"circuit": "v", "fault_id": "f0", "outcome": 1,
-             "detected": 1, "backtracks": 2, "backtrace_steps": 4,
-             "return": 100.0},
+             "detected": 1, "redundant": 0, "aborted": 0,
+             "backtracks": 2, "backtrace_steps": 4, "return": 100.0,
+             "test_vectors": 1, "atpg_seconds": 0.1},
             {"circuit": "v", "fault_id": "f1", "outcome": 2,
-             "detected": 0, "backtracks": 200, "backtrace_steps": 20,
-             "return": -100.0},
+             "detected": 0, "redundant": 0, "aborted": 1,
+             "backtracks": 200, "backtrace_steps": 20, "return": -100.0,
+             "test_vectors": 0, "atpg_seconds": 0.2},
         ]
         summary = _summarize_validation(records, circuits, 3)
         self.assertEqual(summary["episodes"], 2)
@@ -417,6 +425,61 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
         self.assertEqual(summary["backtracks_total"], 202)
         with self.assertRaisesRegex(ValueError, "full fault catalog"):
             _summarize_validation(records[:1], circuits, 3)
+
+    def test_validation_summary_preserves_each_circuit_and_all_outcomes(self):
+        circuits = [
+            {"name": "a", "episode_fault_ids": ["a0", "a1"]},
+            {"name": "b", "episode_fault_ids": ["b0"]},
+        ]
+        records = [
+            {"circuit": "a", "fault_id": "a0", "outcome": 1,
+             "detected": 1, "redundant": 0, "aborted": 0,
+             "backtracks": 2, "backtrace_steps": 3, "return": 100.0,
+             "test_vectors": 1, "atpg_seconds": 0.1},
+            {"circuit": "a", "fault_id": "a1", "outcome": 0,
+             "detected": 0, "redundant": 1, "aborted": 0,
+             "backtracks": 4, "backtrace_steps": 5, "return": -100.0,
+             "test_vectors": 0, "atpg_seconds": 0.2},
+            {"circuit": "b", "fault_id": "b0", "outcome": 2,
+             "detected": 0, "redundant": 0, "aborted": 1,
+             "backtracks": 6, "backtrace_steps": 7, "return": -100.0,
+             "test_vectors": 0, "atpg_seconds": 0.3},
+        ]
+        result = _summarize_validation(records, circuits, 1)
+        self.assertEqual(result["detected_faults"], 1)
+        self.assertEqual(result["redundant_faults"], 1)
+        self.assertEqual(result["aborted_faults"], 1)
+        self.assertEqual([row["circuit"] for row in result["circuits"]], ["a", "b"])
+        self.assertEqual(result["circuits"][0]["test_vectors"], 1)
+        self.assertAlmostEqual(result["atpg_seconds"], 0.6)
+
+    def test_validation_identity_declares_protocol_and_catalog(self):
+        config = {
+            "manifest_hash": "a" * 64,
+            "encoder_variant": "fanin_mean",
+            "rounds": 2,
+            "faults_per_update": 8,
+            "k_epochs": 1,
+            "backtrack_limit": 200,
+            "validation_catalog_hash": "b" * 64,
+        }
+        identity = _validation_identity(config, [
+            {"name": "b12_C"}, {"name": "b15_C"},
+        ])
+        self.assertEqual(identity, {
+            "format": "SMARTATPG_VALIDATION_IDENTITY_V1",
+            "manifest_hash": "a" * 64,
+            "encoder_variant": "fanin_mean",
+            "normal_rounds": 2,
+            "faults_per_update": 8,
+            "k_epochs": 1,
+            "backtrack_limit": 200,
+            "validation_catalog_hash": "b" * 64,
+            "validation_circuits": ["b12_C", "b15_C"],
+        })
+        self.assertEqual(identity["encoder_variant"], "fanin_mean")
+        self.assertEqual(identity["validation_circuits"], ["b12_C", "b15_C"])
+        self.assertEqual(identity["faults_per_update"], 8)
 
     def test_validation_jsonl_recovers_an_appended_record_before_state_update(self):
         with tempfile.TemporaryDirectory() as directory:

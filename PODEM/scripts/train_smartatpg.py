@@ -236,15 +236,45 @@ def _evaluate_fault(evaluator, item, fault_id, backtrack_limit, seed):
         raise RuntimeError("Validation fault did not produce exactly one episode")
     if terminal.get("fault_id") != fault_id:
         raise RuntimeError("Validation terminal fault does not match the request")
+    outcome = int(terminal["outcome"])
     return {
         "circuit": item["name"],
         "fault_id": fault_id,
-        "outcome": int(terminal["outcome"]),
-        "detected": int(int(terminal["outcome"]) == 1),
+        "outcome": outcome,
+        "detected": int(outcome == 1),
+        "redundant": int(outcome == 0),
+        "aborted": int(outcome not in (0, 1)),
         "backtracks": int(terminal["backtracks"]),
         "backtrace_steps": int(terminal["backtrace_steps"]),
         "return": float(extrinsic_return),
+        "test_vectors": int(outcome == 1),
+        "atpg_seconds": float(summary["atpg_seconds"]),
     }
+
+
+def _summarize_fault_records(records):
+    count = len(records)
+    totals = {
+        "episodes": count,
+        "detected_faults": sum(int(item["detected"]) for item in records),
+        "redundant_faults": sum(int(item["redundant"]) for item in records),
+        "aborted_faults": sum(int(item["aborted"]) for item in records),
+        "backtracks_total": sum(int(item["backtracks"]) for item in records),
+        "backtrace_steps_total": sum(
+            int(item["backtrace_steps"]) for item in records
+        ),
+        "return_total": sum(float(item["return"]) for item in records),
+        "test_vectors": sum(int(item["test_vectors"]) for item in records),
+        "atpg_seconds": sum(float(item["atpg_seconds"]) for item in records),
+    }
+    divisor = max(1, count)
+    totals.update(
+        fault_coverage=totals["detected_faults"] / divisor,
+        backtracks_mean=totals["backtracks_total"] / divisor,
+        backtrace_steps_mean=totals["backtrace_steps_total"] / divisor,
+        return_mean=totals["return_total"] / divisor,
+    )
+    return totals
 
 
 def _summarize_validation(records, circuits, round_number):
@@ -252,23 +282,17 @@ def _summarize_validation(records, circuits, round_number):
     actual = [(item.get("circuit"), item.get("fault_id")) for item in records]
     if actual != expected:
         raise ValueError("Validation must cover the full fault catalog exactly once")
-    totals = {
-        "episodes": len(records),
-        "detected_faults": sum(int(item["detected"]) for item in records),
-        "backtracks_total": sum(int(item["backtracks"]) for item in records),
-        "backtrace_steps_total": sum(
-            int(item["backtrace_steps"]) for item in records
-        ),
-        "return_total": sum(float(item["return"]) for item in records),
-    }
-    count = max(1, totals["episodes"])
-    totals.update(
-        fault_coverage=totals["detected_faults"] / count,
-        backtracks_mean=totals["backtracks_total"] / count,
-        backtrace_steps_mean=totals["backtrace_steps_total"] / count,
-        return_mean=totals["return_total"] / count,
-    )
-    return {"round": round_number, **totals}
+    totals = _summarize_fault_records(records)
+    per_circuit = [
+        {
+            "circuit": item["name"],
+            **_summarize_fault_records([
+                record for record in records if record["circuit"] == item["name"]
+            ]),
+        }
+        for item in circuits
+    ]
+    return {"round": round_number, **totals, "circuits": per_circuit}
 
 
 def _save_state(path, agent, state):
@@ -301,6 +325,20 @@ def _training_protocol(config):
         protocol["faults_per_update"] = config["faults_per_update"]
         protocol["k_epochs"] = config["k_epochs"]
     return protocol
+
+
+def _validation_identity(config, validation_circuits):
+    return {
+        "format": "SMARTATPG_VALIDATION_IDENTITY_V1",
+        "manifest_hash": config["manifest_hash"],
+        "encoder_variant": config["encoder_variant"],
+        "normal_rounds": config["rounds"],
+        "faults_per_update": config["faults_per_update"],
+        "k_epochs": config["k_epochs"],
+        "backtrack_limit": config["backtrack_limit"],
+        "validation_catalog_hash": config["validation_catalog_hash"],
+        "validation_circuits": [item["name"] for item in validation_circuits],
+    }
 
 
 def _initial_state(manifest_digest, config, continuation=None):
@@ -561,6 +599,18 @@ def main(argv=None):
         )
     if batched_training:
         config["faults_per_update"] = FAULTS_PER_UPDATE
+    identity_path = output_dir / "validation_identity.json"
+    validation_identity = _validation_identity(config, validation_circuits)
+    if args.resume:
+        if not identity_path.is_file():
+            raise FileNotFoundError(
+                "--resume requires validation_identity.json in the training directory"
+            )
+        saved_identity = json.loads(identity_path.read_text(encoding="utf-8"))
+        if saved_identity != validation_identity:
+            raise ValueError("Validation identity changed since the training run")
+    else:
+        _atomic_json(identity_path, validation_identity)
     state = _initial_state(manifest_digest, config)
     if args.resume:
         if not checkpoint_path.is_file():
