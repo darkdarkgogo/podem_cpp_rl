@@ -55,6 +55,7 @@ def _run_parallel_training(jobs: list[dict]) -> dict[str, float]:
     processes = {}
     process_lock = threading.Lock()
     launch_gate = threading.Event()
+    cancelled = threading.Event()
 
     def run_job(job):
         started = time.perf_counter()
@@ -62,8 +63,14 @@ def _run_parallel_training(jobs: list[dict]) -> dict[str, float]:
         def on_start(process):
             with process_lock:
                 processes[job["name"]] = process
+                cancel_this_process = cancelled.is_set()
                 if len(processes) == len(jobs):
                     launch_gate.set()
+            if cancel_this_process:
+                # A sibling can fail before this Popen reaches on_start.  The
+                # controller's cancellation remains sticky so this late child
+                # is never allowed to continue after registration.
+                process.terminate()
             # A process can exit immediately.  Hold its stream loop until both
             # children are registered so the coordinator always has a peer it
             # can terminate on the first non-zero exit.
@@ -78,7 +85,9 @@ def _run_parallel_training(jobs: list[dict]) -> dict[str, float]:
         )
         return job["name"], code, time.perf_counter() - started
 
-    def terminate_processes(except_name=None):
+    def cancel_training(except_name=None):
+        cancelled.set()
+        launch_gate.set()
         with process_lock:
             active = [
                 process for name, process in processes.items()
@@ -101,8 +110,7 @@ def _run_parallel_training(jobs: list[dict]) -> dict[str, float]:
                 # An exception can occur before on_start (for example Popen or
                 # stream setup).  Release a registered child from the startup
                 # gate, terminate it, and then propagate the original error.
-                launch_gate.set()
-                terminate_processes()
+                cancel_training()
                 for peer in futures:
                     if peer is not future:
                         try:
@@ -111,8 +119,7 @@ def _run_parallel_training(jobs: list[dict]) -> dict[str, float]:
                             pass
                 raise
             if code:
-                launch_gate.set()
-                terminate_processes(name)
+                cancel_training(name)
                 for peer in futures:
                     if peer is not future:
                         try:

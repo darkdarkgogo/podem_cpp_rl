@@ -4,6 +4,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from concurrent.futures import Future
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -1004,6 +1005,76 @@ class DualTrainingLauncherTests(unittest.TestCase):
             with self.assertRaisesRegex(OSError, "simulated stream failure"):
                 _run_parallel_training(jobs)
         self.assertEqual(gat.terminate_calls, 1)
+
+    def test_parallel_training_cancels_a_peer_registered_after_pre_start_failure(self):
+        class Process:
+            def __init__(self):
+                self.active = True
+                self.terminate_calls = 0
+
+            def poll(self):
+                return None if self.active else 0
+
+            def terminate(self):
+                self.active = False
+                self.terminate_calls += 1
+
+        class DelayedFuture(Future):
+            def __init__(self, target, *arguments):
+                super().__init__()
+                self.target = target
+                self.arguments = arguments
+
+            def result(self, timeout=None):
+                if not self.done():
+                    try:
+                        self.set_result(self.target(*self.arguments))
+                    except BaseException as error:
+                        self.set_exception(error)
+                return super().result(timeout)
+
+        class OrderedExecutor:
+            def __init__(self, *_args, **_kwargs):
+                self.calls = 0
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def submit(self, target, job):
+                self.calls += 1
+                if self.calls == 1:
+                    failed = Future()
+                    failed.set_exception(OSError("simulated Popen failure"))
+                    return failed
+                return DelayedFuture(target, job)
+
+        mean = Process()
+
+        def fake_command(command, _log, _environment, on_start=None, **_kwargs):
+            self.assertEqual(command[0], "mean")
+            on_start(mean)
+            return 0
+
+        jobs = [
+            {"name": "gat", "command": ["gat"], "log_path": "gat.log", "environment": {}, "output_prefix": "gat"},
+            {"name": "mean", "command": ["mean"], "log_path": "mean.log", "environment": {}, "output_prefix": "mean"},
+        ]
+        with (
+            patch(
+                "run_dual_smartatpg_training_linux.ThreadPoolExecutor",
+                OrderedExecutor,
+            ),
+            patch(
+                "run_dual_smartatpg_training_linux._tee_command",
+                side_effect=fake_command,
+            ),
+            self.assertRaisesRegex(OSError, "simulated Popen failure"),
+        ):
+            _run_parallel_training(jobs)
+        self.assertEqual(mean.terminate_calls, 1)
 
     def test_parallel_training_registers_both_processes_before_an_instant_failure(self):
         gat_entered = threading.Event()
