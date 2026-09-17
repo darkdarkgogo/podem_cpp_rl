@@ -133,6 +133,9 @@ public:
 	void random_order_fault_sim();
 	bool get_SAF_atpg() { return SAF_atpg; }
 	void set_decision_policy(const shared_ptr<smartatpg::DecisionPolicy> &);
+	shared_ptr<smartatpg::DecisionPolicy> get_decision_policy() const {
+		return decision_policy;
+	}
 	void enable_rl_inference(const string &, const string &, const string & = "");
 	void set_rl_mode(const string &);
 	void disable_rl_policy();

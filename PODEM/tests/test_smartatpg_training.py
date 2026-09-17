@@ -503,7 +503,6 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
                     patch.object(training, "load_circuit_graph", return_value=object()),
                     patch.object(training, "AGENT_TYPES", {encoder: lambda *_a, **_k: object()}),
                     patch.object(training, "CppPodemBacktraceV2Trainer", return_value=object()),
-                    patch.object(training, "CppPodemBacktraceV2Evaluator", return_value=object()),
                     patch.object(training, "_initial_state", side_effect=RuntimeError("reached initial state")),
                 ):
                     with self.assertRaisesRegex(RuntimeError, "reached initial state"):
@@ -531,7 +530,6 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
                 patch.object(training, "load_circuit_graph", return_value=object()),
                 patch.object(training, "AGENT_TYPES", {"level_gat_gru": lambda *_a, **_k: object()}),
                 patch.object(training, "CppPodemBacktraceV2Trainer", return_value=object()),
-                patch.object(training, "CppPodemBacktraceV2Evaluator", return_value=object()),
             ):
                 args = [str(manifest), str(output), "--resume"]
                 with self.assertRaisesRegex(FileNotFoundError, "validation_identity"):
@@ -581,10 +579,6 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
                         }),
                         patch.object(
                             training, "CppPodemBacktraceV2Trainer",
-                            return_value=object(),
-                        ),
-                        patch.object(
-                            training, "CppPodemBacktraceV2Evaluator",
                             return_value=object(),
                         ),
                         patch.object(

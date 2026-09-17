@@ -63,6 +63,13 @@ void ATPG::test()
 	}
 
 	fptr fault_under_test = flist_undetect.front();
+	vector<fptr> fixed_fault_order;
+	size_t fixed_fault_index = 0;
+	if (!drop_detected_faults)
+	{
+		fixed_fault_order.assign(flist_undetect.begin(), flist_undetect.end());
+		fault_under_test = fixed_fault_order.empty() ? nullptr : fixed_fault_order.front();
+	}
 
 	/* stuck-at fault sim mode */
 	if (fsim_only)
@@ -114,7 +121,8 @@ void ATPG::test()
 					else
 					{
 						fault_under_test->detect = TRUE;
-						flist_undetect.remove(fault_under_test);
+						if (drop_detected_faults)
+							flist_undetect.remove(fault_under_test);
 					}
 					in_vector_no++;
 					break;
@@ -132,18 +140,31 @@ void ATPG::test()
 						{fault_identifier(fault_under_test), outcome, current_backtracks,
 						 episode_backtrace_steps});
 			fault_under_test->test_tried = true;
-			fault_under_test = nullptr;
-			for (fptr fptr_ele : flist_undetect)
-			{
-				if (!fptr_ele->test_tried)
-				{
-					fault_under_test = fptr_ele;
-					break;
-				}
-			}
 			total_no_of_backtracks += current_backtracks; // accumulate number of backtracks
 			no_of_calls++;
+			if (decision_policy && decision_policy->wants_training_events())
+				decision_policy->on_episode_complete();
+			fault_under_test = nullptr;
+			if (!drop_detected_faults)
+			{
+				++fixed_fault_index;
+				if (fixed_fault_index < fixed_fault_order.size())
+					fault_under_test = fixed_fault_order[fixed_fault_index];
+			}
+			else
+			{
+				for (fptr fptr_ele : flist_undetect)
+				{
+					if (!fptr_ele->test_tried)
+					{
+						fault_under_test = fptr_ele;
+						break;
+					}
+				}
+			}
 		}
+		if (!drop_detected_faults)
+			flist_undetect.remove_if([](fptr fault) { return fault->detect == TRUE; });
 		if (!quiet)
 		{
 			display_undetect();

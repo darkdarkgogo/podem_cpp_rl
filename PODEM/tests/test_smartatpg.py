@@ -1,5 +1,6 @@
 import dataclasses
 from collections import Counter
+import json
 import shutil
 import sys
 import tempfile
@@ -536,6 +537,56 @@ class SmartATPGTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "snapshot mismatch"):
             cpp_podem.validate_actor_artifacts(str(embeddings), str(actor), self.graph.circuit_hash,
                                               list(self.graph.names), "smartatpg")
+
+    def test_native_validation_matches_python_policy_without_callbacks(self):
+        import cpp_podem
+        from rl_podem.cpp_bridge import CppPodemBacktraceV2Evaluator
+
+        agent = self.agent()
+        state = agent.policy_old.state_dict()
+        actor = Path(self.temp.name) / "validation_actor.txt"
+        embeddings = Path(self.temp.name) / "validation.emb"
+        journal = Path(self.temp.name) / "validation.jsonl"
+        export_actor(
+            state, actor, training_protocol=BATCHED_TRAINING_PROTOCOL,
+        )
+        export_descriptors(state, self.graph, embeddings)
+        fault_ids = [
+            item["fault_id"]
+            for item in catalog_cpp_podem(self.path)["faults"]
+        ]
+
+        terminal_events = []
+        evaluator = CppPodemBacktraceV2Evaluator(self.graph, agent=agent)
+
+        def collect(event):
+            if event["event"] == "episode_end":
+                terminal_events.append(event)
+
+        evaluator.run(
+            self.path, backtrack_limit=200, seed=14, fault_ids=fault_ids,
+            event_callback=collect, use_scoap=True,
+        )
+        native = cpp_podem.run_native_validation(
+            str(self.path), str(embeddings), str(actor), 200, 14, fault_ids,
+            str(journal), "test",
+        )
+
+        self.assertEqual([item["fault_id"] for item in native], fault_ids)
+        journal_records = [
+            json.loads(line) for line in journal.read_text("utf-8").splitlines()
+        ]
+        self.assertEqual(
+            [item["fault_id"] for item in journal_records], fault_ids
+        )
+        self.assertEqual(len(native), len(terminal_events))
+        for actual, expected in zip(native, terminal_events):
+            self.assertEqual(actual["outcome"], expected["outcome"])
+            self.assertEqual(actual["backtracks"], expected["backtracks"])
+            self.assertEqual(
+                actual["backtrace_steps"], expected["backtrace_steps"]
+            )
+            self.assertGreaterEqual(actual["atpg_seconds"], 0.0)
 
     def test_v12_contains_fanin_mean_encoder_and_portable_inference_matches_torch(self):
         state = self.agent().policy_old.state_dict()

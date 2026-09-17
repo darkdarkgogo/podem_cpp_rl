@@ -68,6 +68,7 @@ public:
   virtual void on_pi_not_done(unsigned long decision_sequence, int backtracks,
                               unsigned long pi_visits) {}
   virtual void on_episode_end(const EpisodeResult &result) {}
+  virtual void on_episode_complete() {}
 };
 
 class EmbeddingTable {

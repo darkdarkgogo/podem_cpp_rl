@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import random
+import time
 from pathlib import Path
 
 import torch
@@ -25,7 +26,7 @@ from prepare_smartatpg_training import (
     validation_fault_ids,
 )
 from rl_podem.cpp_bridge import (
-    CppPodemBacktraceV2Evaluator,
+    _native_circuit_path,
     CppPodemBacktraceV2Trainer,
     catalog_cpp_podem,
     smartatpg_pi_reward,
@@ -33,7 +34,9 @@ from rl_podem.cpp_bridge import (
 from rl_podem.gat_gru import GATGRUSmartATPGPPOAgent
 from rl_podem.ppo import device
 from rl_podem.smartatpg import SmartATPGPPOAgent
-from rl_podem.smartatpg_artifacts import export_actor
+from rl_podem.smartatpg_artifacts import (
+    export_actor, export_descriptors, policy_from_state,
+)
 from rl_podem.smartatpg_features import load_circuit_graph
 
 
@@ -106,6 +109,49 @@ def _append_json_line(path, record):
         stream.write("\n")
         stream.flush()
         os.fsync(stream.fileno())
+
+
+def _native_validation_batch(
+    item, fault_ids, embedding_path, actor_path, records_path, seed,
+):
+    try:
+        import cpp_podem
+    except ImportError as error:
+        raise ImportError(
+            "Native validation requires the rebuilt cpp_podem extension"
+        ) from error
+    if not hasattr(cpp_podem, "run_native_validation"):
+        raise RuntimeError(
+            "cpp_podem is stale; rebuild it with: python -m pip install -e ."
+        )
+    native_records = cpp_podem.run_native_validation(
+        _native_circuit_path(item["circuit"]),
+        _native_circuit_path(embedding_path),
+        _native_circuit_path(actor_path),
+        BACKTRACK_LIMIT, seed, fault_ids,
+        _native_circuit_path(records_path), item["name"],
+    )
+    if len(native_records) != len(fault_ids):
+        raise RuntimeError("Native validation returned the wrong fault count")
+    records = []
+    for fault_id, raw in zip(fault_ids, native_records):
+        if raw["fault_id"] != fault_id:
+            raise RuntimeError("Native validation returned faults out of order")
+        outcome = int(raw["outcome"])
+        records.append({
+            "circuit": item["name"],
+            "fault_id": fault_id,
+            "outcome": outcome,
+            "detected": int(outcome == 1),
+            "redundant": int(outcome == 0),
+            "aborted": int(outcome not in (0, 1)),
+            "backtracks": int(raw["backtracks"]),
+            "backtrace_steps": int(raw["backtrace_steps"]),
+            "return": float(raw["return"]),
+            "test_vectors": int(outcome == 1),
+            "atpg_seconds": float(raw["atpg_seconds"]),
+        })
+    return records
 
 
 def validation_score(summary, round_number):
@@ -578,11 +624,6 @@ def main(argv=None):
         )
         for item in train_circuits
     }
-    evaluators = {
-        item["name"]: CppPodemBacktraceV2Evaluator(graphs[item["name"]], agent=agent)
-        for item in validation_circuits
-    }
-
     manifest_digest = _manifest_hash(args.manifest)
     config = {
         "rounds": args.rounds,
@@ -758,6 +799,30 @@ def main(argv=None):
                 _save_state(checkpoint_path, agent, state)
 
             validation_order = _validation_order(validation_circuits)
+            native_dir = output_dir / "validation_native" / f"round_{round_number}"
+            actor_path = native_dir / "actor.txt"
+            actor_state = agent.policy_old.state_dict()
+            export_actor(actor_state, actor_path, training_protocol=training_protocol)
+            embedding_policy = policy_from_state(actor_state)
+            embedding_paths = {}
+            for item in validation_circuits:
+                embedding_path = native_dir / f"{item['name']}.emb"
+                export_descriptors(
+                    actor_state, graphs[item["name"]], embedding_path,
+                    embedding_policy,
+                )
+                embedding_paths[item["name"]] = embedding_path
+            print(
+                f"VALIDATE_START round={round_number}/{args.rounds} "
+                f"circuits={len(validation_circuits)} faults={len(validation_order)} "
+                f"backend=native_cpp load_once_per_circuit=1 "
+                f"per_circuit="
+                + ",".join(
+                    f"{item['name']}:{len(item['episode_fault_ids'])}"
+                    for item in validation_circuits
+                ),
+                flush=True,
+            )
             validation_state, validation_records = _load_validation_state(
                 validation_state_path,
                 validation_records_path,
@@ -772,27 +837,55 @@ def main(argv=None):
                 raise ValueError("Validation resume records are not the expected prefix")
             if int(validation_state["next_index"]) > len(validation_order):
                 raise ValueError("Validation resume position exceeds the fault catalog")
-            for index in range(int(validation_state["next_index"]), len(validation_order)):
-                circuit_name, fault_id = validation_order[index]
-                record = _evaluate_fault(
-                    evaluators[circuit_name],
-                    validation_by_name[circuit_name],
-                    fault_id,
-                    BACKTRACK_LIMIT,
-                    args.seed,
+            validation_started = time.perf_counter()
+            print(
+                f"VALIDATE_RESUME next_index={validation_state['next_index']} "
+                f"remaining={len(validation_order) - int(validation_state['next_index'])}",
+                flush=True,
+            )
+            index = int(validation_state["next_index"])
+            while index < len(validation_order):
+                circuit_name = validation_order[index][0]
+                circuit_end = index
+                while (
+                    circuit_end < len(validation_order)
+                    and validation_order[circuit_end][0] == circuit_name
+                ):
+                    circuit_end += 1
+                fault_ids = [
+                    fault_id
+                    for _, fault_id in validation_order[index:circuit_end]
+                ]
+                batch_started = time.perf_counter()
+                records = _native_validation_batch(
+                    validation_by_name[circuit_name], fault_ids,
+                    embedding_paths[circuit_name], actor_path,
+                    validation_records_path, args.seed,
                 )
-                _append_json_line(validation_records_path, record)
-                validation_records.append(record)
-                validation_state["next_index"] = index + 1
+                evaluation_seconds = time.perf_counter() - batch_started
+                save_started = time.perf_counter()
+                validation_records.extend(records)
+                index += len(records)
+                validation_state["next_index"] = index
                 _atomic_json(validation_state_path, validation_state)
+                save_seconds = time.perf_counter() - save_started
                 print(
                     f"VALIDATE round={round_number}/{args.rounds} "
-                    f"index={index + 1}/{len(validation_order)} "
-                    f"circuit={circuit_name} fault={fault_id} "
-                    f"outcome={record['outcome']}",
+                    f"index={index}/{len(validation_order)} "
+                    f"circuit={circuit_name} batch_faults={len(records)} "
+                    f"detected={sum(record['detected'] for record in records)} "
+                    f"backtracks={sum(record['backtracks'] for record in records)} "
+                    f"native_s={evaluation_seconds:.3f} "
+                    f"save_s={save_seconds:.3f}",
                     flush=True,
                 )
 
+            print(
+                f"VALIDATE_DONE round={round_number}/{args.rounds} "
+                f"faults={len(validation_order)} "
+                f"run_elapsed_s={time.perf_counter() - validation_started:.1f}",
+                flush=True,
+            )
             evaluation = _summarize_validation(
                 validation_records, validation_circuits, round_number
             )

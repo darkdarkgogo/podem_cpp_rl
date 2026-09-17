@@ -65,12 +65,17 @@ def _tee_command(command, log_path, environment, prefix="", on_start=None):
 
 def _check_cpp_extension():
     try:
-        import cpp_podem  # noqa: F401
+        import cpp_podem
     except ImportError as error:
         raise RuntimeError(
             "Training requires the cpp_podem Python extension. Install it in "
             "the PyTorch environment with: python -m pip install -e ."
         ) from error
+    if not hasattr(cpp_podem, "run_native_validation"):
+        raise RuntimeError(
+            "The cpp_podem extension is stale. Rebuild it in the PyTorch "
+            "environment with: python -m pip install -e ."
+        )
 
 
 def _run(command, log_path, environment):
