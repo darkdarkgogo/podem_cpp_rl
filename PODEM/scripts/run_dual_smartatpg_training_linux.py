@@ -249,7 +249,7 @@ def main(argv=None):
     manifest_path = preparation_dir / "training_manifest.json"
     gat_dir = output_dir / "smartatpg_gat_gru"
     mean_dir = output_dir / "smartatpg_mean"
-    comparison_dir = output_dir / "validation_comparison"
+    comparison_dir = output_dir
     environment = os.environ.copy()
     environment.update({
         "PYTHONUNBUFFERED": "1",

@@ -343,6 +343,7 @@ def _validation_identity(config, validation_circuits):
     return {
         "format": "SMARTATPG_VALIDATION_IDENTITY_V1",
         "manifest_hash": config["manifest_hash"],
+        "seed": config["seed"],
         "encoder_variant": config["encoder_variant"],
         "normal_rounds": config["rounds"],
         "faults_per_update": config["faults_per_update"],
@@ -613,7 +614,7 @@ def main(argv=None):
         config["faults_per_update"] = FAULTS_PER_UPDATE
         identity_path = output_dir / "validation_identity.json"
         validation_identity = _validation_identity(config, validation_circuits)
-        if args.resume:
+        if args.resume and checkpoint_path.is_file():
             if not identity_path.is_file():
                 raise FileNotFoundError(
                     "--resume requires validation_identity.json in the training directory"

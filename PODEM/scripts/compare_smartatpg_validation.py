@@ -15,6 +15,7 @@ from train_smartatpg import (
     _summarize_validation,
     _validation_catalog_hash,
     _validation_order,
+    validation_score,
 )
 
 
@@ -34,6 +35,7 @@ IDENTITY_KEYS = {
     "backtrack_limit",
     "validation_catalog_hash",
     "validation_circuits",
+    "seed",
 }
 SHARED_IDENTITY_FIELDS = (
     "manifest_hash",
@@ -43,6 +45,7 @@ SHARED_IDENTITY_FIELDS = (
     "backtrack_limit",
     "validation_catalog_hash",
     "validation_circuits",
+    "seed",
 )
 RAW_METRICS = (
     "episodes",
@@ -161,6 +164,9 @@ def _load_run(name, directory):
         raise ValueError(f"Wrong validation identity format for {name}")
     if identity["encoder_variant"] != EXPECTED_ENCODERS[name]:
         raise ValueError(f"Wrong encoder variant for {name}")
+    for key in ("normal_rounds", "faults_per_update", "k_epochs", "backtrack_limit", "seed"):
+        if type(identity[key]) is not int:
+            raise ValueError(f"Invalid V8 validation identity {key} for {name}")
     if (
         identity["normal_rounds"],
         identity["faults_per_update"],
@@ -300,12 +306,17 @@ def _raw_values(summary):
     return {key: summary[key] for key in RAW_METRICS}
 
 
-def _comparison_row(model, round_number, scope, circuit, model_row, baseline):
+def _comparison_row(model, round_number, scope, circuit, model_row, baseline,
+                    score, best_round, seed):
     result = {
         "scope": scope,
         "circuit": circuit,
         "round": round_number,
         "model": model,
+        "seed": seed,
+        "validation_score": score,
+        "best_round": best_round,
+        "is_best": round_number == best_round,
         **_raw_values(model_row),
         **{f"scoap_{key}": baseline[key] for key in RAW_METRICS},
         "fault_coverage_delta": (
@@ -414,7 +425,7 @@ def _atomic_csv(path, rows):
 
 
 def build_validation_comparison(
-    manifest_path, gat_dir, mean_dir, output_dir, seed=2026
+    manifest_path, gat_dir, mean_dir, output_dir, seed=None
 ):
     manifest_path = Path(manifest_path).resolve()
     output_dir = Path(output_dir)
@@ -431,6 +442,10 @@ def build_validation_comparison(
     for key in SHARED_IDENTITY_FIELDS:
         if gat_identity[key] != mean_identity[key]:
             raise ValueError(f"Validation run identity mismatch: {key}")
+    if seed is None:
+        seed = gat_identity["seed"]
+    elif type(seed) is not int or seed != gat_identity["seed"]:
+        raise ValueError("SCOAP seed conflicts with validation run seed")
     if gat_identity["manifest_hash"] != _manifest_hash(manifest_path):
         raise ValueError("Validation run identity mismatch: manifest_hash")
 
@@ -443,6 +458,11 @@ def build_validation_comparison(
         raise ValueError("Validation run identity mismatch: validation_catalog_hash")
     for name, data in runs.items():
         _validate_run_metrics(name, data["rounds"], circuits)
+        scores = [validation_score(item, item["round"]) for item in data["rounds"]]
+        if data["rounds"][scores.index(min(scores))].get("is_best") is not True:
+            raise ValueError(
+                f"Best validation round disagrees with validation score for {name}"
+            )
 
     baseline_payload = _load_or_run_scoap(
         output_dir, gat_identity, circuits, seed
@@ -456,8 +476,11 @@ def build_validation_comparison(
     comparisons = []
     csv_rows = []
     for model in ("smartatpg_gat_gru", "smartatpg_mean"):
+        best_round = next(item["round"] for item in runs[model]["rounds"]
+                          if item.get("is_best") is True)
         for round_summary in runs[model]["rounds"]:
             round_number = round_summary["round"]
+            score = list(validation_score(round_summary, round_number))
             rows = [
                 _comparison_row(
                     model,
@@ -466,6 +489,9 @@ def build_validation_comparison(
                     circuit,
                     row,
                     baseline_rows[(scope, circuit)],
+                    score,
+                    best_round,
+                    seed,
                 )
                 for scope, circuit, row in _scope_rows(round_summary)
             ]
@@ -474,7 +500,9 @@ def build_validation_comparison(
                 "round": round_number,
                 "rows": rows,
             })
-            csv_rows.extend({"row_type": "model_vs_scoap", **row} for row in rows)
+            csv_rows.extend({"row_type": "model_vs_scoap", **row,
+                             "validation_score": json.dumps(row["validation_score"])}
+                            for row in rows)
 
     direct_comparisons = []
     gat_by_round = {
@@ -496,24 +524,26 @@ def build_validation_comparison(
             in zip(gat_scopes, mean_scopes)
         ]
         direct_comparisons.append({"round": round_number, "rows": rows})
-        csv_rows.extend({"row_type": "gat_minus_mean", **row} for row in rows)
+        csv_rows.extend({"row_type": "gat_minus_mean", "seed": seed, **row} for row in rows)
 
+    model_summaries = {}
+    for name, data in runs.items():
+        rounds = data["rounds"]
+        best = next(item for item in rounds if item.get("is_best") is True)
+        model_summaries[name] = {
+            "encoder_variant": data["identity"]["encoder_variant"],
+            "best_round": best["round"],
+            "scores": [list(validation_score(item, item["round"]))
+                       for item in rounds],
+            "best_score": list(validation_score(best, best["round"])),
+        }
     result = {
         "format": COMPARISON_FORMAT,
         "identity": {
             key: gat_identity[key] for key in SHARED_IDENTITY_FIELDS
         },
         "scoap": baseline_summary,
-        "models": {
-            name: {
-                "encoder_variant": data["identity"]["encoder_variant"],
-                "best_round": next(
-                    item["round"] for item in data["rounds"]
-                    if item.get("is_best") is True
-                ),
-            }
-            for name, data in runs.items()
-        },
+        "models": model_summaries,
         "comparisons": comparisons,
         "direct_comparisons": direct_comparisons,
     }
@@ -528,7 +558,7 @@ def main(argv=None):
     parser.add_argument("gat_dir", type=Path)
     parser.add_argument("mean_dir", type=Path)
     parser.add_argument("output_dir", type=Path)
-    parser.add_argument("--seed", type=int, default=2026)
+    parser.add_argument("--seed", type=int)
     args = parser.parse_args(argv)
     build_validation_comparison(
         args.manifest, args.gat_dir, args.mean_dir, args.output_dir, args.seed

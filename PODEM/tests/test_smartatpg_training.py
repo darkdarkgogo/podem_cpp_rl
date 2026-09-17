@@ -458,6 +458,7 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
     def test_validation_identity_declares_protocol_and_catalog(self):
         config = {
             "manifest_hash": "a" * 64,
+            "seed": 2026,
             "encoder_variant": "fanin_mean",
             "rounds": 2,
             "faults_per_update": 8,
@@ -471,6 +472,7 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
         self.assertEqual(identity, {
             "format": "SMARTATPG_VALIDATION_IDENTITY_V1",
             "manifest_hash": "a" * 64,
+            "seed": 2026,
             "encoder_variant": "fanin_mean",
             "normal_rounds": 2,
             "faults_per_update": 8,
@@ -482,6 +484,67 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
         self.assertEqual(identity["encoder_variant"], "fanin_mean")
         self.assertEqual(identity["validation_circuits"], ["b12_C", "b15_C"])
         self.assertEqual(identity["faults_per_update"], 8)
+
+    def test_v8_fresh_resume_creates_identity_for_both_encoders(self):
+        train = [{"name": "t", "circuit": "t.bench", "episode_fault_ids": ["t0"]}]
+        validation = [{"name": "v", "circuit": "v.bench", "episode_fault_ids": ["v0"]}]
+        for encoder in ("level_gat_gru", "fanin_mean"):
+            with self.subTest(encoder=encoder), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                manifest = root / "manifest.json"
+                manifest.write_text(json.dumps({
+                    "format": MANIFEST_FORMAT, "normal_rounds": 2,
+                    "backtrack_limit": BACKTRACK_LIMIT,
+                }), encoding="utf-8")
+                output = root / "training"
+                with (
+                    patch.object(training, "_resolve_circuit_records", return_value=(train, validation)),
+                    patch.object(training, "_load_validation_catalogs", return_value=validation),
+                    patch.object(training, "load_circuit_graph", return_value=object()),
+                    patch.object(training, "AGENT_TYPES", {encoder: lambda *_a, **_k: object()}),
+                    patch.object(training, "CppPodemBacktraceV2Trainer", return_value=object()),
+                    patch.object(training, "CppPodemBacktraceV2Evaluator", return_value=object()),
+                    patch.object(training, "_initial_state", side_effect=RuntimeError("reached initial state")),
+                ):
+                    with self.assertRaisesRegex(RuntimeError, "reached initial state"):
+                        training.main([str(manifest), str(output), "--encoder", encoder,
+                                       "--seed", "77", "--resume"])
+                identity = json.loads((output / "validation_identity.json").read_text("utf-8"))
+                self.assertEqual(identity["encoder_variant"], encoder)
+                self.assertEqual(identity["seed"], 77)
+
+    def test_v8_real_resume_requires_matching_identity(self):
+        train = [{"name": "t", "circuit": "t.bench", "episode_fault_ids": ["t0"]}]
+        validation = [{"name": "v", "circuit": "v.bench", "episode_fault_ids": ["v0"]}]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = root / "manifest.json"
+            manifest.write_text(json.dumps({"format": MANIFEST_FORMAT,
+                                            "normal_rounds": 2, "backtrack_limit": 200}),
+                                encoding="utf-8")
+            output = root / "training"
+            output.mkdir()
+            (output / "training_state.pth").write_bytes(b"checkpoint")
+            with (
+                patch.object(training, "_resolve_circuit_records", return_value=(train, validation)),
+                patch.object(training, "_load_validation_catalogs", return_value=validation),
+                patch.object(training, "load_circuit_graph", return_value=object()),
+                patch.object(training, "AGENT_TYPES", {"level_gat_gru": lambda *_a, **_k: object()}),
+                patch.object(training, "CppPodemBacktraceV2Trainer", return_value=object()),
+                patch.object(training, "CppPodemBacktraceV2Evaluator", return_value=object()),
+            ):
+                args = [str(manifest), str(output), "--resume"]
+                with self.assertRaisesRegex(FileNotFoundError, "validation_identity"):
+                    training.main(args)
+                identity = _validation_identity({
+                    "manifest_hash": training._manifest_hash(manifest), "seed": 2026,
+                    "encoder_variant": "level_gat_gru", "rounds": 2,
+                    "faults_per_update": 8, "k_epochs": 1, "backtrack_limit": 200,
+                    "validation_catalog_hash": training._validation_catalog_hash(validation),
+                }, validation)
+                (output / "validation_identity.json").write_text(json.dumps(identity), encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "Validation identity changed"):
+                    training.main(args + ["--seed", "2027"])
 
     def test_legacy_main_config_assembly_skips_v8_validation_identity(self):
         train_circuits = [{

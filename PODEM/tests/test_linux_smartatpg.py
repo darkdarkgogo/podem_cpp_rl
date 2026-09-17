@@ -1,3 +1,4 @@
+import csv
 import hashlib
 import json
 import sys
@@ -84,7 +85,7 @@ class ValidationComparisonTests(unittest.TestCase):
     IDENTITY_KEYS = {
         "format", "manifest_hash", "encoder_variant", "normal_rounds",
         "faults_per_update", "k_epochs", "backtrack_limit",
-        "validation_catalog_hash", "validation_circuits",
+        "validation_catalog_hash", "validation_circuits", "seed",
     }
 
     @staticmethod
@@ -131,6 +132,7 @@ class ValidationComparisonTests(unittest.TestCase):
         identity = {
             "format": "SMARTATPG_VALIDATION_IDENTITY_V1",
             "manifest_hash": manifest_hash,
+            "seed": 2026,
             "encoder_variant": encoder,
             "normal_rounds": 2,
             "faults_per_update": 8,
@@ -144,8 +146,8 @@ class ValidationComparisonTests(unittest.TestCase):
             json.dumps(identity), encoding="utf-8"
         )
         rounds = [
-            self._summary(1, 8, best_round == 1),
-            self._summary(2, 4, best_round == 2),
+            self._summary(1, 4 if best_round == 1 else 8, best_round == 1),
+            self._summary(2, 4 if best_round == 2 else 8, best_round == 2),
         ]
         (directory / "validation_metrics.json").write_text(
             json.dumps(rounds), encoding="utf-8"
@@ -220,6 +222,16 @@ class ValidationComparisonTests(unittest.TestCase):
             )
             self.assertEqual(result["models"]["smartatpg_gat_gru"]["best_round"], 1)
             self.assertEqual(result["models"]["smartatpg_mean"]["best_round"], 2)
+            self.assertEqual(result["identity"]["seed"], 2026)
+            self.assertEqual(result["models"]["smartatpg_gat_gru"]["scores"], [
+                [-1, 4, 8, -0.0, 1], [-1, 8, 16, -0.0, 2],
+            ])
+            self.assertEqual(result["models"]["smartatpg_mean"]["best_score"],
+                             [-1, 4, 8, -0.0, 2])
+            self.assertEqual(result["models"]["smartatpg_gat_gru"]["best_score"],
+                             [-1, 4, 8, -0.0, 1])
+            self.assertEqual(result["comparisons"][0]["rows"][0]["validation_score"],
+                             [-1, 4, 8, -0.0, 1])
             self.assertEqual(len(result["comparisons"]), 4)
             self.assertEqual(len(result["direct_comparisons"]), 2)
             self.assertEqual(
@@ -237,6 +249,19 @@ class ValidationComparisonTests(unittest.TestCase):
                 "gat_minus_mean",
             ):
                 self.assertIn(field, csv_text)
+            with (output / "validation_comparison.csv").open(newline="", encoding="utf-8") as stream:
+                csv_rows = list(csv.DictReader(stream))
+            self.assertEqual(len(csv_rows), 12)
+            model_row = next(row for row in csv_rows if row["row_type"] == "model_vs_scoap"
+                             and row["model"] == "smartatpg_gat_gru" and row["round"] == "1"
+                             and row["scope"] == "total")
+            self.assertEqual(json.loads(model_row["validation_score"]), [-1, 4, 8, -0.0, 1])
+            self.assertEqual(model_row["best_round"], "1")
+            self.assertEqual(model_row["seed"], "2026")
+            self.assertEqual(model_row["backtracks_reduction_percent"], "80.0")
+            direct_row = next(row for row in csv_rows if row["row_type"] == "gat_minus_mean"
+                              and row["round"] == "2" and row["scope"] == "total")
+            self.assertEqual(direct_row["backtracks_total_gat_minus_mean"], "4")
 
     def test_scoap_evaluator_uses_native_backtrace_heuristic_protocol(self):
         captured = {}
@@ -271,6 +296,7 @@ class ValidationComparisonTests(unittest.TestCase):
              "Wrong encoder variant"),
             ("wrong_protocol", {"mean": {"faults_per_update": 4}},
              "Wrong V8 training protocol"),
+            ("different_seed", {"mean": {"seed": 2027}}, "seed"),
         )
         for label, changes, message in cases:
             with self.subTest(case=label), tempfile.TemporaryDirectory() as directory:
@@ -291,6 +317,53 @@ class ValidationComparisonTests(unittest.TestCase):
                 ValueError, "Incomplete validation rounds"
             ):
                 build_validation_comparison(manifest, gat, mean, output)
+
+    def test_rejects_scoap_seed_conflict_and_bad_identity_number_types(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest, gat, mean, output, patches = self._build(root)
+            with patches[0], patches[1], patches[2], self.assertRaisesRegex(ValueError, "seed"):
+                build_validation_comparison(manifest, gat, mean, output, seed=2027)
+            self.assertFalse(output.exists())
+        for key, value in (("seed", True), ("seed", 2026.0),
+                           ("faults_per_update", True), ("normal_rounds", 2.0)):
+            with self.subTest(key=key, value=value), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                manifest, gat, mean, output, patches = self._build(root, gat={key: value})
+                with patches[0], patches[1], patches[2], self.assertRaisesRegex(ValueError, key):
+                    build_validation_comparison(manifest, gat, mean, output)
+
+    def test_rejects_best_marker_on_nonoptimal_round(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest, gat, mean, output, patches = self._build(root)
+            metrics_path = gat / "validation_metrics.json"
+            metrics = json.loads(metrics_path.read_text(encoding="utf-8"))
+            metrics[0]["is_best"] = False
+            metrics[1]["is_best"] = True
+            metrics_path.write_text(json.dumps(metrics), encoding="utf-8")
+            with patches[0], patches[1], patches[2], self.assertRaisesRegex(
+                ValueError, "Best validation round disagrees with validation score"
+            ):
+                build_validation_comparison(manifest, gat, mean, output)
+
+    def test_zero_scoap_work_has_blank_csv_reduction(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest, gat, mean, output, patches = self._build(root)
+            def zero_work(evaluator, item, fault_id, limit, seed):
+                record = self._baseline_record(evaluator, item, fault_id, limit, seed)
+                record.update(backtracks=0, backtrace_steps=0, atpg_seconds=0.0)
+                return record
+            with patches[0], patches[1], patch(
+                "compare_smartatpg_validation._evaluate_fault", side_effect=zero_work
+            ):
+                result = build_validation_comparison(manifest, gat, mean, output)
+            self.assertIsNone(result["comparisons"][0]["rows"][0]["backtracks_reduction_percent"])
+            with (output / "validation_comparison.csv").open(newline="", encoding="utf-8") as stream:
+                row = next(item for item in csv.DictReader(stream)
+                           if item["row_type"] == "model_vs_scoap")
+            self.assertEqual(row["backtracks_reduction_percent"], "")
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -885,6 +958,10 @@ class DualTrainingLauncherTests(unittest.TestCase):
             self.assertNotIn("benchmark_bundle", flattened)
             metadata = json.loads((output / "training_run_metadata.json").read_text("utf-8"))
             self.assertIn("validation_comparison", metadata)
+            comparison_command = next(command for command in commands if str(command[2]).endswith(
+                "compare_smartatpg_validation.py"))
+            self.assertEqual(Path(comparison_command[6]), output)
+            self.assertEqual(metadata["validation_comparison"], str(output))
             self.assertNotIn("benchmark_bundle", metadata)
 
     def test_dual_launcher_rejects_invalid_gpu_and_platform_configurations(self):
