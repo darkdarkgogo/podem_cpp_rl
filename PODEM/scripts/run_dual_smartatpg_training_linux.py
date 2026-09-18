@@ -228,7 +228,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--output-dir", type=Path,
-        default=ROOT / "artifacts/smartatpg_dual_top30_hard_2rounds_batch8_bt200",
+        default=ROOT / "artifacts/smartatpg_dual_top30_hard_2rounds_batch8_bt100",
     )
     parser.add_argument("--dataset-root", type=Path, default=ROOT / "data")
     parser.add_argument("--rounds", type=int, default=NORMAL_TRAINING_ROUNDS)

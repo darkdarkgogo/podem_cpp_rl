@@ -59,6 +59,24 @@ class _SplitLauncherInventoryTests:
         ):
             run_benchmark_main(["unused", "--backtrack-limit", "500"])
 
+    def test_shell_wrappers_use_the_bt100_protocol(self):
+        wrappers = (
+            "train_smartatpg_linux.sh",
+            "train_dual_smartatpg_linux.sh",
+            "benchmark_smartatpg_linux.sh",
+        )
+        for name in wrappers:
+            text = (SCRIPTS.parent / name).read_text(encoding="utf-8")
+            with self.subTest(script=name):
+                self.assertIn("--backtrack-limit 100", text)
+                self.assertNotIn("--backtrack-limit 200", text)
+                self.assertNotIn("bt200", text)
+        tensorboard = (SCRIPTS.parent / "tensorboard_smartatpg_linux.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("bt100", tensorboard)
+        self.assertNotIn("bt200", tensorboard)
+
     def test_scripts_directory_contains_only_current_workflow(self):
         self.assertEqual(
             {path.name for path in SCRIPTS.glob("*.py")},
