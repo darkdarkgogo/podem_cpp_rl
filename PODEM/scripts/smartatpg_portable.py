@@ -70,6 +70,7 @@ class PortableModel:
     decision_state_dim: int
     manifest_hash: str
     backtrack_limit: int
+    reward_scheme: str
     normal_rounds: int
     faults_per_update: Optional[int]
     k_epochs: Optional[int]
@@ -175,6 +176,7 @@ def load_model(path):
             raise ValueError("SmartATPG best score must contain five finite values")
     manifest_hash = _field(tokens, "manifest_hash")
     backtrack_limit = int(_field(tokens, "backtrack_limit"))
+    reward_scheme = _field(tokens, "reward_scheme")
     normal_rounds = int(_field(tokens, "normal_rounds"))
     if model_format == MODEL_FORMAT:
         faults_per_update = int(_field(tokens, "faults_per_update"))
@@ -187,7 +189,11 @@ def load_model(path):
     if (
         len(manifest_hash) != 64
         or any(value not in "0123456789abcdef" for value in manifest_hash)
-        or backtrack_limit != 200
+        or backtrack_limit != 100
+        or reward_scheme != {
+            "level_gat_gru": "cubic_backtrack_v1",
+            "fanin_mean": "legacy_pi_exponential",
+        }[encoder_variant]
         or normal_rounds != (2 if model_format == MODEL_FORMAT else 5)
         or (
             model_format == MODEL_FORMAT
@@ -268,7 +274,8 @@ def load_model(path):
     return PortableModel(
         model_format, encoder_variant, graph_config, snapshot, best_round,
         best_score, hidden_dim, actor_input_dim, decision_state_dim,
-        manifest_hash, backtrack_limit, normal_rounds, faults_per_update,
+        manifest_hash, backtrack_limit, reward_scheme, normal_rounds,
+        faults_per_update,
         k_epochs, training_circuit_count, validation_circuit_count, tensors,
     )
 

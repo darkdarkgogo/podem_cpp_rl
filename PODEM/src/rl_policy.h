@@ -161,6 +161,9 @@ public:
   bool supports(DecisionMode mode) const override {
     return mode == DecisionMode::BACKTRACE;
   }
+  const std::string &encoder_variant() const {
+    return actor_.encoder_variant();
+  }
 
 private:
   ActorModel actor_;

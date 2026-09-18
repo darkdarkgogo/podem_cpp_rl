@@ -44,18 +44,18 @@ class _SplitLauncherInventoryTests:
             self.assertIn('"-march=native"', source)
             self.assertNotIn('"-Ofast"', source)
 
-    def test_benchmark_defaults_to_200_backtracks(self):
-        self.assertEqual(run_benchmark.__defaults__, (5, 14, 200))
+    def test_benchmark_defaults_to_100_backtracks(self):
+        self.assertEqual(run_benchmark.__defaults__, (5, 14, 100))
 
     def test_launchers_reject_500_backtracks(self):
         with (
             patch("run_smartatpg_training_linux.sys.platform", "linux"),
-            self.assertRaisesRegex(ValueError, "requires backtrack limit 200"),
+            self.assertRaisesRegex(ValueError, "requires backtrack limit 100"),
         ):
             run_training_main(["--backtrack-limit", "500"])
         with (
             patch("run_smartatpg_benchmark_linux.sys.platform", "linux"),
-            self.assertRaisesRegex(ValueError, "requires backtrack limit 200"),
+            self.assertRaisesRegex(ValueError, "requires backtrack limit 100"),
         ):
             run_benchmark_main(["unused", "--backtrack-limit", "500"])
 
@@ -83,7 +83,8 @@ class _SplitLauncherInventoryTests:
 
 class ValidationComparisonTests(unittest.TestCase):
     IDENTITY_KEYS = {
-        "format", "manifest_hash", "encoder_variant", "normal_rounds",
+        "format", "manifest_hash", "encoder_variant", "reward_scheme",
+        "normal_rounds",
         "faults_per_update", "k_epochs", "backtrack_limit",
         "validation_catalog_hash", "validation_circuits", "seed",
     }
@@ -134,10 +135,14 @@ class ValidationComparisonTests(unittest.TestCase):
             "manifest_hash": manifest_hash,
             "seed": 2026,
             "encoder_variant": encoder,
+            "reward_scheme": {
+                "level_gat_gru": "cubic_backtrack_v1",
+                "fanin_mean": "legacy_pi_exponential",
+            }[encoder],
             "normal_rounds": 2,
             "faults_per_update": 8,
             "k_epochs": 1,
-            "backtrack_limit": 200,
+            "backtrack_limit": 100,
             "validation_catalog_hash": catalog_hash,
             "validation_circuits": ["v"],
         }
@@ -155,7 +160,9 @@ class ValidationComparisonTests(unittest.TestCase):
         return directory
 
     @staticmethod
-    def _baseline_record(_evaluator, item, fault_id, _limit, _seed):
+    def _baseline_record(
+        _evaluator, item, fault_id, _limit, _seed, _reward_scheme,
+    ):
         detected = int(fault_id == "f0")
         return {
             "circuit": item["name"], "fault_id": fault_id,
@@ -259,9 +266,13 @@ class ValidationComparisonTests(unittest.TestCase):
             self.assertEqual(model_row["best_round"], "1")
             self.assertEqual(model_row["seed"], "2026")
             self.assertEqual(model_row["backtracks_reduction_percent"], "80.0")
+            self.assertNotIn("scoap_return_total", model_row)
+            self.assertNotIn("scoap_return_mean", model_row)
             direct_row = next(row for row in csv_rows if row["row_type"] == "gat_minus_mean"
                               and row["round"] == "2" and row["scope"] == "total")
             self.assertEqual(direct_row["backtracks_total_gat_minus_mean"], "4")
+            self.assertNotIn("gat_return_total", direct_row)
+            self.assertNotIn("return_total_gat_minus_mean", direct_row)
 
     def test_scoap_evaluator_uses_native_backtrace_heuristic_protocol(self):
         captured = {}
@@ -275,14 +286,14 @@ class ValidationComparisonTests(unittest.TestCase):
             "cpp_podem": SimpleNamespace(run_stuck_at=run_stuck_at),
         }):
             result = ScoapValidationEvaluator().run(
-                "v.bench", backtrack_limit=200, seed=2026,
+                "v.bench", backtrack_limit=100, seed=2026,
                 fault_ids=["f0"], use_scoap=False,
                 event_callback=event_callback,
             )
         args = captured["args"]
         self.assertEqual(result["episodes"], 1)
         self.assertEqual(args[2], event_callback)
-        self.assertEqual(args[3:6], (200, 2026, ["f0"]))
+        self.assertEqual(args[3:6], (100, 2026, ["f0"]))
         self.assertEqual(args[7], "backtrace_rl")
         self.assertIs(args[9], True)
         self.assertEqual(args[1]({"heuristic_action": 1}), 1)
@@ -294,6 +305,8 @@ class ValidationComparisonTests(unittest.TestCase):
              "validation_catalog_hash"),
             ("wrong_encoder", {"gat": {"encoder_variant": "fanin_mean"}},
              "Wrong encoder variant"),
+            ("wrong_reward", {"gat": {"reward_scheme": "legacy_pi_exponential"}},
+             "Wrong reward scheme"),
             ("wrong_protocol", {"mean": {"faults_per_update": 4}},
              "Wrong V8 training protocol"),
             ("different_seed", {"mean": {"seed": 2027}}, "seed"),
@@ -351,8 +364,10 @@ class ValidationComparisonTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             manifest, gat, mean, output, patches = self._build(root)
-            def zero_work(evaluator, item, fault_id, limit, seed):
-                record = self._baseline_record(evaluator, item, fault_id, limit, seed)
+            def zero_work(evaluator, item, fault_id, limit, seed, reward_scheme):
+                record = self._baseline_record(
+                    evaluator, item, fault_id, limit, seed, reward_scheme,
+                )
                 record.update(backtracks=0, backtrace_steps=0, atpg_seconds=0.0)
                 return record
             with patches[0], patches[1], patch(
@@ -485,7 +500,7 @@ class SplitLauncherTests(_SplitLauncherInventoryTests, unittest.TestCase):
                     preparation.mkdir(parents=True, exist_ok=True)
                     (preparation / "training_manifest.json").write_text(
                         json.dumps({
-                            "backtrack_limit": 200, "normal_rounds": 2,
+                            "backtrack_limit": 100, "normal_rounds": 2,
                             "faults_per_update": 8, "k_epochs": 1,
                             "train": [], "validation": [],
                             "train_circuits": [{"name": "t"}],
@@ -559,7 +574,11 @@ class SplitLauncherTests(_SplitLauncherInventoryTests, unittest.TestCase):
             metadata = json.loads(
                 (output / "training_run_metadata.json").read_text(encoding="utf-8")
             )
-            self.assertEqual(metadata["training_protocol"]["backtrack_limit"], 200)
+            self.assertEqual(metadata["training_protocol"]["backtrack_limit"], 100)
+            self.assertEqual(
+                metadata["training_protocol"]["reward_scheme"],
+                "cubic_backtrack_v1",
+            )
             self.assertEqual(metadata["training_protocol"]["normal_rounds"], 2)
             self.assertEqual(metadata["training_protocol"]["faults_per_update"], 8)
             self.assertEqual(metadata["training_protocol"]["k_epochs"], 1)
@@ -604,7 +623,7 @@ class SplitLauncherTests(_SplitLauncherInventoryTests, unittest.TestCase):
                     preparation.mkdir(parents=True, exist_ok=True)
                     (preparation / "training_manifest.json").write_text(
                         json.dumps({
-                            "backtrack_limit": 200, "normal_rounds": 2,
+                            "backtrack_limit": 100, "normal_rounds": 2,
                             "faults_per_update": 8, "k_epochs": 1,
                             "train_circuits": [{"name": "t"}],
                             "validation_circuits": [{"name": "v"}],
@@ -671,7 +690,7 @@ class SplitLauncherTests(_SplitLauncherInventoryTests, unittest.TestCase):
             self.assertNotIn(".pth", flattened)
             benchmark = commands[1]
             self.assertEqual(
-                benchmark[benchmark.index("--backtrack-limit") + 1], "200"
+                benchmark[benchmark.index("--backtrack-limit") + 1], "100"
             )
 
     def test_benchmark_runtime_has_no_torch_dependency(self):
@@ -720,7 +739,7 @@ class BenchmarkSummaryTests(unittest.TestCase):
         self.assertIsNone(percentage_change(0, 1))
 
     def test_benchmark_rejects_any_other_backtrack_limit(self):
-        with self.assertRaisesRegex(ValueError, "requires backtrack limit 200"):
+        with self.assertRaisesRegex(ValueError, "requires backtrack limit 100"):
             run_benchmark("unused", "unused", "unused", backtrack_limit=500)
 
     def test_summary_compares_atpg_time_only(self):
@@ -890,7 +909,7 @@ class DualTrainingLauncherTests(unittest.TestCase):
                     preparation.mkdir(parents=True, exist_ok=True)
                     (preparation / "training_manifest.json").write_text(
                         json.dumps({
-                            "backtrack_limit": 200, "normal_rounds": 2,
+                            "backtrack_limit": 100, "normal_rounds": 2,
                             "faults_per_update": 8, "k_epochs": 1,
                             "train_circuits": [{"name": "t"}],
                             "validation_circuits": [{"name": "v"}],
@@ -958,6 +977,13 @@ class DualTrainingLauncherTests(unittest.TestCase):
             self.assertNotIn("benchmark_bundle", flattened)
             metadata = json.loads((output / "training_run_metadata.json").read_text("utf-8"))
             self.assertIn("validation_comparison", metadata)
+            self.assertEqual(
+                metadata["training_protocol"]["reward_schemes"],
+                {
+                    "smartatpg_gat_gru": "cubic_backtrack_v1",
+                    "smartatpg_mean": "legacy_pi_exponential",
+                },
+            )
             comparison_command = next(command for command in commands if str(command[2]).endswith(
                 "compare_smartatpg_validation.py"))
             self.assertEqual(Path(comparison_command[6]), output)
@@ -1199,7 +1225,7 @@ class DualTrainingLauncherTests(unittest.TestCase):
 
     def test_gpu_validation_uses_numeric_inherited_physical_gpu_mask(self):
         args = SimpleNamespace(
-            rounds=2, backtrack_limit=200, gat_gpu=0, mean_gpu=1,
+            rounds=2, backtrack_limit=100, gat_gpu=0, mean_gpu=1,
         )
         fake_torch = self._fake_torch(2)
         with (

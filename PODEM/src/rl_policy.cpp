@@ -259,6 +259,7 @@ void ActorModel::load(const std::string &path) {
               key == "best_score" && !best_score.empty(),
           "Invalid SmartATPG best score in: " + path);
   std::string manifest_hash;
+  std::string reward_scheme;
   int backtrack_limit = 0;
   int normal_rounds = 0;
   int faults_per_update = 0;
@@ -271,8 +272,14 @@ void ActorModel::load(const std::string &path) {
                   std::string::npos,
           "Invalid SmartATPG training manifest hash in: " + path);
   require(static_cast<bool>(input >> key >> backtrack_limit) &&
-              key == "backtrack_limit" && backtrack_limit == 200,
+              key == "backtrack_limit" && backtrack_limit == 100,
           "Invalid SmartATPG backtrack-limit metadata in: " + path);
+  require(static_cast<bool>(input >> key >> reward_scheme) &&
+              key == "reward_scheme" &&
+              reward_scheme == (encoder_variant_ == "level_gat_gru"
+                                    ? "cubic_backtrack_v1"
+                                    : "legacy_pi_exponential"),
+          "Invalid SmartATPG reward-scheme metadata in: " + path);
   require(static_cast<bool>(input >> key >> normal_rounds) &&
               key == "normal_rounds" &&
               normal_rounds == (batched_protocol ? 2 : 5),

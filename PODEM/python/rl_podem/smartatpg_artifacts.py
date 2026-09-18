@@ -67,6 +67,7 @@ def export_actor(
     protocol_metadata = {
         "manifest_hash": training_protocol["manifest_hash"],
         "backtrack_limit": int(training_protocol["backtrack_limit"]),
+        "reward_scheme": str(training_protocol["reward_scheme"]),
         "normal_rounds": int(training_protocol["normal_rounds"]),
         "training_circuit_count": int(training_protocol["training_circuit_count"]),
         "validation_circuit_count": int(

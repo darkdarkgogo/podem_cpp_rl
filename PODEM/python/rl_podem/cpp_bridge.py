@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import os
 from pathlib import Path
 from typing import Any, Callable, Optional, Tuple, Union
@@ -8,6 +7,13 @@ from typing import Any, Callable, Optional, Tuple, Union
 import torch
 
 from .ppo import BacktracePPOAgentV2
+from .smartatpg_rewards import (
+    GAT_REWARD_SCHEME,
+    MEAN_REWARD_SCHEME,
+    reward_scheme_for_encoder,
+    smartatpg_backtrack_reward,
+    smartatpg_pi_reward,
+)
 from .smartatpg_features import FEATURE_DIM, FEATURE_SCHEMA, GRAPH_CONFIG_ID
 
 
@@ -247,7 +253,7 @@ def export_actor_v2_state_dict(
     if any(key in metadata for key in batch_keys) and not has_batch_protocol:
         raise ValueError("SmartATPG batching metadata is incomplete")
     protocol_keys = (
-        "manifest_hash", "backtrack_limit", "normal_rounds",
+        "manifest_hash", "backtrack_limit", "reward_scheme", "normal_rounds",
         *(batch_keys if has_batch_protocol else ()),
         "training_circuit_count", "validation_circuit_count",
     )
@@ -257,7 +263,10 @@ def export_actor_v2_state_dict(
     if (
         len(manifest_hash) != 64
         or any(char not in "0123456789abcdef" for char in manifest_hash)
-        or int(metadata["backtrack_limit"]) != 200
+        or int(metadata["backtrack_limit"]) != 100
+        or metadata["reward_scheme"] != reward_scheme_for_encoder(
+            metadata["encoder_variant"]
+        )
         or int(metadata["normal_rounds"]) != (2 if has_batch_protocol else 5)
         or int(metadata["training_circuit_count"]) <= 0
         or int(metadata["validation_circuit_count"]) <= 0
@@ -305,17 +314,6 @@ def export_actor_v2_state_dict(
             output.write("\n")
         output.write("end\n")
     temporary.replace(output_path)
-
-
-def smartatpg_pi_reward(
-    backtracks: int,
-    pi_visits: int,
-    alpha: float = 7.5,
-    beta: float = 0.07,
-) -> float:
-    if backtracks < 0 or pi_visits <= 0:
-        raise ValueError("SmartATPG reward counters are out of range.")
-    return 10.0 - alpha * math.exp(beta * (backtracks + pi_visits))
 
 
 class _CppPodemTrainerBase:
@@ -397,8 +395,15 @@ class CppPodemBacktraceV2Trainer(_CppPodemTrainerBase):
         graph,
         agent: BacktracePPOAgentV2,
         auto_update: bool = True,
+        reward_scheme: Optional[str] = None,
     ):
         super().__init__(graph, agent=agent)
+        expected_scheme = reward_scheme_for_encoder(agent.encoder_variant)
+        if reward_scheme is not None and reward_scheme != expected_scheme:
+            raise ValueError(
+                "SmartATPG reward scheme does not match the encoder variant"
+            )
+        self.reward_scheme = expected_scheme
         self.auto_update = bool(auto_update)
         self.reward_alpha = 7.5
         self.reward_beta = 0.07
@@ -409,6 +414,11 @@ class CppPodemBacktraceV2Trainer(_CppPodemTrainerBase):
         self.run_metrics: dict[str, Any] = {}
         self._episode_extrinsic_reward = 0.0
         self._episode_start_step = 0
+        self._episode_backtrack_count = 0
+        self._backtrace_penalty_sum = 0.0
+        self._backtrack_penalty_sum = 0.0
+        self._legacy_pi_reward_sum = 0.0
+        self._terminal_reward = 0.0
 
     def decision_callback(self, request: dict[str, Any]) -> int:
         if request["mode"] != "backtrace":
@@ -435,16 +445,35 @@ class CppPodemBacktraceV2Trainer(_CppPodemTrainerBase):
             self.sequence_to_step.clear()
             self._episode_extrinsic_reward = 0.0
             self._episode_start_step = len(self.agent.buffer.steps)
+            self._episode_backtrack_count = 0
+            self._backtrace_penalty_sum = 0.0
+            self._backtrack_penalty_sum = 0.0
+            self._legacy_pi_reward_sum = 0.0
+            self._terminal_reward = 0.0
             return
         if event_type == "backtrack":
+            if self.reward_scheme != GAT_REWARD_SCHEME:
+                return
+            step_idx = self.sequence_to_step.get(int(event["decision_sequence"]))
+            if step_idx is not None and 0 <= step_idx < len(self.agent.buffer.steps):
+                self._episode_backtrack_count += 1
+                reward = smartatpg_backtrack_reward(
+                    self._episode_backtrack_count
+                )
+                self.agent.add_reward_to_step(step_idx, reward)
+                self._episode_extrinsic_reward += reward
+                self._backtrack_penalty_sum += reward
             return
         if event_type == "backtrace_step":
             step_idx = self.sequence_to_step.get(int(event["decision_sequence"]))
             if step_idx is not None and 0 <= step_idx < len(self.agent.buffer.steps):
                 self.agent.add_reward_to_step(step_idx, self.non_pi_reward)
                 self._episode_extrinsic_reward += self.non_pi_reward
+                self._backtrace_penalty_sum += self.non_pi_reward
             return
         if event_type == "pi_not_done":
+            if self.reward_scheme != MEAN_REWARD_SCHEME:
+                return
             step_idx = self.sequence_to_step.get(int(event["decision_sequence"]))
             reward = smartatpg_pi_reward(
                 int(event["backtracks"]),
@@ -455,6 +484,7 @@ class CppPodemBacktraceV2Trainer(_CppPodemTrainerBase):
             if step_idx is not None and 0 <= step_idx < len(self.agent.buffer.steps):
                 self.agent.add_reward_to_step(step_idx, reward)
                 self._episode_extrinsic_reward += reward
+                self._legacy_pi_reward_sum += reward
             return
         if event_type != "episode_end":
             raise ValueError(f"Unknown C++ PODEM event: {event_type}")
@@ -467,6 +497,7 @@ class CppPodemBacktraceV2Trainer(_CppPodemTrainerBase):
         if len(self.agent.buffer.steps) > self._episode_start_step:
             self.agent.finish_episode(terminal_reward)
         self._episode_extrinsic_reward += terminal_reward
+        self._terminal_reward = terminal_reward
         episode_steps = self.agent.buffer.steps[self._episode_start_step:]
         episode_intrinsic_reward = sum(
             step.intrinsic_reward for step in episode_steps
@@ -481,6 +512,11 @@ class CppPodemBacktraceV2Trainer(_CppPodemTrainerBase):
             "rnd_loss": 0.0,
             "intrinsic_reward_sum": episode_intrinsic_reward,
             "reward_sum": self._episode_extrinsic_reward,
+            "backtrace_penalty_sum": self._backtrace_penalty_sum,
+            "backtrack_penalty_sum": self._backtrack_penalty_sum,
+            "legacy_pi_reward_sum": self._legacy_pi_reward_sum,
+            "terminal_reward": self._terminal_reward,
+            "reward_scheme": self.reward_scheme,
         }
         self.last_metrics = self.agent.update() if self.auto_update else None
         metrics = dict(base_metrics)

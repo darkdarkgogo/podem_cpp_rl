@@ -6,6 +6,12 @@ from .cpp_bridge import (
     catalog_cpp_podem,
     export_actor_v2_state_dict,
     profile_cpp_podem,
+)
+from .smartatpg_rewards import (
+    GAT_REWARD_SCHEME,
+    MEAN_REWARD_SCHEME,
+    reward_scheme_for_encoder,
+    smartatpg_backtrack_reward,
     smartatpg_pi_reward,
 )
 from .gat_gru import GATGRUSmartATPGPPOAgent, GATGRUSmartATPGPolicy
@@ -15,6 +21,10 @@ __all__ = [
     "catalog_cpp_podem",
     "export_actor_v2_state_dict",
     "profile_cpp_podem",
+    "GAT_REWARD_SCHEME",
+    "MEAN_REWARD_SCHEME",
+    "reward_scheme_for_encoder",
+    "smartatpg_backtrack_reward",
     "smartatpg_pi_reward",
     "GATGRUSmartATPGPPOAgent",
     "GATGRUSmartATPGPolicy",

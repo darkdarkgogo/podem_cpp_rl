@@ -17,6 +17,7 @@ from train_smartatpg import (
     _validation_order,
     validation_score,
 )
+from rl_podem.smartatpg_rewards import reward_scheme_for_encoder
 
 
 COMPARISON_FORMAT = "SMARTATPG_DUAL_VALIDATION_COMPARISON_V1"
@@ -29,6 +30,7 @@ IDENTITY_KEYS = {
     "format",
     "manifest_hash",
     "encoder_variant",
+    "reward_scheme",
     "normal_rounds",
     "faults_per_update",
     "k_epochs",
@@ -61,6 +63,9 @@ RAW_METRICS = (
     "return_mean",
     "atpg_seconds",
     "fault_coverage",
+)
+COMPARABLE_METRICS = tuple(
+    key for key in RAW_METRICS if key not in ("return_total", "return_mean")
 )
 REDUCTION_METRICS = (
     "backtracks_total",
@@ -164,6 +169,10 @@ def _load_run(name, directory):
         raise ValueError(f"Wrong validation identity format for {name}")
     if identity["encoder_variant"] != EXPECTED_ENCODERS[name]:
         raise ValueError(f"Wrong encoder variant for {name}")
+    if identity["reward_scheme"] != reward_scheme_for_encoder(
+        identity["encoder_variant"]
+    ):
+        raise ValueError(f"Wrong reward scheme for {name}")
     for key in ("normal_rounds", "faults_per_update", "k_epochs", "backtrack_limit", "seed"):
         if type(identity[key]) is not int:
             raise ValueError(f"Invalid V8 validation identity {key} for {name}")
@@ -172,7 +181,7 @@ def _load_run(name, directory):
         identity["faults_per_update"],
         identity["k_epochs"],
         identity["backtrack_limit"],
-    ) != (2, 8, 1, 200):
+    ) != (2, 8, 1, 100):
         raise ValueError(f"Wrong V8 training protocol for {name}")
     if (
         not isinstance(rounds, list)
@@ -318,7 +327,7 @@ def _comparison_row(model, round_number, scope, circuit, model_row, baseline,
         "best_round": best_round,
         "is_best": round_number == best_round,
         **_raw_values(model_row),
-        **{f"scoap_{key}": baseline[key] for key in RAW_METRICS},
+        **{f"scoap_{key}": baseline[key] for key in COMPARABLE_METRICS},
         "fault_coverage_delta": (
             model_row["fault_coverage"] - baseline["fault_coverage"]
         ),
@@ -331,7 +340,7 @@ def _comparison_row(model, round_number, scope, circuit, model_row, baseline,
 
 def _direct_row(round_number, scope, circuit, gat_row, mean_row):
     result = {"scope": scope, "circuit": circuit, "round": round_number}
-    for key in RAW_METRICS:
+    for key in COMPARABLE_METRICS:
         result[f"gat_{key}"] = gat_row[key]
         result[f"mean_{key}"] = mean_row[key]
         result[f"{key}_gat_minus_mean"] = gat_row[key] - mean_row[key]
@@ -362,6 +371,7 @@ def _scoap_identity(identity, seed):
         "validation_catalog_hash": identity["validation_catalog_hash"],
         "validation_circuits": identity["validation_circuits"],
         "backtrack_limit": identity["backtrack_limit"],
+        "reward_scheme": identity["reward_scheme"],
         "seed": seed,
     }
 
@@ -393,6 +403,7 @@ def _load_or_run_scoap(output_dir, identity, circuits, seed):
             fault_id,
             identity["backtrack_limit"],
             seed,
+            identity["reward_scheme"],
         )
         for circuit_name, fault_id in _validation_order(circuits)
     ]
@@ -532,6 +543,7 @@ def build_validation_comparison(
         best = next(item for item in rounds if item.get("is_best") is True)
         model_summaries[name] = {
             "encoder_variant": data["identity"]["encoder_variant"],
+            "reward_scheme": data["identity"]["reward_scheme"],
             "best_round": best["round"],
             "scores": [list(validation_score(item, item["round"]))
                        for item in rounds],
@@ -541,6 +553,10 @@ def build_validation_comparison(
         "format": COMPARISON_FORMAT,
         "identity": {
             key: gat_identity[key] for key in SHARED_IDENTITY_FIELDS
+        },
+        "reward_schemes": {
+            name: data["identity"]["reward_scheme"]
+            for name, data in runs.items()
         },
         "scoap": baseline_summary,
         "models": model_summaries,

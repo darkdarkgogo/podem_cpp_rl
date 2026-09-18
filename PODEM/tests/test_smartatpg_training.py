@@ -47,6 +47,7 @@ if torch is not None:
         _load_validation_catalogs,
         _load_validation_state,
         _record_validation_metric,
+        _summarize_fault_records,
         _summarize_validation,
         _training_protocol,
         _validate_resume,
@@ -56,6 +57,7 @@ if torch is not None:
         validation_score,
     )
     from rl_podem.gat_gru import GATGRUSmartATPGPPOAgent
+    from rl_podem.smartatpg_rewards import MEAN_REWARD_SCHEME
     from rl_podem.smartatpg import SmartATPGPPOAgent
 
 
@@ -88,7 +90,7 @@ class _FakeAgent:
 
 class SmartATPGPreparationTests(unittest.TestCase):
     def test_fixed_training_contract(self):
-        self.assertEqual(BACKTRACK_LIMIT, 200)
+        self.assertEqual(BACKTRACK_LIMIT, 100)
         self.assertEqual(NORMAL_TRAINING_ROUNDS, 2)
         self.assertEqual(FAULTS_PER_UPDATE, 8)
         self.assertEqual(PPO_EPOCHS_PER_UPDATE, 1)
@@ -134,7 +136,7 @@ class SmartATPGPreparationTests(unittest.TestCase):
         profiles = [
             {"fault_id": "d3", "outcome": 1, "backtracks": 1,
              "backtrace_steps": 9},
-            {"fault_id": "aborted", "outcome": 2, "backtracks": 200,
+            {"fault_id": "aborted", "outcome": 2, "backtracks": 100,
              "backtrace_steps": 999},
             {"fault_id": "redundant", "outcome": 0, "backtracks": 3,
              "backtrace_steps": 999},
@@ -173,7 +175,7 @@ class SmartATPGPreparationTests(unittest.TestCase):
     def test_training_rejects_a_circuit_without_detectable_faults(self):
         with self.assertRaisesRegex(RuntimeError, "train circuit empty"):
             select_training_faults([
-                {"fault_id": "a", "outcome": 2, "backtracks": 200,
+                {"fault_id": "a", "outcome": 2, "backtracks": 100,
                  "backtrace_steps": 10},
                 {"fault_id": "b", "outcome": 0, "backtracks": 0,
                  "backtrace_steps": 1},
@@ -228,7 +230,7 @@ class SmartATPGPreparationTests(unittest.TestCase):
                     {"fault_id": f"{source.stem}:hard", "outcome": 1,
                      "backtracks": 2, "backtrace_steps": 1},
                     {"fault_id": f"{source.stem}:sa1", "outcome": 2,
-                     "backtracks": 200, "backtrace_steps": 3},
+                     "backtracks": 100, "backtrace_steps": 3},
                 ]
                 return {
                     "format": preparation.PROFILE_FORMAT,
@@ -237,7 +239,7 @@ class SmartATPGPreparationTests(unittest.TestCase):
                     "source_sha256": preparation.sha256_file(source),
                     "circuit_hash": graph_identity[0],
                     "gate_count": graph_identity[1],
-                    "backtrack_limit": 200,
+                    "backtrack_limit": 100,
                     "profile_seed": seed,
                     "profiles": profiles,
                 }
@@ -398,7 +400,7 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
     def test_validation_reads_outcome_from_terminal_event(self):
         record = _evaluate_fault(
             _FakeEvaluator(), {"name": "v", "circuit": "v.bench"},
-            "v:GO:sa0", 200, 14,
+            "v:GO:sa0", 100, 14, MEAN_REWARD_SCHEME,
         )
         self.assertEqual(record["outcome"], 1)
         self.assertEqual(record["detected"], 1)
@@ -409,6 +411,35 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
         self.assertEqual(record["backtracks"], 2)
         self.assertEqual(record["backtrace_steps"], 3)
 
+    def test_validation_rejects_mismatched_reward_protocol(self):
+        evaluator = _FakeEvaluator()
+        evaluator.agent = type(
+            "Agent", (), {"encoder_variant": "level_gat_gru"},
+        )()
+        item = {"name": "v", "circuit": "v.bench"}
+        with self.assertRaisesRegex(ValueError, "evaluator encoder"):
+            _evaluate_fault(
+                evaluator, item, "f0", 100, 14, MEAN_REWARD_SCHEME,
+            )
+        with self.assertRaisesRegex(ValueError, "backtrack_limit=100"):
+            _evaluate_fault(
+                evaluator, item, "f0", 200, 14, "cubic_backtrack_v1",
+            )
+
+    def test_validation_summary_rejects_nonfinite_record_values(self):
+        record = {
+            "circuit": "v", "fault_id": "f0", "outcome": 1,
+            "detected": 1, "redundant": 0, "aborted": 0,
+            "backtracks": 0, "backtrace_steps": 1, "return": 100.0,
+            "test_vectors": 1, "atpg_seconds": 0.1,
+        }
+        for key in ("return", "atpg_seconds"):
+            invalid = {**record, key: float("inf")}
+            with self.subTest(key=key), self.assertRaisesRegex(
+                ValueError, "Non-finite validation",
+            ):
+                _summarize_fault_records([invalid])
+
     def test_validation_summary_requires_the_full_catalog(self):
         circuits = [{"name": "v", "episode_fault_ids": ["f0", "f1"]}]
         records = [
@@ -418,13 +449,13 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
              "test_vectors": 1, "atpg_seconds": 0.1},
             {"circuit": "v", "fault_id": "f1", "outcome": 2,
              "detected": 0, "redundant": 0, "aborted": 1,
-             "backtracks": 200, "backtrace_steps": 20, "return": -100.0,
+             "backtracks": 100, "backtrace_steps": 20, "return": -100.0,
              "test_vectors": 0, "atpg_seconds": 0.2},
         ]
         summary = _summarize_validation(records, circuits, 3)
         self.assertEqual(summary["episodes"], 2)
         self.assertEqual(summary["detected_faults"], 1)
-        self.assertEqual(summary["backtracks_total"], 202)
+        self.assertEqual(summary["backtracks_total"], 102)
         with self.assertRaisesRegex(ValueError, "full fault catalog"):
             _summarize_validation(records[:1], circuits, 3)
 
@@ -460,10 +491,11 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
             "manifest_hash": "a" * 64,
             "seed": 2026,
             "encoder_variant": "fanin_mean",
+            "reward_scheme": MEAN_REWARD_SCHEME,
             "rounds": 2,
             "faults_per_update": 8,
             "k_epochs": 1,
-            "backtrack_limit": 200,
+            "backtrack_limit": 100,
             "validation_catalog_hash": "b" * 64,
         }
         identity = _validation_identity(config, [
@@ -474,10 +506,11 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
             "manifest_hash": "a" * 64,
             "seed": 2026,
             "encoder_variant": "fanin_mean",
+            "reward_scheme": MEAN_REWARD_SCHEME,
             "normal_rounds": 2,
             "faults_per_update": 8,
             "k_epochs": 1,
-            "backtrack_limit": 200,
+            "backtrack_limit": 100,
             "validation_catalog_hash": "b" * 64,
             "validation_circuits": ["b12_C", "b15_C"],
         })
@@ -519,7 +552,7 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
             root = Path(directory)
             manifest = root / "manifest.json"
             manifest.write_text(json.dumps({"format": MANIFEST_FORMAT,
-                                            "normal_rounds": 2, "backtrack_limit": 200}),
+                                            "normal_rounds": 2, "backtrack_limit": 100}),
                                 encoding="utf-8")
             output = root / "training"
             output.mkdir()
@@ -537,7 +570,8 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
                 identity = _validation_identity({
                     "manifest_hash": training._manifest_hash(manifest), "seed": 2026,
                     "encoder_variant": "level_gat_gru", "rounds": 2,
-                    "faults_per_update": 8, "k_epochs": 1, "backtrack_limit": 200,
+                    "reward_scheme": "cubic_backtrack_v1",
+                    "faults_per_update": 8, "k_epochs": 1, "backtrack_limit": 100,
                     "validation_catalog_hash": training._validation_catalog_hash(validation),
                 }, validation)
                 (output / "validation_identity.json").write_text(json.dumps(identity), encoding="utf-8")
@@ -685,7 +719,7 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
     def test_same_task_resume_requires_exact_manifest_and_config(self):
         config = {
             "rounds": 5, "manifest_hash": "a" * 64,
-            "backtrack_limit": 200, "training_episode_count": 3,
+            "backtrack_limit": 100, "training_episode_count": 3,
         }
         state = _initial_state("a" * 64, config)
         self.assertIs(_validate_resume(state, "a" * 64, config), state)
@@ -697,7 +731,7 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
     def test_batched_resume_requires_an_update_boundary(self):
         config = {
             "rounds": 2, "manifest_hash": "a" * 64,
-            "backtrack_limit": 200, "training_episode_count": 10,
+            "backtrack_limit": 100, "training_episode_count": 10,
             "faults_per_update": 8,
         }
         state = _initial_state("a" * 64, config)
@@ -716,9 +750,15 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
             "rnd_optimizer": {"state": 7},
             "rnd_error_stats": {"count": 8},
         }
+        protocol = {
+            "encoder_variant": "fanin_mean",
+            "reward_scheme": MEAN_REWARD_SCHEME,
+            "backtrack_limit": 100,
+        }
         saved = {
             "format": BEST_CHECKPOINT_FORMAT,
             "manifest_hash": "a" * 64,
+            "config": protocol,
             "agent": full_agent_state,
             "torch_random_state": torch.get_rng_state(),
             "torch_cuda_random_state": None,
@@ -728,7 +768,7 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
             checkpoint = Path(directory) / "best.pth"
             checkpoint.write_bytes(b"checkpoint")
             with patch("train_smartatpg.torch.load", return_value=saved):
-                lineage = _load_continuation(checkpoint, agent)
+                lineage = _load_continuation(checkpoint, agent, protocol)
         self.assertIs(agent.loaded, full_agent_state)
         self.assertEqual(lineage["source_manifest_hash"], "a" * 64)
         self.assertEqual(lineage["source_format"], BEST_CHECKPOINT_FORMAT)
@@ -739,15 +779,30 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
         self.assertIsNone(reset["best_score"])
         self.assertIsNone(reset["best_agent"])
 
+        invalid_configs = (
+            {},
+            {**protocol, "backtrack_limit": 200},
+            {**protocol, "reward_scheme": "cubic_backtrack_v1"},
+            {**protocol, "encoder_variant": "level_gat_gru"},
+        )
+        for invalid in invalid_configs:
+            with self.subTest(config=invalid), patch(
+                "train_smartatpg.torch.load",
+                return_value={**saved, "config": invalid},
+            ), self.assertRaisesRegex(ValueError, "incompatible SmartATPG protocol"):
+                _load_continuation(checkpoint, _FakeAgent(), protocol)
+
     def test_export_protocol_contains_only_current_data_split_identity(self):
         config = {
-            "manifest_hash": "a" * 64, "backtrack_limit": 200,
+            "manifest_hash": "a" * 64, "backtrack_limit": 100,
+            "reward_scheme": MEAN_REWARD_SCHEME,
             "rounds": 5, "training_circuit_count": 1024,
             "validation_circuit_count": 6,
         }
         self.assertEqual(_training_protocol(config), {
             "manifest_hash": "a" * 64,
-            "backtrack_limit": 200,
+            "backtrack_limit": 100,
+            "reward_scheme": MEAN_REWARD_SCHEME,
             "normal_rounds": 5,
             "training_circuit_count": 1024,
             "validation_circuit_count": 6,
@@ -757,7 +812,8 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
         }
         self.assertEqual(_training_protocol(batched), {
             "manifest_hash": "a" * 64,
-            "backtrack_limit": 200,
+            "backtrack_limit": 100,
+            "reward_scheme": MEAN_REWARD_SCHEME,
             "normal_rounds": 2,
             "training_circuit_count": 1024,
             "validation_circuit_count": 6,

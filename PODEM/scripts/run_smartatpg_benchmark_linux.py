@@ -10,7 +10,7 @@ import time
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BACKTRACK_LIMIT = 200
+BACKTRACK_LIMIT = 100
 
 
 def _atomic_json(path, value):

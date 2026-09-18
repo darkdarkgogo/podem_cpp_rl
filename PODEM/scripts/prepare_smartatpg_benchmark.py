@@ -30,6 +30,7 @@ def _validate_training_protocol(protocol):
     legacy_required = {
         "manifest_hash",
         "backtrack_limit",
+        "reward_scheme",
         "normal_rounds",
         "training_circuit_count",
         "validation_circuit_count",
@@ -43,7 +44,8 @@ def _validate_training_protocol(protocol):
     if (
         not isinstance(protocol["manifest_hash"], str)
         or re.fullmatch(r"[0-9a-f]{64}", protocol["manifest_hash"]) is None
-        or protocol["backtrack_limit"] != 200
+        or protocol["backtrack_limit"] != 100
+        or protocol["reward_scheme"] != "cubic_backtrack_v1"
         or protocol["normal_rounds"] != (2 if batched else 5)
         or (
             batched
@@ -65,6 +67,7 @@ def _model_training_protocol(model):
     protocol = {
         "manifest_hash": model.manifest_hash,
         "backtrack_limit": model.backtrack_limit,
+        "reward_scheme": model.reward_scheme,
         "normal_rounds": model.normal_rounds,
         "training_circuit_count": model.training_circuit_count,
         "validation_circuit_count": model.validation_circuit_count,

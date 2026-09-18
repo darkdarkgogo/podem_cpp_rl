@@ -26,11 +26,20 @@ from rl_podem.gat_gru import (
 )
 from rl_podem.curriculum import CppPodemCurriculumEvaluator
 from rl_podem.cpp_bridge import (
-    _load_cpp_embedding_artifact, catalog_cpp_podem, export_actor_v2_state_dict,
+    CppPodemBacktraceV2Trainer, _load_cpp_embedding_artifact,
+    catalog_cpp_podem, export_actor_v2_state_dict,
+)
+from rl_podem.smartatpg_rewards import (
+    GAT_REWARD_SCHEME,
+    MEAN_REWARD_SCHEME,
+    reward_scheme_for_encoder,
+    smartatpg_backtrack_reward,
+    smartatpg_pi_reward,
 )
 from rl_podem.smartatpg_artifacts import (
     export_actor as _export_actor,
     export_descriptors,
+    encoder_variant,
     snapshot_id,
     policy_from_state,
 )
@@ -54,10 +63,11 @@ OUTPUT(q)
 
 TRAINING_PROTOCOL = {
     "manifest_hash": "a" * 64,
-    "backtrack_limit": 200,
+    "backtrack_limit": 100,
     "normal_rounds": 5,
     "training_circuit_count": 1024,
     "validation_circuit_count": 6,
+    "reward_scheme": "legacy_pi_exponential",
 }
 BATCHED_TRAINING_PROTOCOL = {
     **TRAINING_PROTOCOL,
@@ -68,7 +78,10 @@ BATCHED_TRAINING_PROTOCOL = {
 
 
 def export_actor(state, path, **kwargs):
-    kwargs.setdefault("training_protocol", TRAINING_PROTOCOL)
+    kwargs["training_protocol"] = {
+        **kwargs.get("training_protocol", TRAINING_PROTOCOL),
+        "reward_scheme": reward_scheme_for_encoder(encoder_variant(state)),
+    }
     return _export_actor(state, path, **kwargs)
 
 
@@ -91,6 +104,75 @@ class SmartATPGTests(unittest.TestCase):
     def gates(self):
         return {name: GraphGate(name, self.graph.circuit_hash, index)
                 for index, name in enumerate(self.graph.names)}
+
+    def test_backtrack_reward_protocol(self):
+        self.assertEqual(
+            reward_scheme_for_encoder("level_gat_gru"), GAT_REWARD_SCHEME,
+        )
+        self.assertEqual(
+            reward_scheme_for_encoder("fanin_mean"), MEAN_REWARD_SCHEME,
+        )
+        self.assertAlmostEqual(
+            smartatpg_backtrack_reward(1), -0.500009802960494,
+        )
+        self.assertAlmostEqual(
+            sum(smartatpg_backtrack_reward(i) for i in range(1, 101)),
+            -300.0,
+            places=6,
+        )
+        for invalid in (0, 101):
+            with self.assertRaises(ValueError):
+                smartatpg_backtrack_reward(invalid)
+
+    def test_encoder_specific_reward_events(self):
+        cases = (
+            (
+                SmartATPGPPOAgent,
+                MEAN_REWARD_SCHEME,
+                100.0 - 0.1 + smartatpg_pi_reward(2, 1),
+            ),
+            (
+                GATGRUSmartATPGPPOAgent,
+                GAT_REWARD_SCHEME,
+                100.0 - 0.1
+                + smartatpg_backtrack_reward(1)
+                + smartatpg_backtrack_reward(2),
+            ),
+        )
+        for agent_class, scheme, expected in cases:
+            agent = agent_class(
+                {"test": self.graph}, rnd_beta=0, k_epochs=1,
+            )
+            trainer = CppPodemBacktraceV2Trainer(
+                self.graph, agent=agent, auto_update=False,
+                reward_scheme=scheme,
+            )
+            trainer.event_callback({"event": "episode_start"})
+            trainer.decision_callback({
+                "mode": "backtrace", "objective_name": "y",
+                "objective_value": 1, "candidate_names": ["n", "b"],
+                "action_mask": [True, True], "sequence": 1,
+            })
+            trainer.event_callback({
+                "event": "backtrace_step", "decision_sequence": 1,
+            })
+            trainer.event_callback({
+                "event": "backtrack", "decision_sequence": 1,
+            })
+            trainer.event_callback({
+                "event": "backtrack", "decision_sequence": 1,
+            })
+            trainer.event_callback({
+                "event": "pi_not_done", "decision_sequence": 1,
+                "backtracks": 2, "pi_visits": 1,
+            })
+            trainer.event_callback({
+                "event": "episode_end", "fault_id": "f0", "outcome": 1,
+                "backtracks": 2, "backtrace_steps": 1, "pi_visits": 1,
+            })
+            self.assertAlmostEqual(
+                trainer.episode_metrics[-1]["extrinsic_reward_sum"], expected,
+            )
 
     def test_features_and_controllability(self):
         g = self.graph
@@ -541,52 +623,96 @@ class SmartATPGTests(unittest.TestCase):
     def test_native_validation_matches_python_policy_without_callbacks(self):
         import cpp_podem
         from rl_podem.cpp_bridge import CppPodemBacktraceV2Evaluator
+        from train_smartatpg import _evaluate_fault
 
-        agent = self.agent()
-        state = agent.policy_old.state_dict()
-        actor = Path(self.temp.name) / "validation_actor.txt"
-        embeddings = Path(self.temp.name) / "validation.emb"
-        journal = Path(self.temp.name) / "validation.jsonl"
-        export_actor(
-            state, actor, training_protocol=BATCHED_TRAINING_PROTOCOL,
-        )
-        export_descriptors(state, self.graph, embeddings)
         fault_ids = [
             item["fault_id"]
             for item in catalog_cpp_podem(self.path)["faults"]
         ]
-
-        terminal_events = []
-        evaluator = CppPodemBacktraceV2Evaluator(self.graph, agent=agent)
-
-        def collect(event):
-            if event["event"] == "episode_end":
-                terminal_events.append(event)
-
-        evaluator.run(
-            self.path, backtrack_limit=200, seed=14, fault_ids=fault_ids,
-            event_callback=collect, use_scoap=True,
+        cases = (
+            (MEAN_REWARD_SCHEME, self.agent()),
+            (
+                GAT_REWARD_SCHEME,
+                GATGRUSmartATPGPPOAgent(
+                    {"test": self.graph}, rnd_beta=0, k_epochs=1,
+                ),
+            ),
         )
-        native = cpp_podem.run_native_validation(
-            str(self.path), str(embeddings), str(actor), 200, 14, fault_ids,
-            str(journal), "test",
-        )
+        for scheme, agent in cases:
+            with self.subTest(reward_scheme=scheme):
+                state = agent.policy_old.state_dict()
+                actor = Path(self.temp.name) / f"{scheme}.actor.txt"
+                embeddings = Path(self.temp.name) / f"{scheme}.emb"
+                journal = Path(self.temp.name) / f"{scheme}.jsonl"
+                protocol = {
+                    **BATCHED_TRAINING_PROTOCOL,
+                    "reward_scheme": scheme,
+                }
+                _export_actor(state, actor, training_protocol=protocol)
+                export_descriptors(state, self.graph, embeddings)
+                evaluator = CppPodemBacktraceV2Evaluator(
+                    self.graph, agent=agent,
+                )
+                expected = [
+                    _evaluate_fault(
+                        evaluator,
+                        {"name": "test", "circuit": str(self.path)},
+                        fault_id,
+                        100,
+                        14,
+                        scheme,
+                    )
+                    for fault_id in fault_ids
+                ]
+                native = cpp_podem.run_native_validation(
+                    str(self.path), str(embeddings), str(actor), 100, 14,
+                    fault_ids, scheme, str(journal), "test",
+                )
 
-        self.assertEqual([item["fault_id"] for item in native], fault_ids)
-        journal_records = [
-            json.loads(line) for line in journal.read_text("utf-8").splitlines()
-        ]
-        self.assertEqual(
-            [item["fault_id"] for item in journal_records], fault_ids
-        )
-        self.assertEqual(len(native), len(terminal_events))
-        for actual, expected in zip(native, terminal_events):
-            self.assertEqual(actual["outcome"], expected["outcome"])
-            self.assertEqual(actual["backtracks"], expected["backtracks"])
-            self.assertEqual(
-                actual["backtrace_steps"], expected["backtrace_steps"]
-            )
-            self.assertGreaterEqual(actual["atpg_seconds"], 0.0)
+                self.assertEqual(
+                    [item["fault_id"] for item in native], fault_ids
+                )
+                journal_records = [
+                    json.loads(line)
+                    for line in journal.read_text("utf-8").splitlines()
+                ]
+                self.assertEqual(
+                    [item["fault_id"] for item in journal_records], fault_ids
+                )
+                for actual, reference in zip(native, expected):
+                    self.assertEqual(actual["outcome"], reference["outcome"])
+                    self.assertEqual(
+                        actual["backtracks"], reference["backtracks"]
+                    )
+                    self.assertEqual(
+                        actual["backtrace_steps"],
+                        reference["backtrace_steps"],
+                    )
+                    self.assertAlmostEqual(
+                        actual["return"], reference["return"], places=9,
+                    )
+                    self.assertGreaterEqual(actual["atpg_seconds"], 0.0)
+
+                with self.assertRaisesRegex(ValueError, "reward scheme"):
+                    cpp_podem.run_native_validation(
+                        str(self.path), str(embeddings), str(actor), 100, 14,
+                        fault_ids, "unknown", "", "",
+                    )
+                mismatched_scheme = (
+                    GAT_REWARD_SCHEME
+                    if scheme == MEAN_REWARD_SCHEME
+                    else MEAN_REWARD_SCHEME
+                )
+                with self.assertRaisesRegex(ValueError, "actor encoder"):
+                    cpp_podem.run_native_validation(
+                        str(self.path), str(embeddings), str(actor), 100, 14,
+                        fault_ids, mismatched_scheme, "", "",
+                    )
+                with self.assertRaisesRegex(ValueError, "backtrack_limit=100"):
+                    cpp_podem.run_native_validation(
+                        str(self.path), str(embeddings), str(actor), 200, 14,
+                        fault_ids, scheme, "", "",
+                    )
 
     def test_v12_contains_fanin_mean_encoder_and_portable_inference_matches_torch(self):
         state = self.agent().policy_old.state_dict()
@@ -595,7 +721,8 @@ class SmartATPGTests(unittest.TestCase):
         model = load_portable_model(model_path)
         self.assertEqual(model.model_format, "SMARTATPG_MODEL_V12")
         self.assertEqual(model.manifest_hash, "a" * 64)
-        self.assertEqual(model.backtrack_limit, 200)
+        self.assertEqual(model.backtrack_limit, 100)
+        self.assertEqual(model.reward_scheme, MEAN_REWARD_SCHEME)
         self.assertEqual(model.normal_rounds, 5)
         self.assertEqual(model.actor_input_dim, 11)
         self.assertEqual(model.best_round, 4)
@@ -620,11 +747,17 @@ class SmartATPGTests(unittest.TestCase):
         import benchmark_smartatpg as benchmark
         import prepare_smartatpg_benchmark as prepare_bundle
 
-        state = self.agent().policy_old.state_dict()
+        state = GATGRUSmartATPGPPOAgent(
+            {"test": self.graph}, rnd_beta=0, k_epochs=1,
+        ).policy_old.state_dict()
+        training_protocol = {
+            **BATCHED_TRAINING_PROTOCOL,
+            "reward_scheme": GAT_REWARD_SCHEME,
+        }
         model_path = Path(self.temp.name) / "model_v13.txt"
         embedding_path = Path(self.temp.name) / "model_v13.emb"
         _export_actor(
-            state, model_path, training_protocol=BATCHED_TRAINING_PROTOCOL,
+            state, model_path, training_protocol=training_protocol,
         )
         export_descriptors(state, self.graph, embedding_path)
         model = load_portable_model(model_path)
@@ -640,19 +773,19 @@ class SmartATPGTests(unittest.TestCase):
         )
         self.assertEqual(
             prepare_bundle._validate_training_protocol(
-                dict(BATCHED_TRAINING_PROTOCOL)
+                dict(training_protocol)
             ),
-            BATCHED_TRAINING_PROTOCOL,
+            training_protocol,
         )
         self.assertEqual(
             benchmark._validate_training_protocol(
-                dict(BATCHED_TRAINING_PROTOCOL)
+                dict(training_protocol)
             ),
-            BATCHED_TRAINING_PROTOCOL,
+            training_protocol,
         )
         with self.assertRaisesRegex(ValueError, "incompatible"):
             benchmark._validate_training_protocol({
-                **BATCHED_TRAINING_PROTOCOL, "k_epochs": 8,
+                **training_protocol, "k_epochs": 8,
             })
 
     def test_gat_gru_dimensions_gradients_and_portable_parity(self):

@@ -15,7 +15,7 @@ except ModuleNotFoundError:
     torch = None
 
 ROOT = Path(__file__).resolve().parents[1]
-BACKTRACK_LIMIT = 200
+BACKTRACK_LIMIT = 100
 NORMAL_TRAINING_ROUNDS = 2
 FAULTS_PER_UPDATE = 8
 PPO_EPOCHS_PER_UPDATE = 1
@@ -206,6 +206,7 @@ def main(argv=None):
     metadata["training_protocol"] = {
         "manifest_hash": _sha256(manifest_path),
         "backtrack_limit": manifest["backtrack_limit"],
+        "reward_scheme": "cubic_backtrack_v1",
         "normal_rounds": manifest["normal_rounds"],
         "training_circuit_count": len(manifest["train_circuits"]),
         "validation_circuit_count": len(manifest["validation_circuits"]),

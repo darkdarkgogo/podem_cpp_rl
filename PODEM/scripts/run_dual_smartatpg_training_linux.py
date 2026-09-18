@@ -19,7 +19,7 @@ from run_smartatpg_training_linux import _check_cpp_extension, _tee_command
 
 
 ROOT = Path(__file__).resolve().parents[1]
-BACKTRACK_LIMIT = 200
+BACKTRACK_LIMIT = 100
 NORMAL_TRAINING_ROUNDS = 2
 PPO_EPOCHS_PER_UPDATE = 1
 
@@ -301,6 +301,10 @@ def main(argv=None):
         "training_protocol": {
             "manifest_hash": _sha256(manifest_path),
             "backtrack_limit": manifest["backtrack_limit"],
+            "reward_schemes": {
+                "smartatpg_gat_gru": "cubic_backtrack_v1",
+                "smartatpg_mean": "legacy_pi_exponential",
+            },
             "normal_rounds": manifest["normal_rounds"],
             "faults_per_update": manifest["faults_per_update"],
             "k_epochs": manifest["k_epochs"],

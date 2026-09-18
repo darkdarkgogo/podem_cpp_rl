@@ -28,7 +28,7 @@ from smartatpg_portable import (
 
 
 MANIFEST_FORMAT = "SMARTATPG_BENCHMARK_BUNDLE_V9_DATA_SPLIT_11D_CO_NO_BUF"
-BACKTRACK_LIMIT = 200
+BACKTRACK_LIMIT = 100
 
 
 PATTERNS = {
@@ -100,6 +100,7 @@ def _validate_training_protocol(protocol):
     legacy_required = {
         "manifest_hash",
         "backtrack_limit",
+        "reward_scheme",
         "normal_rounds",
         "training_circuit_count",
         "validation_circuit_count",
@@ -114,6 +115,7 @@ def _validate_training_protocol(protocol):
         not isinstance(protocol["manifest_hash"], str)
         or re.fullmatch(r"[0-9a-f]{64}", protocol["manifest_hash"]) is None
         or protocol["backtrack_limit"] != BACKTRACK_LIMIT
+        or protocol["reward_scheme"] != "cubic_backtrack_v1"
         or protocol["normal_rounds"] != (2 if batched else 5)
         or (
             batched
@@ -237,6 +239,8 @@ def _prepare_models(model_paths, manifest, output_dir):
             or record.get("training_protocol") != manifest["training_protocol"]
             or model.manifest_hash != manifest["training_protocol"]["manifest_hash"]
             or model.backtrack_limit != manifest["training_protocol"]["backtrack_limit"]
+            or model.reward_scheme
+            != manifest["training_protocol"]["reward_scheme"]
             or model.normal_rounds != manifest["training_protocol"]["normal_rounds"]
             or model.training_circuit_count
             != manifest["training_protocol"]["training_circuit_count"]

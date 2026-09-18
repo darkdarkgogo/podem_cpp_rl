@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import math
 import os
 import random
 import time
@@ -29,6 +30,13 @@ from rl_podem.cpp_bridge import (
     _native_circuit_path,
     CppPodemBacktraceV2Trainer,
     catalog_cpp_podem,
+)
+from rl_podem.smartatpg_rewards import (
+    BACKTRACK_MAX,
+    GAT_REWARD_SCHEME,
+    MEAN_REWARD_SCHEME,
+    reward_scheme_for_encoder,
+    smartatpg_backtrack_reward,
     smartatpg_pi_reward,
 )
 from rl_podem.gat_gru import GATGRUSmartATPGPPOAgent
@@ -113,6 +121,7 @@ def _append_json_line(path, record):
 
 def _native_validation_batch(
     item, fault_ids, embedding_path, actor_path, records_path, seed,
+    reward_scheme,
 ):
     try:
         import cpp_podem
@@ -128,7 +137,7 @@ def _native_validation_batch(
         _native_circuit_path(item["circuit"]),
         _native_circuit_path(embedding_path),
         _native_circuit_path(actor_path),
-        BACKTRACK_LIMIT, seed, fault_ids,
+        BACKTRACK_LIMIT, seed, fault_ids, reward_scheme,
         _native_circuit_path(records_path), item["name"],
     )
     if len(native_records) != len(fault_ids):
@@ -138,6 +147,14 @@ def _native_validation_batch(
         if raw["fault_id"] != fault_id:
             raise RuntimeError("Native validation returned faults out of order")
         outcome = int(raw["outcome"])
+        if not math.isfinite(float(raw["return"])):
+            raise ValueError(
+                f"Non-finite validation return for {item['name']} {fault_id}"
+            )
+        if not math.isfinite(float(raw["atpg_seconds"])):
+            raise ValueError(
+                f"Non-finite validation time for {item['name']} {fault_id}"
+            )
         records.append({
             "circuit": item["name"],
             "fault_id": fault_id,
@@ -253,19 +270,52 @@ def _validation_order(circuits):
     ]
 
 
-def _evaluate_fault(evaluator, item, fault_id, backtrack_limit, seed):
+def _evaluate_fault(
+    evaluator, item, fault_id, backtrack_limit, seed, reward_scheme,
+):
+    if backtrack_limit != BACKTRACK_MAX:
+        raise ValueError(
+            f"SmartATPG validation requires backtrack_limit={BACKTRACK_MAX}"
+        )
+    if reward_scheme not in (GAT_REWARD_SCHEME, MEAN_REWARD_SCHEME):
+        raise ValueError(f"Unknown SmartATPG reward scheme: {reward_scheme}")
+    agent = getattr(evaluator, "agent", None)
+    if agent is not None:
+        expected_scheme = reward_scheme_for_encoder(agent.encoder_variant)
+        if reward_scheme != expected_scheme:
+            raise ValueError(
+                "SmartATPG reward scheme does not match evaluator encoder"
+            )
     extrinsic_return = 0.0
     terminal = None
+    backtrack_count = 0
 
     def event_callback(event):
-        nonlocal extrinsic_return, terminal
+        nonlocal extrinsic_return, terminal, backtrack_count
         if event["event"] == "backtrace_step":
             decision_sequences = getattr(evaluator, "decision_sequences", None)
             if decision_sequences is None or int(event["decision_sequence"]) in decision_sequences:
                 extrinsic_return += PAPER_REWARD["non_pi"]
+        elif event["event"] == "backtrack":
+            decision_sequences = getattr(evaluator, "decision_sequences", None)
+            if (
+                reward_scheme == GAT_REWARD_SCHEME
+                and (
+                    decision_sequences is None
+                    or int(event["decision_sequence"]) in decision_sequences
+                )
+            ):
+                backtrack_count += 1
+                extrinsic_return += smartatpg_backtrack_reward(backtrack_count)
         elif event["event"] == "pi_not_done":
             decision_sequences = getattr(evaluator, "decision_sequences", None)
-            if decision_sequences is None or int(event["decision_sequence"]) in decision_sequences:
+            if (
+                reward_scheme == MEAN_REWARD_SCHEME
+                and (
+                    decision_sequences is None
+                    or int(event["decision_sequence"]) in decision_sequences
+                )
+            ):
                 extrinsic_return += smartatpg_pi_reward(
                     int(event["backtracks"]),
                     int(event["pi_visits"]),
@@ -295,6 +345,15 @@ def _evaluate_fault(evaluator, item, fault_id, backtrack_limit, seed):
     if terminal.get("fault_id") != fault_id:
         raise RuntimeError("Validation terminal fault does not match the request")
     outcome = int(terminal["outcome"])
+    if not math.isfinite(extrinsic_return):
+        raise ValueError(
+            f"Non-finite validation return for {item['name']} {fault_id}"
+        )
+    atpg_seconds = float(summary["atpg_seconds"])
+    if not math.isfinite(atpg_seconds):
+        raise ValueError(
+            f"Non-finite validation time for {item['name']} {fault_id}"
+        )
     return {
         "circuit": item["name"],
         "fault_id": fault_id,
@@ -306,11 +365,24 @@ def _evaluate_fault(evaluator, item, fault_id, backtrack_limit, seed):
         "backtrace_steps": int(terminal["backtrace_steps"]),
         "return": float(extrinsic_return),
         "test_vectors": int(outcome == 1),
-        "atpg_seconds": float(summary["atpg_seconds"]),
+        "atpg_seconds": atpg_seconds,
     }
 
 
 def _summarize_fault_records(records):
+    for item in records:
+        if not math.isfinite(float(item["return"])):
+            raise ValueError(
+                "Non-finite validation return for "
+                f"{item.get('circuit', '<unknown>')} "
+                f"{item.get('fault_id', '<unknown>')}"
+            )
+        if not math.isfinite(float(item["atpg_seconds"])):
+            raise ValueError(
+                "Non-finite validation time for "
+                f"{item.get('circuit', '<unknown>')} "
+                f"{item.get('fault_id', '<unknown>')}"
+            )
     count = len(records)
     totals = {
         "episodes": count,
@@ -332,6 +404,10 @@ def _summarize_fault_records(records):
         backtrace_steps_mean=totals["backtrace_steps_total"] / divisor,
         return_mean=totals["return_total"] / divisor,
     )
+    if not all(math.isfinite(float(totals[key])) for key in (
+        "return_total", "return_mean",
+    )):
+        raise ValueError("Non-finite validation return summary")
     return totals
 
 
@@ -375,6 +451,7 @@ def _training_protocol(config):
     protocol = {
         "manifest_hash": config["manifest_hash"],
         "backtrack_limit": config["backtrack_limit"],
+        "reward_scheme": config["reward_scheme"],
         "normal_rounds": config["rounds"],
         "training_circuit_count": config["training_circuit_count"],
         "validation_circuit_count": config["validation_circuit_count"],
@@ -391,6 +468,7 @@ def _validation_identity(config, validation_circuits):
         "manifest_hash": config["manifest_hash"],
         "seed": config["seed"],
         "encoder_variant": config["encoder_variant"],
+        "reward_scheme": config["reward_scheme"],
         "normal_rounds": config["rounds"],
         "faults_per_update": config["faults_per_update"],
         "k_epochs": config["k_epochs"],
@@ -458,13 +536,22 @@ def _validate_resume(saved, manifest_digest, config):
     return saved
 
 
-def _load_continuation(path, agent):
+def _load_continuation(path, agent, expected_config):
     path = Path(path).resolve()
     saved = torch.load(path, map_location="cpu")
     if saved.get("format") not in (CHECKPOINT_FORMAT, BEST_CHECKPOINT_FORMAT):
         raise ValueError("Continuation requires a current data-split 11D checkpoint")
     if not isinstance(saved.get("agent"), dict):
         raise ValueError("Continuation checkpoint has no complete agent state")
+    saved_config = saved.get("config")
+    protocol_keys = ("encoder_variant", "reward_scheme", "backtrack_limit")
+    if not isinstance(saved_config, dict) or any(
+        saved_config.get(key) != expected_config.get(key)
+        for key in protocol_keys
+    ):
+        raise ValueError(
+            "Continuation checkpoint uses an incompatible SmartATPG protocol"
+        )
     agent.load_training_state_dict(saved["agent"])
     _restore_torch_rng(saved)
     return {
@@ -617,10 +704,12 @@ def main(argv=None):
         rnd_beta=args.rnd_beta,
         k_epochs=args.k_epochs,
     )
+    reward_scheme = reward_scheme_for_encoder(args.encoder)
     trainers = {
         item["name"]: CppPodemBacktraceV2Trainer(
             graphs[item["name"]], agent=agent,
             auto_update=not batched_training,
+            reward_scheme=reward_scheme,
         )
         for item in train_circuits
     }
@@ -643,6 +732,7 @@ def main(argv=None):
         "validation_circuit_count": len(validation_circuits),
         "device": str(device),
         "paper_reward": PAPER_REWARD,
+        "reward_scheme": reward_scheme,
         "encoder_variant": args.encoder,
         "heuristic": HEURISTIC,
         "manifest_hash": manifest_digest,
@@ -682,7 +772,7 @@ def main(argv=None):
                 flush=True,
             )
     elif args.continue_from:
-        continuation = _load_continuation(args.continue_from, agent)
+        continuation = _load_continuation(args.continue_from, agent, config)
         state = _initial_state(manifest_digest, config, continuation=continuation)
         print(
             f"CONTINUE_FROM checkpoint={continuation['source_checkpoint']} ",
@@ -860,7 +950,7 @@ def main(argv=None):
                 records = _native_validation_batch(
                     validation_by_name[circuit_name], fault_ids,
                     embedding_paths[circuit_name], actor_path,
-                    validation_records_path, args.seed,
+                    validation_records_path, args.seed, reward_scheme,
                 )
                 evaluation_seconds = time.perf_counter() - batch_started
                 save_started = time.perf_counter()
