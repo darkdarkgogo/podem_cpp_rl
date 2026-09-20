@@ -241,10 +241,44 @@ public:
   }
   void on_pi_not_done(unsigned long sequence, int backtracks,
                       unsigned long pi_visits) override {
-    if (reward_scheme_ == "legacy_pi_exponential" &&
-        decision_sequences_.count(sequence)) {
-      reward_ += 10.0 - 7.5 * std::exp(0.07 * (backtracks + pi_visits));
+    if (reward_scheme_ != "legacy_pi_exponential" ||
+        !decision_sequences_.count(sequence)) {
+      return;
     }
+
+    const double b = static_cast<double>(backtracks);
+    const double p = static_cast<double>(pi_visits);
+    const double b_plus_p = b + p;
+    const double exponent = 0.07 * b_plus_p;
+    const double reward_before = reward_;
+    const double step_reward = 10.0 - 7.5 * std::exp(exponent);
+    const double reward_after = reward_before + step_reward;
+
+    if (exponent >= 600.0) {
+      std::fprintf(stderr,
+                   "SMARTATPG_REWARD_WARN fault=%s seq=%lu "
+                   "B=%d P=%lu BplusP=%.0f exponent=%.6f "
+                   "reward_before=%.17g step_reward=%.17g\n",
+                   current_fault_id_.c_str(), sequence, backtracks, pi_visits,
+                   b_plus_p, exponent, reward_before, step_reward);
+      std::fflush(stderr);
+    }
+
+    if (!std::isfinite(step_reward) || !std::isfinite(reward_after)) {
+      std::fprintf(stderr,
+                   "SMARTATPG_NONFINITE fault=%s seq=%lu "
+                   "B=%d P=%lu BplusP=%.0f exponent=%.6f "
+                   "reward_before=%.17g step_reward=%.17g "
+                   "reward_after=%.17g\n",
+                   current_fault_id_.c_str(), sequence, backtracks, pi_visits,
+                   b_plus_p, exponent, reward_before, step_reward,
+                   reward_after);
+      std::fflush(stderr);
+      throw std::runtime_error(
+          "Non-finite SmartATPG PI reward; see SMARTATPG_NONFINITE log");
+    }
+
+    reward_ = reward_after;
   }
   void on_episode_end(const smartatpg::EpisodeResult &result) override {
     if (result.fault_id != current_fault_id_) {

@@ -124,6 +124,30 @@ class SmartATPGTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 smartatpg_backtrack_reward(invalid)
 
+    def test_native_reward_diagnostic_contract(self):
+        source = (
+            Path(__file__).resolve().parents[1] / "src/python_bindings.cpp"
+        ).read_text(encoding="utf-8")
+        required_fragments = (
+            "SMARTATPG_REWARD_WARN",
+            "SMARTATPG_NONFINITE",
+            "exponent >= 600.0",
+            "!std::isfinite(step_reward)",
+            "!std::isfinite(reward_after)",
+            "fault=%s",
+            "seq=%lu",
+            "B=%d",
+            "P=%lu",
+            "BplusP=%.0f",
+            "exponent=%.6f",
+            "reward_before=%.17g",
+            "step_reward=%.17g",
+            "reward_after=%.17g",
+        )
+        for fragment in required_fragments:
+            with self.subTest(fragment=fragment):
+                self.assertIn(fragment, source)
+
     def test_encoder_specific_reward_events(self):
         cases = (
             (
