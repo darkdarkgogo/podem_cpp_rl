@@ -65,6 +65,27 @@ class ATPGScoapTestAccess {
     return selected->owire.front()->name + ":" + std::to_string(first_co)
         + ":" + std::to_string(second_co);
   }
+
+  static std::string pi_visit_semantics(
+      ATPG &atpg, const std::string &path) {
+    atpg.input(path);
+    atpg.level_circuit();
+    atpg.rearrange_gate_inputs();
+    atpg.create_dummy_gate();
+    atpg.rl_podem_episode_active = true;
+    atpg.rl_pending_pi_assignments = 0;
+    for (ATPG::wptr wire : atpg.sort_wlist) wire->value = U;
+
+    ATPG::wptr input = atpg.wfind("a");
+    if (!input || atpg.backward_imply(input, 1) != TRUE) return "error";
+    const unsigned long mandatory_count = atpg.rl_pending_pi_assignments;
+
+    for (ATPG::wptr wire : atpg.sort_wlist) wire->value = U;
+    atpg.rl_pending_pi_assignments = 0;
+    if (!input || atpg.find_pi_assignment(input, 1) != input) return "error";
+    return std::to_string(mandatory_count) + ":"
+        + std::to_string(atpg.rl_pending_pi_assignments);
+  }
 };
 
 int main(int argc, char **argv) {
@@ -95,6 +116,8 @@ int main(int argc, char **argv) {
   } else if (operation == "scoap-propagation") {
     ATPGScoapTestAccess::load(atpg, argv[2]);
     std::cout << ATPGScoapTestAccess::select_propagation(atpg);
+  } else if (operation == "pi-visit-semantics") {
+    std::cout << ATPGScoapTestAccess::pi_visit_semantics(atpg, argv[2]);
   } else {
     return 2;
   }

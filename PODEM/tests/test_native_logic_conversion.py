@@ -146,6 +146,16 @@ class NativeLogicConversionTests(unittest.TestCase):
             selections.append(selected)
         self.assertEqual(selections[0], selections[1])
 
+    def test_pi_visit_semantics(self):
+        circuit = Path(self.directory.name) / "pi_visit.bench"
+        circuit.write_text(
+            "INPUT(a)\nINPUT(b)\ny=AND(a,b)\nOUTPUT(y)\n",
+            encoding="ascii",
+        )
+        result = self.run_conversion("pi-visit-semantics", circuit)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(result.stdout.endswith("0:1"), result.stdout)
+
     def test_undetected_fault_report_overwrites_previous_run(self):
         circuit = Path(self.directory.name) / "overwrite.bench"
         circuit.write_text(

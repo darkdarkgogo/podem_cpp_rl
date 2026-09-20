@@ -949,8 +949,6 @@ int ATPG::backward_imply(const wptr current_wire, const int &desired_logic_value
 		}
 		current_wire->value = desired_logic_value; // assign PI to the objective value
 		current_wire->set_changed();
-		if (rl_podem_episode_active)
-			++rl_pending_pi_assignments;
 		// CHANGED means the logic value on this wire has recently been changed
 		return (TRUE);
 	}
