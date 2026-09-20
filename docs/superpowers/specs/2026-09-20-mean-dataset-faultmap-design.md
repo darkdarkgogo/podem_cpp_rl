@@ -30,7 +30,6 @@ GAT 保持现有契约：`data/train` 必须包含 1024 个 `.bench` 电路。�
 - `s38417.bench`
 - `s38417_scan.bench`
 - `s38417_scan_binary.bench`
-- `s38417_scan_binary.bench.uf`
 - `s38417_scan_binary.faultmap`
 
 其中只有两个 ATPG 训练对象：
@@ -38,16 +37,16 @@ GAT 保持现有契约：`data/train` 必须包含 1024 个 `.bench` 电路。�
 - `c6288`：使用 `c6288.bench` 建图、profiling 和训练，不使用 fault map。
 - `s38417`：使用 `s38417_scan_binary.bench` 建图并运行 profiling/训练，同时加载 `s38417_scan_binary.faultmap`。fault map 保存 `s38417_scan.bench` 的 collapsed fault 身份并映射到拆分为两输入门的 binary netlist，因此训练 fault 的数量与 ID 均以 scan 版本为准。
 
-每个 mean 训练对象仅从 `outcome == 1` 的可检测 fault 中选择恰好 100 个困难 fault。排序规则与 GAT 相同：`backtracks` 降序、`backtrace_steps` 降序、`fault_id` 升序。若任一电路不足 100 个可检测 fault，准备过程必须明确失败，不得静默缩减。mean 每轮训练总计 200 个 fault episode。
+每个 mean 训练对象仅从 `outcome == 1` 的可检测 fault 中选择最多 100 个困难 fault。排序规则与 GAT 相同：`backtracks` 降序、`backtrace_steps` 降序、`fault_id` 升序。若某个电路不足 100 个可检测 fault，则使用该电路现有的全部可检测 fault；mean 每轮训练最多 200 个 fault episode，实际数量由两份选中列表之和决定。
 
-目录中的原始时序版、scan 版和 `.uf` 文件是可追溯转换资产，不得被误当成额外训练电路。准备状态必须记录所有 mean 数据资产的相对路径与 SHA-256，使恢复运行能拒绝任一源文件、转换结果或映射文件发生变化。
+目录中的原始时序版和 scan 版是可追溯转换资产，不得被误当成额外训练电路。`.uf` 文件不是训练协议所需资产，即使存在也必须忽略，不能写入 manifest 或 preparation identity。准备状态必须记录五个必需 mean 数据资产的相对路径与 SHA-256，使恢复运行能拒绝任一源文件、转换结果或映射文件发生变化。
 
 ## Manifest 与准备流程
 
 现有准备脚本扩展为显式接收训练配置，不通过扫描目录猜测 encoder：
 
 - GAT 配置选择 `train`、1024 个训练电路、每电路最多 30 个 fault。
-- mean 配置选择 `train_mean`、两个训练对象、每电路恰好 100 个 fault，并为 `s38417` 记录 fault map。
+- mean 配置选择 `train_mean`、两个训练对象、每电路最多 100 个 fault，并为 `s38417` 记录 fault map。
 
 每种配置生成独立的 preparation 目录和 `training_manifest.json`。manifest 必须记录：
 
@@ -85,7 +84,7 @@ validation 记录来自同一个 `data/validation`，不继承训练电路的 fa
 
 随后并行启动两个训练进程，各自传入匹配的 manifest。comparison 不再接收单一共享 manifest，而是分别接收 GAT 和 mean manifest；它先验证两份 manifest 的正式协议兼容，再严格验证 validation 身份一致。
 
-运行 metadata 必须分别记录两份 manifest 的路径、哈希、训练电路数、训练 episode 数和 validation 身份，避免将 mean 的 200-episode 训练误报成 GAT 的训练规模。
+运行 metadata 必须分别记录两份 manifest 的路径、哈希、训练电路数、实际训练 episode 数和 validation 身份，避免将 mean 的训练规模误报成 GAT 的训练规模。
 
 单 GAT 启动器继续只准备并训练 GAT，不因 `train_mean` 的存在改变行为。
 
@@ -107,10 +106,10 @@ validation 记录来自同一个 `data/validation`，不继承训练电路的 fa
 
 以下情况必须在训练开始前失败，并给出包含资产或电路名的错误：
 
-- mean 所需的六个资产缺失或出现未允许的额外资产；
+- mean 所需的五个资产缺失；
 - fault map 格式、源 hash 或 binary circuit hash 不匹配；
 - `s38417` 未通过 fault map 获得 scan 版本 fault catalog；
-- 任一 mean 电路不足 100 个 `outcome == 1` fault；
+- 任一 mean 电路没有 `outcome == 1` fault；
 - manifest 的 encoder、训练 split、fault 数或 backtrack limit 与训练命令不匹配；
 - GAT 与 mean 的 validation 电路或 fault catalog 不一致；
 - resume 时任一数据、profile、fault map 或 manifest identity 改变。
@@ -120,8 +119,8 @@ validation 记录来自同一个 `data/validation`，不继承训练电路的 fa
 定向测试覆盖：
 
 - GAT discovery 仍要求 `data/train` 的 1024 个 BENCH 和固定 validation。
-- mean discovery 只产生 `c6288` 与映射后的 `s38417` 两个训练记录，并验证六个资产。
-- mean 每电路按约定排序选择恰好 100 个可检测 fault，总计 200 个。
+- mean discovery 只产生 `c6288` 与映射后的 `s38417` 两个训练记录，并验证五个必需资产，同时忽略 `.uf` 文件。
+- mean 每电路按约定排序选择最多 100 个可检测 fault；不足 100 个时使用全部现有可检测 fault，训练 episode 总数取两者之和。
 - `s38417` profiling 与训练都向 C++ 传入 `s38417_scan_binary.faultmap`，图来自 binary BENCH，manifest fault ID 来自映射后的 scan catalog。
 - GAT 与 mean 使用独立 manifest，但 validation catalog 完全相同。
 - 双训练启动器向两个 encoder 传入各自 manifest，metadata 不混淆训练规模。
