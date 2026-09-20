@@ -243,7 +243,7 @@ class ValidationComparisonTests(unittest.TestCase):
             self.assertEqual(result, resumed)
             self.assertEqual(evaluate.call_count, 2)
             self.assertEqual(
-                result["format"], "SMARTATPG_DUAL_VALIDATION_COMPARISON_V1"
+                result["format"], "SMARTATPG_DUAL_VALIDATION_COMPARISON_V2"
             )
             self.assertEqual(result["models"]["smartatpg_gat_gru"]["best_round"], 1)
             self.assertEqual(result["models"]["smartatpg_mean"]["best_round"], 2)
