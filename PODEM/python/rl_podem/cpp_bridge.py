@@ -475,16 +475,17 @@ class CppPodemBacktraceV2Trainer(_CppPodemTrainerBase):
             if self.reward_scheme != MEAN_REWARD_SCHEME:
                 return
             step_idx = self.sequence_to_step.get(int(event["decision_sequence"]))
+            if step_idx is None or not 0 <= step_idx < len(self.agent.buffer.steps):
+                return
             reward = smartatpg_pi_reward(
                 int(event["backtracks"]),
                 int(event["pi_visits"]),
                 self.reward_alpha,
                 self.reward_beta,
             )
-            if step_idx is not None and 0 <= step_idx < len(self.agent.buffer.steps):
-                self.agent.add_reward_to_step(step_idx, reward)
-                self._episode_extrinsic_reward += reward
-                self._legacy_pi_reward_sum += reward
+            self.agent.add_reward_to_step(step_idx, reward)
+            self._episode_extrinsic_reward += reward
+            self._legacy_pi_reward_sum += reward
             return
         if event_type != "episode_end":
             raise ValueError(f"Unknown C++ PODEM event: {event_type}")

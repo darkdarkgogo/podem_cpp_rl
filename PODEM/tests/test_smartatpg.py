@@ -181,6 +181,23 @@ class SmartATPGTests(unittest.TestCase):
         ]
         self.assertEqual(invalid, [])
 
+    def test_mean_ignores_pi_event_without_policy_step(self):
+        trainer = CppPodemBacktraceV2Trainer(
+            self.graph,
+            agent=self.agent(),
+            auto_update=False,
+            reward_scheme=MEAN_REWARD_SCHEME,
+        )
+        trainer.event_callback({"event": "episode_start"})
+        trainer.event_callback({
+            "event": "pi_not_done",
+            "decision_sequence": 0,
+            "backtracks": 0,
+            "pi_visits": 0,
+        })
+        self.assertEqual(trainer._episode_extrinsic_reward, 0.0)
+        self.assertEqual(trainer._legacy_pi_reward_sum, 0.0)
+
     def test_encoder_specific_reward_events(self):
         cases = (
             (
