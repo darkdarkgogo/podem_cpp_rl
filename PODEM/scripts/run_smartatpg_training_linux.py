@@ -145,6 +145,7 @@ def main(argv=None):
         str(ROOT / "scripts/prepare_smartatpg_training.py"),
         str(dataset_root),
         str(preparation_dir),
+        "--encoder", "level_gat_gru",
         "--seed", str(args.profile_seed),
         "--resume",
     ]

@@ -1,4 +1,4 @@
-"""Compare two V8 SmartATPG validation runs against one SCOAP baseline."""
+"""Compare two SmartATPG validation runs against one shared SCOAP baseline."""
 
 import argparse
 import csv
@@ -20,7 +20,7 @@ from train_smartatpg import (
 from rl_podem.smartatpg_rewards import reward_scheme_for_encoder
 
 
-COMPARISON_FORMAT = "SMARTATPG_DUAL_VALIDATION_COMPARISON_V1"
+COMPARISON_FORMAT = "SMARTATPG_DUAL_VALIDATION_COMPARISON_V2"
 SCOAP_FORMAT = "SMARTATPG_SCOAP_VALIDATION_V1"
 EXPECTED_ENCODERS = {
     "smartatpg_gat_gru": "level_gat_gru",
@@ -40,7 +40,6 @@ IDENTITY_KEYS = {
     "seed",
 }
 SHARED_IDENTITY_FIELDS = (
-    "manifest_hash",
     "normal_rounds",
     "faults_per_update",
     "k_epochs",
@@ -164,7 +163,7 @@ def _load_run(name, directory):
         directory / "validation_metrics.json", f"validation metrics for {name}"
     )
     if not isinstance(identity, dict) or set(identity) != IDENTITY_KEYS:
-        raise ValueError(f"Wrong V8 validation identity fields for {name}")
+        raise ValueError(f"Wrong validation identity fields for {name}")
     if identity.get("format") != "SMARTATPG_VALIDATION_IDENTITY_V1":
         raise ValueError(f"Wrong validation identity format for {name}")
     if identity["encoder_variant"] != EXPECTED_ENCODERS[name]:
@@ -175,14 +174,14 @@ def _load_run(name, directory):
         raise ValueError(f"Wrong reward scheme for {name}")
     for key in ("normal_rounds", "faults_per_update", "k_epochs", "backtrack_limit", "seed"):
         if type(identity[key]) is not int:
-            raise ValueError(f"Invalid V8 validation identity {key} for {name}")
+            raise ValueError(f"Invalid validation identity {key} for {name}")
     if (
         identity["normal_rounds"],
         identity["faults_per_update"],
         identity["k_epochs"],
         identity["backtrack_limit"],
     ) != (2, 8, 1, 100):
-        raise ValueError(f"Wrong V8 training protocol for {name}")
+        raise ValueError(f"Wrong training protocol for {name}")
     if (
         not isinstance(rounds, list)
         or any(not isinstance(item, dict) for item in rounds)
@@ -436,9 +435,19 @@ def _atomic_csv(path, rows):
 
 
 def build_validation_comparison(
-    manifest_path, gat_dir, mean_dir, output_dir, seed=None
+    gat_manifest_path, mean_manifest_path, gat_dir=None, mean_dir=None,
+    output_dir=None,
+    seed=None,
 ):
-    manifest_path = Path(manifest_path).resolve()
+    if output_dir is None:
+        # Backward-compatible Python call shape used by older tooling:
+        # (shared_manifest, gat_dir, mean_dir, output_dir).
+        output_dir = mean_dir
+        mean_dir = gat_dir
+        gat_dir = mean_manifest_path
+        mean_manifest_path = gat_manifest_path
+    gat_manifest_path = Path(gat_manifest_path).resolve()
+    mean_manifest_path = Path(mean_manifest_path).resolve()
     output_dir = Path(output_dir)
     runs = {}
     for name, directory in (
@@ -457,12 +466,30 @@ def build_validation_comparison(
         seed = gat_identity["seed"]
     elif type(seed) is not int or seed != gat_identity["seed"]:
         raise ValueError("SCOAP seed conflicts with validation run seed")
-    if gat_identity["manifest_hash"] != _manifest_hash(manifest_path):
-        raise ValueError("Validation run identity mismatch: manifest_hash")
-
-    manifest = _read_json(manifest_path, "training manifest")
-    _, circuits = _resolve_circuit_records(manifest, manifest_path)
-    circuits = _load_validation_catalogs(manifest, circuits)
+    manifest_paths = {
+        "smartatpg_gat_gru": gat_manifest_path,
+        "smartatpg_mean": mean_manifest_path,
+    }
+    validation_sets = {}
+    for name, manifest_path in manifest_paths.items():
+        identity = runs[name]["identity"]
+        if identity["manifest_hash"] != _manifest_hash(manifest_path):
+            raise ValueError(f"Validation run identity mismatch: manifest_hash for {name}")
+        manifest = _read_json(manifest_path, f"training manifest for {name}")
+        _, model_circuits = _resolve_circuit_records(manifest, manifest_path)
+        validation_sets[name] = _load_validation_catalogs(
+            manifest, model_circuits
+        )
+    circuits = validation_sets["smartatpg_gat_gru"]
+    mean_circuits = validation_sets["smartatpg_mean"]
+    gat_catalog = [
+        (item["name"], item["episode_fault_ids"]) for item in circuits
+    ]
+    mean_catalog = [
+        (item["name"], item["episode_fault_ids"]) for item in mean_circuits
+    ]
+    if gat_catalog != mean_catalog:
+        raise ValueError("GAT and mean validation catalogs do not match")
     if [item["name"] for item in circuits] != gat_identity["validation_circuits"]:
         raise ValueError("Validation run identity mismatch: validation_circuits")
     if _validation_catalog_hash(circuits) != gat_identity["validation_catalog_hash"]:
@@ -570,14 +597,16 @@ def build_validation_comparison(
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("manifest", type=Path)
+    parser.add_argument("gat_manifest", type=Path)
+    parser.add_argument("mean_manifest", type=Path)
     parser.add_argument("gat_dir", type=Path)
     parser.add_argument("mean_dir", type=Path)
     parser.add_argument("output_dir", type=Path)
     parser.add_argument("--seed", type=int)
     args = parser.parse_args(argv)
     build_validation_comparison(
-        args.manifest, args.gat_dir, args.mean_dir, args.output_dir, args.seed
+        args.gat_manifest, args.mean_manifest, args.gat_dir, args.mean_dir,
+        args.output_dir, args.seed,
     )
 
 

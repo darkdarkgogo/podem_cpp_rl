@@ -210,6 +210,10 @@ def _resolve_circuit_records(manifest, manifest_path):
                 item["profile"] = str(
                     resolve_manifest_path(manifest_path, raw["profile"])
                 )
+            if "fault_map" in raw:
+                item["fault_map"] = str(
+                    resolve_manifest_path(manifest_path, raw["fault_map"])
+                )
             records.append(item)
         result[split] = records
     names = [item["name"] for split in result.values() for item in split]
@@ -634,6 +638,16 @@ def main(argv=None):
     )
     if manifest.get("format") not in supported_formats:
         raise ValueError("Training requires a supported data-split manifest")
+    manifest_encoder = manifest.get("encoder_variant")
+    if (
+        manifest.get("format") == MANIFEST_FORMAT
+        and manifest_encoder is not None
+        and manifest_encoder != args.encoder
+    ):
+        raise ValueError(
+            f"Training encoder {args.encoder} does not match manifest encoder "
+            f"{manifest_encoder}"
+        )
     batched_training = manifest.get("format") == MANIFEST_FORMAT
     expected_rounds = (
         NORMAL_TRAINING_ROUNDS if batched_training else LEGACY_TRAINING_ROUNDS
@@ -650,7 +664,7 @@ def main(argv=None):
         raise ValueError("PPO epochs must be positive")
     if batched_training and args.k_epochs != PPO_EPOCHS_PER_UPDATE:
         raise ValueError(
-            f"V8 SmartATPG training requires k_epochs={PPO_EPOCHS_PER_UPDATE}"
+            f"SmartATPG training requires k_epochs={PPO_EPOCHS_PER_UPDATE}"
         )
     train_circuits, validation_circuits = _resolve_circuit_records(
         manifest, args.manifest
@@ -815,13 +829,15 @@ def main(argv=None):
                     circuit_name, fault_id = order[index]
                     item = train_by_name[circuit_name]
                     trainer = trainers[circuit_name]
-                    trainer.run(
-                        item["circuit"],
-                        backtrack_limit=BACKTRACK_LIMIT,
-                        seed=args.seed + round_number,
-                        fault_ids=[fault_id],
-                        use_scoap=True,
-                    )
+                    run_kwargs = {
+                        "backtrack_limit": BACKTRACK_LIMIT,
+                        "seed": args.seed + round_number,
+                        "fault_ids": [fault_id],
+                        "use_scoap": True,
+                    }
+                    if item.get("fault_map"):
+                        run_kwargs["fault_map_path"] = item["fault_map"]
+                    trainer.run(item["circuit"], **run_kwargs)
                     if len(trainer.episode_metrics) != 1:
                         raise RuntimeError("Training episode did not produce one metric")
                     metrics = trainer.episode_metrics[0]

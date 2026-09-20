@@ -23,10 +23,12 @@ from prepare_smartatpg_training import (
     LEGACY_MANIFEST_FORMAT,
     LAZY_VALIDATION_MANIFEST_FORMAT,
     MANIFEST_FORMAT,
+    MEAN_TRAIN_FAULTS_PER_CIRCUIT,
     NORMAL_TRAINING_ROUNDS,
     PPO_EPOCHS_PER_UPDATE,
     TRAIN_FAULTS_PER_CIRCUIT,
     discover_dataset,
+    discover_mean_dataset,
     prepare,
     select_training_faults,
     select_validation_faults,
@@ -95,18 +97,22 @@ class SmartATPGPreparationTests(unittest.TestCase):
         self.assertEqual(FAULTS_PER_UPDATE, 8)
         self.assertEqual(PPO_EPOCHS_PER_UPDATE, 1)
         self.assertEqual(TRAIN_FAULTS_PER_CIRCUIT, 30)
+        self.assertEqual(MEAN_TRAIN_FAULTS_PER_CIRCUIT, 100)
         self.assertEqual(
             MANIFEST_FORMAT,
-            "SMARTATPG_DATA_SPLIT_MANIFEST_V8_TWO_ROUND_BATCH8_EPOCH1_11D_CO_NO_BUF",
+            "SMARTATPG_DATA_SPLIT_MANIFEST_V9_ENCODER_TRAIN_SPLIT_11D_CO_NO_BUF",
         )
         self.assertEqual(
             LEGACY_MANIFEST_FORMAT,
             "SMARTATPG_DATA_SPLIT_MANIFEST_V6_TOP30_11D_CO_NO_BUF",
         )
-        self.assertEqual(prepare.__defaults__, (14, False))
+        self.assertEqual(prepare.__defaults__, (14, False, "level_gat_gru"))
         self.assertEqual(
             FAULT_FILTER, "train_top30_hard_detected_validation_full_catalog"
         )
+        mean_metadata = preparation.smartatpg_metadata("fanin_mean")
+        self.assertEqual(mean_metadata["actor_input_dim"], 11)
+        self.assertEqual(mean_metadata["graph_config"]["aggregation"], "fanin_mean")
 
     def test_dataset_discovery_uses_train_and_validation_directories(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -130,6 +136,41 @@ class SmartATPGPreparationTests(unittest.TestCase):
             )
             self.assertEqual(
                 [path.stem for path in result["validation"]], ["v1", "v2"]
+            )
+
+    def test_mean_dataset_uses_binary_s38417_with_scan_fault_map(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "train_mean").mkdir()
+            (root / "validation").mkdir()
+            for name in preparation.MEAN_REQUIRED_ASSETS:
+                (root / "train_mean" / name).write_text("asset\n", encoding="utf-8")
+            (root / "train_mean" / "s38417_scan_binary.bench.uf").write_text(
+                "ignored\n", encoding="utf-8"
+            )
+            for name in ("v1", "v2"):
+                (root / "validation" / f"{name}.bench").write_text(
+                    "INPUT(a)\nOUTPUT(a)\n", encoding="utf-8"
+                )
+            result = discover_mean_dataset(
+                root, expected_validation_names=("v1", "v2")
+            )
+            self.assertEqual(
+                [item["name"] for item in result["train"]],
+                ["c6288", "s38417"],
+            )
+            self.assertIsNone(result["train"][0]["fault_map"])
+            self.assertEqual(
+                result["train"][1]["circuit"].name,
+                "s38417_scan_binary.bench",
+            )
+            self.assertEqual(
+                result["train"][1]["fault_map"].name,
+                "s38417_scan_binary.faultmap",
+            )
+            self.assertNotIn(
+                "s38417_scan_binary.bench.uf",
+                [path.name for path in result["assets"]],
             )
 
     def test_training_selects_detectable_faults_by_heuristic_difficulty(self):
@@ -171,6 +212,84 @@ class SmartATPGPreparationTests(unittest.TestCase):
             [item["fault_id"] for item in selected],
             [f"f{index:02d}" for index in range(34, 4, -1)],
         )
+
+    def test_mean_training_caps_at_100_and_accepts_fewer(self):
+        profiles = [
+            {"fault_id": f"f{index:03d}", "outcome": 1,
+             "backtracks": index, "backtrace_steps": index}
+            for index in range(105)
+        ]
+        selected = select_training_faults(profiles, limit=100)
+        self.assertEqual(len(selected), 100)
+        self.assertEqual(selected[0]["fault_id"], "f104")
+        self.assertEqual(
+            len(select_training_faults(profiles[:17], limit=100)), 17
+        )
+
+    def test_mean_manifest_records_binary_fault_map_and_actual_episode_count(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            dataset = root / "data"
+            output = root / "preparation"
+            (dataset / "train_mean").mkdir(parents=True)
+            (dataset / "validation").mkdir()
+            for name in preparation.MEAN_REQUIRED_ASSETS:
+                (dataset / "train_mean" / name).write_text(
+                    "INPUT(a)\nOUTPUT(a)\n", encoding="utf-8"
+                )
+            (dataset / "train_mean" / "s38417_scan_binary.bench.uf").write_text(
+                "ignored\n", encoding="utf-8"
+            )
+            (dataset / "validation" / "v.bench").write_text(
+                "INPUT(a)\nOUTPUT(a)\n", encoding="utf-8"
+            )
+            original_discover = discover_mean_dataset
+
+            def small_mean_discover(path):
+                return original_discover(path, expected_validation_names=("v",))
+
+            def fake_profile(source, split, seed, graph_identity, *, name=None,
+                             fault_map=None):
+                profiles = [
+                    {"fault_id": f"{name}:f0", "outcome": 1,
+                     "backtracks": 2, "backtrace_steps": 3},
+                    {"fault_id": f"{name}:f1", "outcome": 1,
+                     "backtracks": 1, "backtrace_steps": 4},
+                ]
+                payload = {
+                    "format": preparation.PROFILE_FORMAT,
+                    "split": split, "name": name,
+                    "source_sha256": preparation.sha256_file(source),
+                    "circuit_hash": graph_identity[0],
+                    "gate_count": graph_identity[1],
+                    "backtrack_limit": 100, "profile_seed": seed,
+                    "profiles": profiles,
+                }
+                if fault_map is not None:
+                    payload["fault_map_sha256"] = preparation.sha256_file(fault_map)
+                return payload
+
+            fake_graph = type("Graph", (), {"circuit_hash": "hash", "names": ["a"]})()
+            with (
+                patch.object(preparation, "VALIDATION_NAMES", ("v",)),
+                patch.object(preparation, "discover_mean_dataset", small_mean_discover),
+                patch.object(preparation, "load_graph", return_value=fake_graph),
+                patch.object(preparation, "_profile_payload", side_effect=fake_profile),
+            ):
+                manifest = preparation.prepare(
+                    dataset, output, encoder_variant="fanin_mean"
+                )
+            self.assertEqual(manifest["training_split"], "train_mean")
+            self.assertEqual(manifest["train_faults_per_circuit"], 100)
+            self.assertEqual(manifest["training_episode_count"], 4)
+            self.assertEqual(
+                [item["name"] for item in manifest["train_circuits"]],
+                ["c6288", "s38417"],
+            )
+            s38417 = manifest["train_circuits"][1]
+            self.assertTrue(s38417["circuit"].endswith("s38417_scan_binary.bench"))
+            self.assertTrue(s38417["fault_map"].endswith("s38417_scan_binary.faultmap"))
+            self.assertNotIn(".uf", json.dumps(manifest))
 
     def test_training_rejects_a_circuit_without_detectable_faults(self):
         with self.assertRaisesRegex(RuntimeError, "train circuit empty"):
@@ -222,7 +341,10 @@ class SmartATPGPreparationTests(unittest.TestCase):
 
             profiled_splits = []
 
-            def fake_profile(source, split, seed, graph_identity):
+            def fake_profile(
+                source, split, seed, graph_identity, *, name=None,
+                fault_map=None,
+            ):
                 profiled_splits.append(split)
                 profiles = [
                     {"fault_id": f"{source.stem}:sa0", "outcome": 1,
@@ -235,7 +357,7 @@ class SmartATPGPreparationTests(unittest.TestCase):
                 return {
                     "format": preparation.PROFILE_FORMAT,
                     "split": split,
-                    "name": source.stem,
+                    "name": name or source.stem,
                     "source_sha256": preparation.sha256_file(source),
                     "circuit_hash": graph_identity[0],
                     "gate_count": graph_identity[1],

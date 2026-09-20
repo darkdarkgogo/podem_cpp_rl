@@ -245,8 +245,11 @@ def main(argv=None):
     output_dir = args.output_dir.resolve()
     dataset_root = args.dataset_root.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    preparation_dir = output_dir / "preparation"
-    manifest_path = preparation_dir / "training_manifest.json"
+    preparation_root = output_dir / "preparation"
+    gat_preparation_dir = preparation_root / "gat"
+    mean_preparation_dir = preparation_root / "mean"
+    gat_manifest_path = gat_preparation_dir / "training_manifest.json"
+    mean_manifest_path = mean_preparation_dir / "training_manifest.json"
     gat_dir = output_dir / "smartatpg_gat_gru"
     mean_dir = output_dir / "smartatpg_mean"
     comparison_dir = output_dir
@@ -259,33 +262,48 @@ def main(argv=None):
             environment.get("PYTHONPATH", ""),
         ]),
     })
-    preparation_command = [
-        sys.executable, "-u", str(ROOT / "scripts/prepare_smartatpg_training.py"),
-        str(dataset_root), str(preparation_dir), "--seed", str(args.profile_seed),
-        "--normal-rounds", str(args.rounds), "--backtrack-limit",
-        str(args.backtrack_limit), "--resume",
-    ]
+    def preparation_command(directory, encoder):
+        return [
+            sys.executable, "-u",
+            str(ROOT / "scripts/prepare_smartatpg_training.py"),
+            str(dataset_root), str(directory), "--encoder", encoder,
+            "--seed", str(args.profile_seed),
+            "--normal-rounds", str(args.rounds), "--backtrack-limit",
+            str(args.backtrack_limit), "--resume",
+        ]
+
+    gat_preparation_command = preparation_command(
+        gat_preparation_dir, "level_gat_gru"
+    )
+    mean_preparation_command = preparation_command(
+        mean_preparation_dir, "fanin_mean"
+    )
 
     started = time.perf_counter()
-    preparation_seconds = _run(
-        preparation_command, output_dir / "prepare_training.log", environment
+    gat_preparation_seconds = _run(
+        gat_preparation_command, output_dir / "prepare_gat.log", environment
     )
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    mean_preparation_seconds = _run(
+        mean_preparation_command, output_dir / "prepare_mean.log", environment
+    )
+    gat_manifest = json.loads(gat_manifest_path.read_text(encoding="utf-8"))
+    mean_manifest = json.loads(mean_manifest_path.read_text(encoding="utf-8"))
     gat_command = _training_command(
-        manifest_path, gat_dir, "level_gat_gru", args, args.gat_continue_from
+        gat_manifest_path, gat_dir, "level_gat_gru", args, args.gat_continue_from
     )
     mean_command = _training_command(
-        manifest_path, mean_dir, "fanin_mean", args, args.mean_continue_from
+        mean_manifest_path, mean_dir, "fanin_mean", args, args.mean_continue_from
     )
     gat_environment = dict(environment, CUDA_VISIBLE_DEVICES=str(args.gat_gpu))
     mean_environment = dict(environment, CUDA_VISIBLE_DEVICES=str(args.mean_gpu))
     comparison_command = [
         sys.executable, "-u", str(ROOT / "scripts/compare_smartatpg_validation.py"),
-        str(manifest_path), str(gat_dir), str(mean_dir), str(comparison_dir),
+        str(gat_manifest_path), str(mean_manifest_path),
+        str(gat_dir), str(mean_dir), str(comparison_dir),
         "--seed", str(args.seed),
     ]
     metadata = {
-        "format": "SMARTATPG_DUAL_TRAINING_RUN_V1",
+        "format": "SMARTATPG_DUAL_TRAINING_RUN_V2",
         "python": sys.executable,
         "torch": torch.__version__,
         "cuda_available": torch.cuda.is_available(),
@@ -298,20 +316,28 @@ def main(argv=None):
         "seed": args.seed,
         "profile_seed": args.profile_seed,
         "backtrack_limit": args.backtrack_limit,
-        "training_protocol": {
-            "manifest_hash": _sha256(manifest_path),
-            "backtrack_limit": manifest["backtrack_limit"],
-            "reward_schemes": {
-                "smartatpg_gat_gru": "cubic_backtrack_v1",
-                "smartatpg_mean": "legacy_pi_exponential",
+        "training_protocols": {
+            "smartatpg_gat_gru": {
+                "manifest_hash": _sha256(gat_manifest_path),
+                "encoder_variant": "level_gat_gru",
+                "reward_scheme": "cubic_backtrack_v1",
+                "training_circuit_count": len(gat_manifest["train_circuits"]),
+                "training_episode_count": gat_manifest["training_episode_count"],
+                "validation_circuit_count": len(gat_manifest["validation_circuits"]),
             },
-            "normal_rounds": manifest["normal_rounds"],
-            "faults_per_update": manifest["faults_per_update"],
-            "k_epochs": manifest["k_epochs"],
-            "training_circuit_count": len(manifest["train_circuits"]),
-            "validation_circuit_count": len(manifest["validation_circuits"]),
+            "smartatpg_mean": {
+                "manifest_hash": _sha256(mean_manifest_path),
+                "encoder_variant": "fanin_mean",
+                "reward_scheme": "legacy_pi_exponential",
+                "training_circuit_count": len(mean_manifest["train_circuits"]),
+                "training_episode_count": mean_manifest["training_episode_count"],
+                "validation_circuit_count": len(mean_manifest["validation_circuits"]),
+            },
         },
-        "commands": [preparation_command, gat_command, mean_command, comparison_command],
+        "commands": [
+            gat_preparation_command, mean_preparation_command,
+            gat_command, mean_command, comparison_command,
+        ],
         "started_at": time.strftime("%Y-%m-%d %H:%M:%S"),
     }
     metadata_path = output_dir / "training_run_metadata.json"
@@ -341,7 +367,8 @@ def main(argv=None):
     metadata.update({
         "elapsed_seconds": time.perf_counter() - started,
         "timings": {
-            "preparation_seconds": preparation_seconds,
+            "gat_preparation_seconds": gat_preparation_seconds,
+            "mean_preparation_seconds": mean_preparation_seconds,
             **{f"{name}_training_seconds": seconds for name, seconds in train_timings.items()},
             "validation_comparison_seconds": comparison_seconds,
         },

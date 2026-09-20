@@ -326,7 +326,7 @@ class ValidationComparisonTests(unittest.TestCase):
             ("wrong_reward", {"gat": {"reward_scheme": "legacy_pi_exponential"}},
              "Wrong reward scheme"),
             ("wrong_protocol", {"mean": {"faults_per_update": 4}},
-             "Wrong V8 training protocol"),
+             "Wrong training protocol"),
             ("different_seed", {"mean": {"seed": 2027}}, "seed"),
         )
         for label, changes, message in cases:
@@ -915,7 +915,7 @@ class DualTrainingLauncherTests(unittest.TestCase):
             ),
         )
 
-    def test_dual_launcher_prepares_once_trains_both_and_then_compares(self):
+    def test_dual_launcher_prepares_each_encoder_trains_both_and_then_compares(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "training"
             commands = []
@@ -924,12 +924,19 @@ class DualTrainingLauncherTests(unittest.TestCase):
                 commands.append(command)
                 if str(command[2]).endswith("prepare_smartatpg_training.py"):
                     preparation = Path(command[4])
+                    encoder = command[command.index("--encoder") + 1]
                     preparation.mkdir(parents=True, exist_ok=True)
                     (preparation / "training_manifest.json").write_text(
                         json.dumps({
                             "backtrack_limit": 100, "normal_rounds": 2,
                             "faults_per_update": 8, "k_epochs": 1,
-                            "train_circuits": [{"name": "t"}],
+                            "training_episode_count": (
+                                200 if encoder == "fanin_mean" else 30
+                            ),
+                            "train_circuits": (
+                                [{"name": "c6288"}, {"name": "s38417"}]
+                                if encoder == "fanin_mean" else [{"name": "t"}]
+                            ),
                             "validation_circuits": [{"name": "v"}],
                         }),
                         encoding="utf-8",
@@ -968,7 +975,7 @@ class DualTrainingLauncherTests(unittest.TestCase):
             self.assertEqual(sum(
                 str(command[2]).endswith("prepare_smartatpg_training.py")
                 for command in commands
-            ), 1)
+            ), 2)
             self.assertEqual(sum(
                 str(command[2]).endswith("compare_smartatpg_validation.py")
                 for command in commands
@@ -983,11 +990,16 @@ class DualTrainingLauncherTests(unittest.TestCase):
             self.assertEqual(gpu_by_encoder, {
                 "level_gat_gru": "0", "fanin_mean": "1",
             })
+            expected_manifests = {
+                "level_gat_gru": output / "preparation" / "gat" / "training_manifest.json",
+                "fanin_mean": output / "preparation" / "mean" / "training_manifest.json",
+            }
             for command in train_commands:
                 self.assertEqual(command[command.index("--rounds") + 1], "2")
                 self.assertEqual(command[command.index("--k-epochs") + 1], "1")
+                encoder = command[command.index("--encoder") + 1]
                 self.assertEqual(
-                    Path(command[3]), output / "preparation" / "training_manifest.json"
+                    Path(command[3]), expected_manifests[encoder]
                 )
             flattened = " ".join(" ".join(map(str, command)) for command in commands)
             self.assertNotIn("prepare_smartatpg_benchmark.py", flattened)
@@ -996,15 +1008,20 @@ class DualTrainingLauncherTests(unittest.TestCase):
             metadata = json.loads((output / "training_run_metadata.json").read_text("utf-8"))
             self.assertIn("validation_comparison", metadata)
             self.assertEqual(
-                metadata["training_protocol"]["reward_schemes"],
-                {
-                    "smartatpg_gat_gru": "cubic_backtrack_v1",
-                    "smartatpg_mean": "legacy_pi_exponential",
-                },
+                metadata["training_protocols"]["smartatpg_gat_gru"]["reward_scheme"],
+                "cubic_backtrack_v1",
+            )
+            self.assertEqual(
+                metadata["training_protocols"]["smartatpg_mean"]["reward_scheme"],
+                "legacy_pi_exponential",
+            )
+            self.assertEqual(
+                metadata["training_protocols"]["smartatpg_mean"]["training_episode_count"],
+                200,
             )
             comparison_command = next(command for command in commands if str(command[2]).endswith(
                 "compare_smartatpg_validation.py"))
-            self.assertEqual(Path(comparison_command[6]), output)
+            self.assertEqual(Path(comparison_command[7]), output)
             self.assertEqual(metadata["validation_comparison"], str(output))
             self.assertNotIn("benchmark_bundle", metadata)
 

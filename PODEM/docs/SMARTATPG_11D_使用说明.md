@@ -20,35 +20,37 @@ CC0、CC1 从 PI 向 PO 计算，CO 从 PO 向 PI 反向计算。它们是静态
 
 ```text
 data/
-├── train/       1024 个 .bench 电路
+├── train/       GAT 使用的1024个 .bench 电路
+├── train_mean/  mean 使用的 c6288 与 s38417 转换资产及 fault map
 └── validation/  b12_C、b15_C、b17_C、b20_C、b21_C、b22_C
 ```
 
-准备脚本严格检查训练电路数量、验证电路名称、重复名称和非 `.bench` 文件。manifest 中只写相对路径，因此把整个工程复制到 Linux 后可以直接重新准备或训练，不依赖 Windows 绝对路径。
+准备脚本按 encoder 检查数据：GAT 使用 `train`；mean 直接使用 `c6288.bench`，并在 `s38417_scan_binary.bench` 上加载 `s38417_scan_binary.faultmap`，使 ATPG 使用 binary 电路但 fault 数量和 ID 仍来自 scan 版本。`.uf` 文件不参与训练协议。manifest 中只写相对路径，因此复制到 Linux 后不依赖 Windows 绝对路径。
 
 如果 `data/` 在本地仍未纳入 Git，迁移到 Linux 时必须把它与源码一起单独复制；仅克隆代码仓库不会自动得到训练数据。
 
 ## fault 选择规则
 
-准备阶段对每个训练和验证电路运行传统 SCOAP 启发式 PODEM，backtrack 上限统一为200，并遍历完整 collapsed fault catalog。
+准备阶段对训练电路运行传统 SCOAP 启发式 PODEM，正式 backtrack 上限统一为100，并遍历完整 collapsed fault catalog。验证电路在训练时加载完整 catalog。
 
-- 训练集：只从启发式结果 `outcome == 1` 的 fault 中选择。按 backtracks 降序、backtrace steps 降序、fault ID 升序稳定排序，每个电路最多保留最难检测的30个；可检测 fault 不足30个时全部保留，不使用 aborted 或 redundant fault 补足。
+- GAT 训练集：只从 `outcome == 1` 中按 backtracks 降序、backtrace steps 降序、fault ID 升序选择，每个电路最多30个。
+- mean 训练集：采用相同排序，每个电路最多100个；不足100个时使用全部已有的可检测 fault，不使用 aborted 或 redundant fault 补足。
 - 验证集：保留完整 fault catalog，`outcome == 0/1/2` 都进入每轮验证，不根据启发式结果筛选。
 
 生成的 fault profile 会记录 `outcome`、backtracks 和 backtrace steps。准备过程可以按电路断点恢复；源电路、配置或已生成 profile 的哈希发生变化时会拒绝混用。
 
-## 五轮训练流程
+## 两轮训练流程
 
-训练固定执行5轮，每轮分为训练和验证两个阶段：
+训练固定执行2轮，每轮分为训练和验证两个阶段：
 
-1. 将1024个训练电路各自选出的最多30个难检测 fault 合并成当轮 episode 清单。
+1. 按当前 encoder 的 manifest 合并训练 fault：GAT 为1024个电路各最多30个，mean 为两个电路各最多100个。
 2. 使用 `seed + round` 对完整清单做可复现打乱；每个 fault 在这一轮恰好训练一次。
-3. 每个 episode 都用 GAT-GRU 策略运行 PODEM，backtrack 上限为200，并立即进行一次 PPO/RND 更新。
+3. 每个 episode 使用对应 encoder 策略运行 PODEM，backtrack 上限为100；每累计8个 fault（末尾不足8个也刷新）进行一次 PPO/RND 更新。
 4. 训练清单全部完成后，切换为确定性策略，在6个验证电路的完整 fault catalog 上逐项测试。验证阶段不写入 rollout、不更新模型。
 5. 用验证结果选择最佳 checkpoint，比较顺序为：检出 fault 更多、总 backtracks 更少、总 backtrace steps 更少、总外在回报更高；完全相同时保留更早轮次。
-6. 保存本轮验证结果和断点，然后进入下一轮。第5轮验证结束后停止，不再执行额外的失败 fault 强化训练。
+6. 保存本轮验证结果和断点，然后进入下一轮。第2轮验证结束后停止。
 
-因此，“五轮”不是把同一个电路连续跑5次，而是把完整训练 fault 集训练一遍并完整验证一次，重复5次。`model_best.txt` 是五次验证中最优轮次，`model_latest.txt` 是第5轮结束时的最新策略，两者可能不同。
+`model_best.txt` 是两次验证中的最优轮次，`model_latest.txt` 是第2轮结束时的最新策略，两者可能不同。
 
 ## Linux 训练
 
@@ -64,7 +66,7 @@ chmod +x train_smartatpg_linux.sh benchmark_smartatpg_linux.sh \
 ./train_smartatpg_linux.sh
 ```
 
-默认输出目录是 `artifacts/smartatpg_top30_hard_5rounds_bt200`。`--gpu` 指定物理 GPU；子进程通过 `CUDA_VISIBLE_DEVICES` 只看到该卡，所以 PyTorch 内显示为 `cuda:0`。
+单 GAT 默认输出目录是 `artifacts/smartatpg_top30_hard_2rounds_batch8_bt100`；双模型默认输出到 `artifacts/smartatpg_dual_top30_hard_2rounds_batch8_bt100`，并为 GAT 和 mean 分别生成 manifest。`--gpu` 指定物理 GPU；子进程通过 `CUDA_VISIBLE_DEVICES` 只看到该卡，所以 PyTorch 内显示为 `cuda:0`。
 
 主要输出：
 
@@ -74,7 +76,7 @@ chmod +x train_smartatpg_linux.sh benchmark_smartatpg_linux.sh \
 - `smartatpg_gat_gru/best_training_state.pth`：验证最优轮次的完整 checkpoint；
 - `smartatpg_gat_gru/model_best.txt`：验证最优的 C++ 推理模型；
 - `smartatpg_gat_gru/model_latest.txt`：最后一轮的 C++ 推理模型；
-- `smartatpg_gat_gru/validation_metrics.json`：五轮完整验证汇总；
+- `smartatpg_gat_gru/validation_metrics.json`：两轮完整验证汇总；
 - `smartatpg_gat_gru/validation_records.jsonl`：当前或最后一轮的逐 fault 验证明细，用于断点恢复；
 - `benchmark_bundle/`：可复制到无 PyTorch 环境进行原生评测的自包含目录。
 
@@ -108,12 +110,12 @@ chmod +x train_smartatpg_linux.sh benchmark_smartatpg_linux.sh \
 ./benchmark_smartatpg_linux.sh
 ```
 
-评测包仍包含项目的16个标准 benchmark 电路，用相同 backtrack 上限200比较 SCOAP heuristic 和验证最优 GAT-GRU。正式 runtime 只采用 C++ 输出的 ATPG 区间时间，不包含图特征/embedding 计算、C++ 编译、Python 编排或进程启动时间。
+评测包仍包含项目的16个标准 benchmark 电路，用相同 backtrack 上限100比较 SCOAP heuristic 和验证最优模型。正式 runtime 只采用 C++ 输出的 ATPG 区间时间，不包含图特征/embedding 计算、C++ 编译、Python 编排或进程启动时间。
 
 新电路必须由同一份模型重新计算11维 embedding，不能复用其他电路的 embedding。原生日志还会记录 RL 策略选择次数、Actor 前向次数及相应耗时。
 
 ## 工件与兼容性
 
-当前唯一支持的推理模型格式是 `SMARTATPG_MODEL_V12`，embedding 格式是 `SMARTATPG_EMBEDDINGS_V7`，benchmark bundle 格式是 `SMARTATPG_BENCHMARK_BUNDLE_V9_DATA_SPLIT_11D_CO_NO_BUF`。V12 模型记录训练 manifest 哈希、backtrack=200、normal rounds=5，以及训练/验证电路数量。
+当前正式推理模型格式是 `SMARTATPG_MODEL_V13_BATCH8_EPOCH1`，embedding 格式是 `SMARTATPG_EMBEDDINGS_V7`，benchmark bundle 格式是 `SMARTATPG_BENCHMARK_BUNDLE_V9_DATA_SPLIT_11D_CO_NO_BUF`。V13 模型记录训练 manifest 哈希、backtrack=100、normal rounds=2、batch8/epoch1，以及训练/验证电路数量；加载器仍可识别旧 V12 工件，但新训练不再生成它。
 
-训练 manifest 使用 `SMARTATPG_DATA_SPLIT_MANIFEST_V6_TOP30_11D_CO_NO_BUF`，并记录 `train_faults_per_circuit=30`。旧 manifest 不能用于恢复 Top-30 任务；兼容的11维 V6 checkpoint 仍可通过 `--continue-from` 初始化新的 Top-30 训练，但不能通过 `--resume` 混入新 manifest。更早格式的 checkpoint、V10/V11 model 或其他 embedding 格式会在加载阶段被拒绝。新任务应使用空输出目录重新准备、训练和导出。
+当前训练 manifest 使用 `SMARTATPG_DATA_SPLIT_MANIFEST_V9_ENCODER_TRAIN_SPLIT_11D_CO_NO_BUF`，记录 encoder、训练 split 和每电路 fault 上限。GAT 与 mean 的 manifest 不可互换；旧 manifest 不能通过 `--resume` 混入新任务。新任务应使用空输出目录重新准备、训练和导出。

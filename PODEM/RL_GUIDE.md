@@ -11,7 +11,7 @@ chmod +x train_smartatpg_linux.sh benchmark_smartatpg_linux.sh tensorboard_smart
 ./train_smartatpg_linux.sh
 ```
 
-训练脚本读取 `data/train` 的全部1024个电路和 `data/validation` 的6个固定验证电路。SCOAP PODEM 在 backtrack 上限200下建立完整 fault catalog；训练只使用 `outcome == 1` 的全部可检测 fault，验证不筛选、测试全部 fault。GAT-GRU 正常训练5轮，不再有额外强化阶段；最佳模型只由每轮验证结果决定。
+单 GAT 训练读取 `data/train` 的1024个电路；双模型训练中，mean 改读 `data/train_mean` 的 `c6288` 和 `s38417_scan_binary`，后者通过 fault map 保留 scan 版本的 fault ID。GAT 每电路最多选30个困难且可检测的 fault，mean 每电路最多选100个，不足时全部使用。两者都在 `data/validation` 的6个固定电路上验证完整 fault catalog。正式流程的 backtrack 上限为100，训练固定2轮、每8个 fault 更新一次。
 
 同一任务中断后直接重跑命令即可从 `training_state.pth` 恢复。要把当前完整 checkpoint 迁移到另一批电路或 fault 清单继续训练，指定新的空输出目录并传入：
 
@@ -21,7 +21,7 @@ chmod +x train_smartatpg_linux.sh benchmark_smartatpg_linux.sh tensorboard_smart
   --continue-from /path/to/current/best_training_state.pth
 ```
 
-该方式完整继承图编码器、Actor、Critic、`policy_old`、PPO/RND 优化器、RND 统计和 PyTorch 随机数状态，但重新开始新任务的5轮进度与最佳验证记录。
+该方式完整继承图编码器、Actor、Critic、`policy_old`、PPO/RND 优化器、RND 统计和 PyTorch 随机数状态，但重新开始新任务的2轮进度与最佳验证记录。
 
 TensorBoard：
 
