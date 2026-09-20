@@ -457,6 +457,10 @@ def _validate_manifest(manifest, manifest_path):
     }
     if current_format:
         expected["training_split"] = contract["training_split"]
+        expected["dataset_inventory"] = _inventory(
+            resolve_manifest_path(manifest_path, manifest["dataset_root"]),
+            contract,
+        )
     if any(manifest.get(key) != value for key, value in expected.items()):
         raise ValueError("Existing data-split SmartATPG manifest configuration changed")
     expected_train_count = len(contract["train"])
@@ -772,6 +776,7 @@ def prepare(
         "fault_filter": contract["fault_filter"],
         "train_faults_per_circuit": contract["fault_limit"],
         "training_split": contract["training_split"],
+        "dataset_inventory": inventory,
         **smartatpg_metadata(encoder_variant),
         "dataset_root": _relative_path(dataset_root, manifest_path.parent),
         "backtrack_limit": BACKTRACK_LIMIT,

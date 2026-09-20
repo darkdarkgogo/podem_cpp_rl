@@ -283,6 +283,10 @@ class SmartATPGPreparationTests(unittest.TestCase):
             self.assertEqual(manifest["train_faults_per_circuit"], 100)
             self.assertEqual(manifest["training_episode_count"], 4)
             self.assertEqual(
+                [item["name"] for item in manifest["dataset_inventory"]["train_assets"]],
+                list(preparation.MEAN_REQUIRED_ASSETS),
+            )
+            self.assertEqual(
                 [item["name"] for item in manifest["train_circuits"]],
                 ["c6288", "s38417"],
             )
@@ -416,7 +420,9 @@ class SmartATPGPreparationTests(unittest.TestCase):
                 validation_source.write_text(
                     validation_text + "\n", encoding="utf-8"
                 )
-                with self.assertRaisesRegex(ValueError, "artifact changed"):
+                with self.assertRaisesRegex(
+                    ValueError, "configuration changed|artifact changed"
+                ):
                     preparation._validate_manifest(manifest, manifest_path)
                 validation_source.write_text(validation_text, encoding="utf-8")
                 validation_identity = (
