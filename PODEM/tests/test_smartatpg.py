@@ -164,7 +164,7 @@ class SmartATPGTests(unittest.TestCase):
             events.append,
             100,
             14,
-            ["dummy_gate1:GO:sa0"],
+            ["dummy_gate1:GO:sa0", "G548:GI0:sa1"],
             True,
             "backtrace_rl",
             "",
@@ -180,6 +180,14 @@ class SmartATPGTests(unittest.TestCase):
             )
         ]
         self.assertEqual(invalid, [])
+        valid = [
+            event
+            for event in events
+            if event["event"] == "pi_not_done"
+            and int(event["decision_sequence"]) > 0
+            and int(event["pi_visits"]) > 0
+        ]
+        self.assertTrue(valid)
 
     def test_mean_ignores_pi_event_without_policy_step(self):
         trainer = CppPodemBacktraceV2Trainer(
