@@ -148,6 +148,39 @@ class SmartATPGTests(unittest.TestCase):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, source)
 
+    def test_initial_mandatory_implication_emits_no_pi_reward_event(self):
+        import cpp_podem
+
+        source = (
+            Path(__file__).resolve().parents[1]
+            / "data/train_mean/c6288.bench"
+        )
+        circuit = Path(self.temp.name) / "c6288.bench"
+        shutil.copyfile(source, circuit)
+        events = []
+        cpp_podem.run_stuck_at(
+            str(circuit),
+            lambda request: int(request["heuristic_action"]),
+            events.append,
+            100,
+            14,
+            ["dummy_gate1:GO:sa0"],
+            True,
+            "backtrace_rl",
+            "",
+            True,
+        )
+        invalid = [
+            event
+            for event in events
+            if event["event"] == "pi_not_done"
+            and (
+                int(event["decision_sequence"]) == 0
+                or int(event["pi_visits"]) == 0
+            )
+        ]
+        self.assertEqual(invalid, [])
+
     def test_encoder_specific_reward_events(self):
         cases = (
             (

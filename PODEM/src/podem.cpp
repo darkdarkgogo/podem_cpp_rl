@@ -60,7 +60,6 @@ int ATPG::podem(const fptr fault, int &current_backtracks)
 				forward_imply(wfault); // propagate fault effect
 			if (check_test())
 				find_test = true; // if fault effect reaches PO, done. Fig 7.10
-			notify_pi_result(find_test);
 			break;
 		case CONFLICT:
 			no_test = true; // cannot achieve initial objective, no test
