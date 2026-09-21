@@ -25,13 +25,13 @@ from prepare_smartatpg_training import (
     MANIFEST_FORMAT,
     MEAN_TRAIN_FAULTS_PER_CIRCUIT,
     NORMAL_TRAINING_ROUNDS,
-    PPO_EPOCHS_PER_UPDATE,
     TRAIN_FAULTS_PER_CIRCUIT,
     discover_dataset,
     discover_mean_dataset,
     prepare,
     select_training_faults,
     select_validation_faults,
+    training_hyperparameters,
     validation_fault_ids,
 )
 if torch is not None:
@@ -91,11 +91,24 @@ class _FakeAgent:
 
 
 class SmartATPGPreparationTests(unittest.TestCase):
+    def test_training_hyperparameters_are_encoder_specific(self):
+        self.assertEqual(training_hyperparameters("level_gat_gru"), {
+            "k_epochs": 4,
+            "actor_lr": 0.0003,
+            "critic_lr": 0.001,
+        })
+        self.assertEqual(training_hyperparameters("fanin_mean"), {
+            "k_epochs": 1,
+            "actor_lr": 0.001,
+            "critic_lr": 0.01,
+        })
+        with self.assertRaisesRegex(ValueError, "Unsupported SmartATPG encoder"):
+            training_hyperparameters("unknown")
+
     def test_fixed_training_contract(self):
         self.assertEqual(BACKTRACK_LIMIT, 100)
         self.assertEqual(NORMAL_TRAINING_ROUNDS, 2)
         self.assertEqual(FAULTS_PER_UPDATE, 8)
-        self.assertEqual(PPO_EPOCHS_PER_UPDATE, 1)
         self.assertEqual(TRAIN_FAULTS_PER_CIRCUIT, 30)
         self.assertEqual(MEAN_TRAIN_FAULTS_PER_CIRCUIT, 100)
         self.assertEqual(
@@ -387,7 +400,15 @@ class SmartATPGPreparationTests(unittest.TestCase):
                 validation = manifest["validation_circuits"][0]
                 self.assertEqual(manifest["normal_rounds"], 2)
                 self.assertEqual(manifest["faults_per_update"], 8)
-                self.assertEqual(manifest["k_epochs"], 1)
+                self.assertEqual(manifest["k_epochs"], 4)
+                old_gat_manifest = json.loads(json.dumps(manifest))
+                old_gat_manifest["k_epochs"] = 1
+                with self.assertRaisesRegex(
+                    ValueError, "batching configuration changed"
+                ):
+                    preparation._validate_manifest(
+                        old_gat_manifest, output / "training_manifest.json"
+                    )
                 self.assertNotIn("profile", validation)
                 self.assertNotIn("episode_fault_ids", validation)
                 self.assertNotIn("validation_episode_count", manifest)
@@ -443,18 +464,15 @@ class SmartATPGPreparationTests(unittest.TestCase):
                     "validation", validation_payload,
                 )]
                 legacy["validation_episode_count"] = 3
-                self.assertIs(
-                    preparation._validate_manifest(legacy, manifest_path), legacy
-                )
+                with self.assertRaisesRegex(ValueError, "configuration changed"):
+                    preparation._validate_manifest(legacy, manifest_path)
                 legacy_lazy = json.loads(json.dumps(manifest))
                 legacy_lazy["format"] = LAZY_VALIDATION_MANIFEST_FORMAT
                 legacy_lazy["normal_rounds"] = 5
                 legacy_lazy.pop("faults_per_update")
                 legacy_lazy.pop("k_epochs")
-                self.assertIs(
-                    preparation._validate_manifest(legacy_lazy, manifest_path),
-                    legacy_lazy,
-                )
+                with self.assertRaisesRegex(ValueError, "configuration changed"):
+                    preparation._validate_manifest(legacy_lazy, manifest_path)
                 added = dataset / "train" / "added.bench"
                 added.write_text("INPUT(a)\nOUTPUT(a)\n", encoding="utf-8")
                 with self.assertRaisesRegex(ValueError, "exactly 1"):
@@ -699,20 +717,14 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
                     "manifest_hash": training._manifest_hash(manifest), "seed": 2026,
                     "encoder_variant": "level_gat_gru", "rounds": 2,
                     "reward_scheme": "cubic_backtrack_v1",
-                    "faults_per_update": 8, "k_epochs": 1, "backtrack_limit": 100,
+                    "faults_per_update": 8, "k_epochs": 4, "backtrack_limit": 100,
                     "validation_catalog_hash": training._validation_catalog_hash(validation),
                 }, validation)
                 (output / "validation_identity.json").write_text(json.dumps(identity), encoding="utf-8")
                 with self.assertRaisesRegex(ValueError, "Validation identity changed"):
                     training.main(args + ["--seed", "2027"])
 
-    def test_legacy_main_config_assembly_skips_v8_validation_identity(self):
-        train_circuits = [{
-            "name": "t", "circuit": "t.bench", "episode_fault_ids": ["t0"],
-        }]
-        validation_circuits = [{
-            "name": "v", "circuit": "v.bench", "episode_fault_ids": ["v0"],
-        }]
+    def test_training_rejects_legacy_gat_manifests(self):
         for manifest_format in (
             LEGACY_MANIFEST_FORMAT, LAZY_VALIDATION_MANIFEST_FORMAT,
         ):
@@ -726,33 +738,8 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
                         "backtrack_limit": BACKTRACK_LIMIT,
                     }), encoding="utf-8")
                     output_dir = root / "training"
-                    with (
-                        patch.object(
-                            training, "_resolve_circuit_records",
-                            return_value=(train_circuits, validation_circuits),
-                        ),
-                        patch.object(
-                            training, "_load_validation_catalogs",
-                            return_value=validation_circuits,
-                        ),
-                        patch.object(training, "load_circuit_graph", return_value=object()),
-                        patch.object(training, "AGENT_TYPES", {
-                            "level_gat_gru": lambda *_args, **_kwargs: object(),
-                        }),
-                        patch.object(
-                            training, "CppPodemBacktraceV2Trainer",
-                            return_value=object(),
-                        ),
-                        patch.object(
-                            training, "_initial_state",
-                            side_effect=RuntimeError("reached initial state"),
-                        ) as initial_state,
-                    ):
-                        with self.assertRaisesRegex(RuntimeError, "reached initial state"):
-                            training.main([str(manifest_path), str(output_dir)])
-                    config = initial_state.call_args.args[1]
-                    self.assertNotIn("faults_per_update", config)
-                    self.assertFalse((output_dir / "validation_identity.json").exists())
+                    with self.assertRaisesRegex(ValueError, "supported data-split"):
+                        training.main([str(manifest_path), str(output_dir)])
 
     def test_validation_jsonl_recovers_an_appended_record_before_state_update(self):
         with tempfile.TemporaryDirectory() as directory:

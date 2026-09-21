@@ -16,12 +16,12 @@ except ModuleNotFoundError:
     torch = None
 
 from run_smartatpg_training_linux import _check_cpp_extension, _tee_command
+from prepare_smartatpg_training import training_hyperparameters
 
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKTRACK_LIMIT = 100
 NORMAL_TRAINING_ROUNDS = 2
-PPO_EPOCHS_PER_UPDATE = 1
 
 
 def _atomic_json(path, value):
@@ -197,6 +197,7 @@ def _validate_args(args):
 
 
 def _training_command(manifest, output_dir, encoder, args, continuation):
+    hyperparameters = training_hyperparameters(encoder)
     command = [
         sys.executable,
         "-u",
@@ -205,7 +206,7 @@ def _training_command(manifest, output_dir, encoder, args, continuation):
         str(output_dir),
         "--rounds", str(args.rounds),
         "--seed", str(args.seed),
-        "--k-epochs", str(PPO_EPOCHS_PER_UPDATE),
+        "--k-epochs", str(hyperparameters["k_epochs"]),
         "--encoder", encoder,
     ]
     if continuation:

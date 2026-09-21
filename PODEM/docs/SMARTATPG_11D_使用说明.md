@@ -45,7 +45,7 @@ data/
 
 1. 按当前 encoder 的 manifest 合并训练 fault：GAT 为1024个电路各最多30个，mean 为两个电路各最多100个。
 2. 使用 `seed + round` 对完整清单做可复现打乱；每个 fault 在这一轮恰好训练一次。
-3. 每个 episode 使用对应 encoder 策略运行 PODEM，backtrack 上限为100；每累计8个 fault（末尾不足8个也刷新）进行一次 PPO/RND 更新。
+3. 每个 episode 使用对应 encoder 策略运行 PODEM，backtrack 上限为100；每累计8个 fault（末尾不足8个也刷新）进行一次 PPO/RND 更新。GAT 对同一批 rollout 执行4个 PPO epoch，Actor/Critic 学习率分别为 `0.0003`/`0.001`；mean 保持1个 PPO epoch，学习率分别为 `0.001`/`0.01`。RND predictor 每批仍只更新一次。
 4. 训练清单全部完成后，切换为确定性策略，在6个验证电路的完整 fault catalog 上逐项测试。验证阶段不写入 rollout、不更新模型。
 5. 用验证结果选择最佳 checkpoint，比较顺序为：检出 fault 更多、总 backtracks 更少、总 backtrace steps 更少、总外在回报更高；完全相同时保留更早轮次。
 6. 保存本轮验证结果和断点，然后进入下一轮。第2轮验证结束后停止。
@@ -100,7 +100,7 @@ chmod +x train_smartatpg_linux.sh benchmark_smartatpg_linux.sh \
 - RND predictor、固定 target、optimizer 和运行统计；
 - PyTorch CPU/CUDA 随机数状态。
 
-新任务的轮次、episode 位置、验证历史和 best 记录会清零，从新 manifest 的第1轮开始。`--resume` 只用于原任务，要求 manifest 哈希和全部训练配置完全一致；两者不能同时使用。旧格式 checkpoint 不兼容。
+新任务的轮次、episode 位置、验证历史和 best 记录会清零，从新 manifest 的第1轮开始。`--resume` 只用于原任务，要求 manifest 哈希和全部训练配置完全一致；两者不能同时使用。旧 GAT epoch-1 checkpoint 不兼容；mean 的 epoch-1 checkpoint 语义不变。
 
 ## 编译与评测
 
@@ -116,6 +116,6 @@ chmod +x train_smartatpg_linux.sh benchmark_smartatpg_linux.sh \
 
 ## 工件与兼容性
 
-当前正式推理模型格式是 `SMARTATPG_MODEL_V13_BATCH8_EPOCH1`，embedding 格式是 `SMARTATPG_EMBEDDINGS_V7`，benchmark bundle 格式是 `SMARTATPG_BENCHMARK_BUNDLE_V9_DATA_SPLIT_11D_CO_NO_BUF`。V13 模型记录训练 manifest 哈希、backtrack=100、normal rounds=2、batch8/epoch1，以及训练/验证电路数量；加载器仍可识别旧 V12 工件，但新训练不再生成它。
+正式 GAT 推理模型格式是 `SMARTATPG_MODEL_V14_GAT_BATCH8_EPOCH4`，只接受 `level_gat_gru`、batch8/epoch4；旧 GAT V12/V13 模型会被拒绝。mean 保持 `SMARTATPG_MODEL_V13_BATCH8_EPOCH1`，仍接受 `fanin_mean`、batch8/epoch1，并继续兼容其旧 V12 工件。两种模型都记录训练 manifest 哈希、backtrack=100、normal rounds=2 和训练/验证电路数量。embedding 格式仍是 `SMARTATPG_EMBEDDINGS_V7`，benchmark bundle 格式仍是 `SMARTATPG_BENCHMARK_BUNDLE_V9_DATA_SPLIT_11D_CO_NO_BUF`。
 
 当前训练 manifest 使用 `SMARTATPG_DATA_SPLIT_MANIFEST_V9_ENCODER_TRAIN_SPLIT_11D_CO_NO_BUF`，记录 encoder、训练 split 和每电路 fault 上限。GAT 与 mean 的 manifest 不可互换；旧 manifest 不能通过 `--resume` 混入新任务。新任务应使用空输出目录重新准备、训练和导出。

@@ -235,7 +235,12 @@ void ActorModel::load(const std::string &path) {
   std::string header;
   std::string key;
   std::getline(input, header);
-  const bool batched_protocol = header == "SMARTATPG_MODEL_V13_BATCH8_EPOCH1";
+  const bool mean_batched_protocol =
+      header == "SMARTATPG_MODEL_V13_BATCH8_EPOCH1";
+  const bool gat_batched_protocol =
+      header == "SMARTATPG_MODEL_V14_GAT_BATCH8_EPOCH4";
+  const bool batched_protocol =
+      mean_batched_protocol || gat_batched_protocol;
   require(header == "SMARTATPG_MODEL_V12" || batched_protocol,
           "Unsupported actor format in: " + path);
   backend_ = "smartatpg";
@@ -250,6 +255,11 @@ void ActorModel::load(const std::string &path) {
       input, backend_, schema_, encoder_variant_, graph_config_,
       gate_embedding_dim_, embedding_dim_, action_mask_dim_,
       decision_state_dim_, snapshot_);
+  require((encoder_variant_ == "fanin_mean" &&
+           (header == "SMARTATPG_MODEL_V12" || mean_batched_protocol)) ||
+              (encoder_variant_ == "level_gat_gru" &&
+               gat_batched_protocol),
+          "SmartATPG actor format does not match encoder protocol in: " + path);
   int best_round = 0;
   std::string best_score;
   require(static_cast<bool>(input >> key >> best_round) &&
@@ -289,7 +299,8 @@ void ActorModel::load(const std::string &path) {
                 key == "faults_per_update" && faults_per_update == 8,
             "Invalid SmartATPG fault-batch metadata in: " + path);
     require(static_cast<bool>(input >> key >> k_epochs) &&
-                key == "k_epochs" && k_epochs == 1,
+                key == "k_epochs" &&
+                    k_epochs == (encoder_variant_ == "level_gat_gru" ? 4 : 1),
             "Invalid SmartATPG PPO-epoch metadata in: " + path);
   }
   require(static_cast<bool>(input >> key >> training_circuit_count) &&

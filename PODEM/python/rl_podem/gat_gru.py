@@ -18,7 +18,7 @@ GRAPH_CONFIG = {
 }
 GRAPH_CONFIG_ID = "level_gat_gru_fwd_rev_11d_v3_nobuf"
 ACTOR_INPUT_DIM = FEATURE_DIM + 1
-TRAINING_FORMAT = "RL_PODEM_SMARTATPG_GAT_GRU_PPO_V5_11D_CO_NO_BUF"
+TRAINING_FORMAT = "RL_PODEM_SMARTATPG_GAT_GRU_PPO_V6_EPOCH4_11D_CO_NO_BUF"
 
 
 class DirectionalGATGRU(nn.Module):
@@ -114,3 +114,9 @@ class GATGRUSmartATPGPPOAgent(SmartATPGPPOAgent):
     graph_config = GRAPH_CONFIG
     training_format = TRAINING_FORMAT
     policy_class = GATGRUSmartATPGPolicy
+
+    def __init__(self, graphs, hidden_dim=32, **kwargs):
+        kwargs.setdefault("lr_actor", 0.0003)
+        kwargs.setdefault("lr_critic", 0.001)
+        kwargs.setdefault("k_epochs", 4)
+        super().__init__(graphs, hidden_dim=hidden_dim, **kwargs)

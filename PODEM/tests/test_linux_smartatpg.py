@@ -159,7 +159,7 @@ class ValidationComparisonTests(unittest.TestCase):
             }[encoder],
             "normal_rounds": 2,
             "faults_per_update": 8,
-            "k_epochs": 1,
+            "k_epochs": 4 if encoder == "level_gat_gru" else 1,
             "backtrack_limit": 100,
             "validation_catalog_hash": catalog_hash,
             "validation_circuits": ["v"],
@@ -519,7 +519,7 @@ class SplitLauncherTests(_SplitLauncherInventoryTests, unittest.TestCase):
                     (preparation / "training_manifest.json").write_text(
                         json.dumps({
                             "backtrack_limit": 100, "normal_rounds": 2,
-                            "faults_per_update": 8, "k_epochs": 1,
+                            "faults_per_update": 8, "k_epochs": 4,
                             "train": [], "validation": [],
                             "train_circuits": [{"name": "t"}],
                             "validation_circuits": [{"name": "v"}],
@@ -570,7 +570,7 @@ class SplitLauncherTests(_SplitLauncherInventoryTests, unittest.TestCase):
             self.assertNotIn("benchmark_smartatpg.py", flattened)
             for command in (call.args[0] for call in train_calls):
                 self.assertEqual(command[command.index("--rounds") + 1], "2")
-                self.assertEqual(command[command.index("--k-epochs") + 1], "1")
+                self.assertEqual(command[command.index("--k-epochs") + 1], "4")
             gat_command = next(
                 command for command in (call.args[0] for call in train_calls)
                 if "level_gat_gru" in command
@@ -599,7 +599,7 @@ class SplitLauncherTests(_SplitLauncherInventoryTests, unittest.TestCase):
             )
             self.assertEqual(metadata["training_protocol"]["normal_rounds"], 2)
             self.assertEqual(metadata["training_protocol"]["faults_per_update"], 8)
-            self.assertEqual(metadata["training_protocol"]["k_epochs"], 1)
+            self.assertEqual(metadata["training_protocol"]["k_epochs"], 4)
             self.assertEqual(metadata["training_protocol"]["training_circuit_count"], 1)
             self.assertEqual(metadata["training_protocol"]["validation_circuit_count"], 1)
 
@@ -642,7 +642,7 @@ class SplitLauncherTests(_SplitLauncherInventoryTests, unittest.TestCase):
                     (preparation / "training_manifest.json").write_text(
                         json.dumps({
                             "backtrack_limit": 100, "normal_rounds": 2,
-                            "faults_per_update": 8, "k_epochs": 1,
+                            "faults_per_update": 8, "k_epochs": 4,
                             "train_circuits": [{"name": "t"}],
                             "validation_circuits": [{"name": "v"}],
                         }),
@@ -929,7 +929,8 @@ class DualTrainingLauncherTests(unittest.TestCase):
                     (preparation / "training_manifest.json").write_text(
                         json.dumps({
                             "backtrack_limit": 100, "normal_rounds": 2,
-                            "faults_per_update": 8, "k_epochs": 1,
+                            "faults_per_update": 8,
+                            "k_epochs": 1 if encoder == "fanin_mean" else 4,
                             "training_episode_count": (
                                 200 if encoder == "fanin_mean" else 30
                             ),
@@ -996,8 +997,11 @@ class DualTrainingLauncherTests(unittest.TestCase):
             }
             for command in train_commands:
                 self.assertEqual(command[command.index("--rounds") + 1], "2")
-                self.assertEqual(command[command.index("--k-epochs") + 1], "1")
                 encoder = command[command.index("--encoder") + 1]
+                self.assertEqual(
+                    command[command.index("--k-epochs") + 1],
+                    "4" if encoder == "level_gat_gru" else "1",
+                )
                 self.assertEqual(
                     Path(command[3]), expected_manifests[encoder]
                 )

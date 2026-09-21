@@ -20,10 +20,10 @@ from prepare_smartatpg_training import (
     LAZY_VALIDATION_MANIFEST_FORMAT,
     MANIFEST_FORMAT,
     NORMAL_TRAINING_ROUNDS,
-    PPO_EPOCHS_PER_UPDATE,
     _validate_manifest as _validate_prepared_manifest,
     resolve_manifest_path,
     sha256_file,
+    training_hyperparameters,
     validation_fault_ids,
 )
 from rl_podem.cpp_bridge import (
@@ -631,11 +631,7 @@ def main(argv=None):
     args = parser.parse_args(argv)
     args.manifest = args.manifest.resolve()
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
-    supported_formats = (
-        LEGACY_MANIFEST_FORMAT,
-        LAZY_VALIDATION_MANIFEST_FORMAT,
-        MANIFEST_FORMAT,
-    )
+    supported_formats = (MANIFEST_FORMAT,)
     if manifest.get("format") not in supported_formats:
         raise ValueError("Training requires a supported data-split manifest")
     manifest_encoder = manifest.get("encoder_variant")
@@ -649,22 +645,24 @@ def main(argv=None):
             f"{manifest_encoder}"
         )
     batched_training = manifest.get("format") == MANIFEST_FORMAT
+    hyperparameters = training_hyperparameters(args.encoder)
     expected_rounds = (
         NORMAL_TRAINING_ROUNDS if batched_training else LEGACY_TRAINING_ROUNDS
     )
     if args.rounds is None:
         args.rounds = expected_rounds
     if args.k_epochs is None:
-        args.k_epochs = PPO_EPOCHS_PER_UPDATE if batched_training else 8
+        args.k_epochs = hyperparameters["k_epochs"] if batched_training else 8
     if args.rounds != expected_rounds:
         raise ValueError(
             f"This SmartATPG manifest requires exactly {expected_rounds} rounds"
         )
     if args.k_epochs <= 0:
         raise ValueError("PPO epochs must be positive")
-    if batched_training and args.k_epochs != PPO_EPOCHS_PER_UPDATE:
+    if batched_training and args.k_epochs != hyperparameters["k_epochs"]:
         raise ValueError(
-            f"SmartATPG training requires k_epochs={PPO_EPOCHS_PER_UPDATE}"
+            f"SmartATPG {args.encoder} training requires "
+            f"k_epochs={hyperparameters['k_epochs']}"
         )
     train_circuits, validation_circuits = _resolve_circuit_records(
         manifest, args.manifest
@@ -713,8 +711,8 @@ def main(argv=None):
     agent = AGENT_TYPES[args.encoder](
         graphs,
         hidden_dim=32,
-        lr_actor=0.001,
-        lr_critic=0.01,
+        lr_actor=hyperparameters["actor_lr"],
+        lr_critic=hyperparameters["critic_lr"],
         rnd_beta=args.rnd_beta,
         k_epochs=args.k_epochs,
     )
@@ -734,8 +732,8 @@ def main(argv=None):
         "rnd_beta": args.rnd_beta,
         "k_epochs": args.k_epochs,
         "backtrack_limit": BACKTRACK_LIMIT,
-        "actor_lr": 0.001,
-        "critic_lr": 0.01,
+        "actor_lr": hyperparameters["actor_lr"],
+        "critic_lr": hyperparameters["critic_lr"],
         "training_episode_count": sum(
             len(item["episode_fault_ids"]) for item in train_circuits
         ),

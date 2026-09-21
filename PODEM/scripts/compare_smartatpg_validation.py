@@ -42,7 +42,6 @@ IDENTITY_KEYS = {
 SHARED_IDENTITY_FIELDS = (
     "normal_rounds",
     "faults_per_update",
-    "k_epochs",
     "backtrack_limit",
     "validation_catalog_hash",
     "validation_circuits",
@@ -175,12 +174,16 @@ def _load_run(name, directory):
     for key in ("normal_rounds", "faults_per_update", "k_epochs", "backtrack_limit", "seed"):
         if type(identity[key]) is not int:
             raise ValueError(f"Invalid validation identity {key} for {name}")
+    expected_k_epochs = {
+        "level_gat_gru": 4,
+        "fanin_mean": 1,
+    }[identity["encoder_variant"]]
     if (
         identity["normal_rounds"],
         identity["faults_per_update"],
         identity["k_epochs"],
         identity["backtrack_limit"],
-    ) != (2, 8, 1, 100):
+    ) != (2, 8, expected_k_epochs, 100):
         raise ValueError(f"Wrong training protocol for {name}")
     if (
         not isinstance(rounds, list)

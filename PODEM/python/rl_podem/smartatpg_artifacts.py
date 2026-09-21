@@ -57,7 +57,7 @@ def export_actor(
     state, path, best_round=0, best_score=None, training_protocol=None,
 ):
     if training_protocol is None:
-        raise ValueError("SMARTATPG_MODEL_V12 requires data-split training metadata")
+        raise ValueError("SmartATPG model export requires data-split training metadata")
     identity = snapshot_id(state)
     metadata = inference_metadata(state)
     score_text = (

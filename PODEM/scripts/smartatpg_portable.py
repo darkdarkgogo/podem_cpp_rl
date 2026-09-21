@@ -12,7 +12,9 @@ from typing import Optional
 
 
 LEGACY_MODEL_FORMAT = "SMARTATPG_MODEL_V12"
-MODEL_FORMAT = "SMARTATPG_MODEL_V13_BATCH8_EPOCH1"
+MEAN_MODEL_FORMAT = "SMARTATPG_MODEL_V13_BATCH8_EPOCH1"
+GAT_MODEL_FORMAT = "SMARTATPG_MODEL_V14_GAT_BATCH8_EPOCH4"
+MODEL_FORMAT = GAT_MODEL_FORMAT
 EMBEDDING_FORMAT = "SMARTATPG_EMBEDDINGS_V7"
 FEATURE_SCHEMA = "SMARTATPG_FEATURES_V4_11D_CO_NO_BUF"
 GRAPH_CONFIG = "fanin_mean_1x22x11_co_nobuf"
@@ -130,8 +132,10 @@ def load_model(path):
     path = Path(path)
     tokens = iter(path.read_text(encoding="utf-8").split())
     model_format = _next(tokens, "header")
-    if model_format not in (LEGACY_MODEL_FORMAT, MODEL_FORMAT):
-        raise ValueError("SmartATPG benchmark requires a V12 or V13 model")
+    if model_format not in (
+        LEGACY_MODEL_FORMAT, MEAN_MODEL_FORMAT, GAT_MODEL_FORMAT,
+    ):
+        raise ValueError("Unsupported SmartATPG model format")
     gate_dim = GATE_EMBEDDING_DIM
     expected_metadata = {
         "backend": "smartatpg", "feature_schema": FEATURE_SCHEMA,
@@ -147,6 +151,14 @@ def load_model(path):
     }.get(encoder_variant)
     if graph_config != expected_config:
         raise ValueError("Invalid SmartATPG encoder variant or graph configuration")
+    allowed_formats = {
+        "fanin_mean": (LEGACY_MODEL_FORMAT, MEAN_MODEL_FORMAT),
+        "level_gat_gru": (GAT_MODEL_FORMAT,),
+    }[encoder_variant]
+    if model_format not in allowed_formats:
+        raise ValueError(
+            "SmartATPG model format does not match the encoder training protocol"
+        )
     if int(_field(tokens, "gate_embedding_dim")) != gate_dim:
         raise ValueError(f"SmartATPG gate embedding dimension must be {gate_dim}")
     actor_input_dim = int(_field(tokens, "actor_input_dim"))
@@ -178,7 +190,7 @@ def load_model(path):
     backtrack_limit = int(_field(tokens, "backtrack_limit"))
     reward_scheme = _field(tokens, "reward_scheme")
     normal_rounds = int(_field(tokens, "normal_rounds"))
-    if model_format == MODEL_FORMAT:
+    if model_format != LEGACY_MODEL_FORMAT:
         faults_per_update = int(_field(tokens, "faults_per_update"))
         k_epochs = int(_field(tokens, "k_epochs"))
     else:
@@ -194,10 +206,15 @@ def load_model(path):
             "level_gat_gru": "cubic_backtrack_v1",
             "fanin_mean": "legacy_pi_exponential",
         }[encoder_variant]
-        or normal_rounds != (2 if model_format == MODEL_FORMAT else 5)
+        or normal_rounds != (2 if model_format != LEGACY_MODEL_FORMAT else 5)
         or (
-            model_format == MODEL_FORMAT
-            and (faults_per_update != 8 or k_epochs != 1)
+            model_format != LEGACY_MODEL_FORMAT
+            and (
+                faults_per_update != 8
+                or k_epochs != (
+                    4 if encoder_variant == "level_gat_gru" else 1
+                )
+            )
         )
         or training_circuit_count <= 0
         or validation_circuit_count <= 0

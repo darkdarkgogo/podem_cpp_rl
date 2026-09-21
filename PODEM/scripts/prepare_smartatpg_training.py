@@ -31,7 +31,18 @@ BACKTRACK_LIMIT = 100
 LEGACY_TRAINING_ROUNDS = 5
 NORMAL_TRAINING_ROUNDS = 2
 FAULTS_PER_UPDATE = 8
-PPO_EPOCHS_PER_UPDATE = 1
+TRAINING_HYPERPARAMETERS = {
+    "level_gat_gru": {
+        "k_epochs": 4,
+        "actor_lr": 0.0003,
+        "critic_lr": 0.001,
+    },
+    "fanin_mean": {
+        "k_epochs": 1,
+        "actor_lr": 0.001,
+        "critic_lr": 0.01,
+    },
+}
 TRAIN_FAULTS_PER_CIRCUIT = 30
 MEAN_TRAIN_FAULTS_PER_CIRCUIT = 100
 HEURISTIC = "scoap_heuristic"
@@ -46,6 +57,15 @@ MEAN_REQUIRED_ASSETS = (
     "s38417_scan_binary.faultmap",
 )
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def training_hyperparameters(encoder_variant):
+    try:
+        return dict(TRAINING_HYPERPARAMETERS[encoder_variant])
+    except KeyError as error:
+        raise ValueError(
+            f"Unsupported SmartATPG encoder: {encoder_variant}"
+        ) from error
 
 
 def smartatpg_metadata(encoder_variant="level_gat_gru"):
@@ -426,11 +446,7 @@ def _validation_record(manifest_path, source, graph_identity):
 
 def _validate_manifest(manifest, manifest_path):
     manifest_format = manifest.get("format")
-    supported_formats = (
-        LEGACY_MANIFEST_FORMAT,
-        LAZY_VALIDATION_MANIFEST_FORMAT,
-        MANIFEST_FORMAT,
-    )
+    supported_formats = (MANIFEST_FORMAT,)
     if manifest_format not in supported_formats:
         raise ValueError("Existing data-split SmartATPG manifest configuration changed")
     current_format = manifest_format == MANIFEST_FORMAT
@@ -600,9 +616,10 @@ def _validate_manifest(manifest, manifest_path):
             "Lazy validation manifests must not persist an episode count"
         )
     if current_format:
+        hyperparameters = training_hyperparameters(encoder_variant)
         if (
             manifest.get("faults_per_update") != FAULTS_PER_UPDATE
-            or manifest.get("k_epochs") != PPO_EPOCHS_PER_UPDATE
+            or manifest.get("k_epochs") != hyperparameters["k_epochs"]
         ):
             raise ValueError("Current SmartATPG batching configuration changed")
     elif "faults_per_update" in manifest or "k_epochs" in manifest:
@@ -771,6 +788,7 @@ def prepare(
         for entry in graph_entries["validation"]
     ]
 
+    hyperparameters = training_hyperparameters(encoder_variant)
     manifest = {
         "format": MANIFEST_FORMAT,
         "fault_filter": contract["fault_filter"],
@@ -784,7 +802,7 @@ def prepare(
         "heuristic": HEURISTIC,
         "normal_rounds": NORMAL_TRAINING_ROUNDS,
         "faults_per_update": FAULTS_PER_UPDATE,
-        "k_epochs": PPO_EPOCHS_PER_UPDATE,
+        "k_epochs": hyperparameters["k_epochs"],
         "train_circuit_count": len(records["train"]),
         "validation_circuit_count": len(records["validation"]),
         "training_episode_count": sum(

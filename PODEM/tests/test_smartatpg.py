@@ -69,18 +69,29 @@ TRAINING_PROTOCOL = {
     "validation_circuit_count": 6,
     "reward_scheme": "legacy_pi_exponential",
 }
-BATCHED_TRAINING_PROTOCOL = {
+MEAN_BATCHED_TRAINING_PROTOCOL = {
     **TRAINING_PROTOCOL,
     "normal_rounds": 2,
     "faults_per_update": 8,
     "k_epochs": 1,
 }
+GAT_BATCHED_TRAINING_PROTOCOL = {
+    **MEAN_BATCHED_TRAINING_PROTOCOL,
+    "reward_scheme": GAT_REWARD_SCHEME,
+    "k_epochs": 4,
+}
 
 
 def export_actor(state, path, **kwargs):
+    variant = encoder_variant(state)
+    default_protocol = (
+        GAT_BATCHED_TRAINING_PROTOCOL
+        if variant == "level_gat_gru"
+        else TRAINING_PROTOCOL
+    )
     kwargs["training_protocol"] = {
-        **kwargs.get("training_protocol", TRAINING_PROTOCOL),
-        "reward_scheme": reward_scheme_for_encoder(encoder_variant(state)),
+        **kwargs.get("training_protocol", default_protocol),
+        "reward_scheme": reward_scheme_for_encoder(variant),
     }
     return _export_actor(state, path, **kwargs)
 
@@ -397,6 +408,11 @@ class SmartATPGTests(unittest.TestCase):
         self.assertEqual(agent.lr_actor, 0.001)
         self.assertEqual(agent.lr_critic, 0.01)
 
+        gat_agent = GATGRUSmartATPGPPOAgent({"test": self.graph}, rnd_beta=0)
+        self.assertEqual(gat_agent.lr_actor, 0.0003)
+        self.assertEqual(gat_agent.lr_critic, 0.001)
+        self.assertEqual(gat_agent.k_epochs, 4)
+
     def test_deferred_trainer_collects_eight_faults_for_one_update(self):
         from rl_podem.cpp_bridge import CppPodemBacktraceV2Trainer
 
@@ -521,7 +537,7 @@ class SmartATPGTests(unittest.TestCase):
         export_actor(
             GATGRUSmartATPGPolicy().state_dict(), gat,
             best_round=1, best_score=(-1, 2, 3, -4, 1),
-            training_protocol=TRAINING_PROTOCOL,
+            training_protocol=GAT_BATCHED_TRAINING_PROTOCOL,
         )
         bundle = root / "bundle"
         with patch.object(prepare_bundle, "ROOT", root):
@@ -716,7 +732,7 @@ class SmartATPGTests(unittest.TestCase):
             (
                 GAT_REWARD_SCHEME,
                 GATGRUSmartATPGPPOAgent(
-                    {"test": self.graph}, rnd_beta=0, k_epochs=1,
+                    {"test": self.graph}, rnd_beta=0, k_epochs=4,
                 ),
             ),
         )
@@ -726,10 +742,11 @@ class SmartATPGTests(unittest.TestCase):
                 actor = Path(self.temp.name) / f"{scheme}.actor.txt"
                 embeddings = Path(self.temp.name) / f"{scheme}.emb"
                 journal = Path(self.temp.name) / f"{scheme}.jsonl"
-                protocol = {
-                    **BATCHED_TRAINING_PROTOCOL,
-                    "reward_scheme": scheme,
-                }
+                protocol = (
+                    GAT_BATCHED_TRAINING_PROTOCOL
+                    if scheme == GAT_REWARD_SCHEME
+                    else MEAN_BATCHED_TRAINING_PROTOCOL
+                )
                 _export_actor(state, actor, training_protocol=protocol)
                 export_descriptors(state, self.graph, embeddings)
                 evaluator = CppPodemBacktraceV2Evaluator(
@@ -824,18 +841,13 @@ class SmartATPGTests(unittest.TestCase):
         changed_embedding = compute_portable_embeddings(changed_model, portable_graph)
         self.assertNotEqual(changed_embedding, tuple(map(tuple, portable.tolist())))
 
-    def test_v13_records_two_round_batch8_epoch1_protocol(self):
+    def test_encoder_specific_actor_formats_and_training_protocols(self):
         import cpp_podem
         import benchmark_smartatpg as benchmark
         import prepare_smartatpg_benchmark as prepare_bundle
 
-        state = GATGRUSmartATPGPPOAgent(
-            {"test": self.graph}, rnd_beta=0, k_epochs=1,
-        ).policy_old.state_dict()
-        training_protocol = {
-            **BATCHED_TRAINING_PROTOCOL,
-            "reward_scheme": GAT_REWARD_SCHEME,
-        }
+        state = self.agent().policy_old.state_dict()
+        training_protocol = MEAN_BATCHED_TRAINING_PROTOCOL
         model_path = Path(self.temp.name) / "model_v13.txt"
         embedding_path = Path(self.temp.name) / "model_v13.emb"
         _export_actor(
@@ -853,22 +865,79 @@ class SmartATPGTests(unittest.TestCase):
             str(embedding_path), str(model_path), self.graph.circuit_hash,
             list(self.graph.names), "smartatpg",
         )
+        gat_state = GATGRUSmartATPGPPOAgent(
+            {"test": self.graph}, rnd_beta=0, k_epochs=4,
+        ).policy_old.state_dict()
+        gat_path = Path(self.temp.name) / "model_v14.txt"
+        gat_embeddings = Path(self.temp.name) / "model_v14.emb"
+        _export_actor(
+            gat_state,
+            gat_path,
+            training_protocol=GAT_BATCHED_TRAINING_PROTOCOL,
+        )
+        export_descriptors(gat_state, self.graph, gat_embeddings)
+        gat_model = load_portable_model(gat_path)
+        self.assertEqual(
+            gat_model.model_format,
+            "SMARTATPG_MODEL_V14_GAT_BATCH8_EPOCH4",
+        )
+        self.assertEqual(gat_model.k_epochs, 4)
+        cpp_podem.validate_actor_artifacts(
+            str(gat_embeddings), str(gat_path), self.graph.circuit_hash,
+            list(self.graph.names), "smartatpg",
+        )
+        old_gat_path = Path(self.temp.name) / "old_gat_v13.txt"
+        old_gat_path.write_text(
+            gat_path.read_text(encoding="utf-8").replace(
+                "SMARTATPG_MODEL_V14_GAT_BATCH8_EPOCH4",
+                "SMARTATPG_MODEL_V13_BATCH8_EPOCH1",
+                1,
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "does not match"):
+            load_portable_model(old_gat_path)
+        with self.assertRaisesRegex(RuntimeError, "does not match"):
+            cpp_podem.validate_actor_artifacts(
+                str(gat_embeddings), str(old_gat_path),
+                self.graph.circuit_hash, list(self.graph.names), "smartatpg",
+            )
         self.assertEqual(
             prepare_bundle._validate_training_protocol(
-                dict(training_protocol)
+                dict(GAT_BATCHED_TRAINING_PROTOCOL)
             ),
-            training_protocol,
+            GAT_BATCHED_TRAINING_PROTOCOL,
         )
         self.assertEqual(
             benchmark._validate_training_protocol(
-                dict(training_protocol)
+                dict(GAT_BATCHED_TRAINING_PROTOCOL)
             ),
-            training_protocol,
+            GAT_BATCHED_TRAINING_PROTOCOL,
         )
         with self.assertRaisesRegex(ValueError, "incompatible"):
             benchmark._validate_training_protocol({
-                **training_protocol, "k_epochs": 8,
+                **GAT_BATCHED_TRAINING_PROTOCOL, "k_epochs": 1,
             })
+        with self.assertRaisesRegex(ValueError, "protocol metadata is invalid"):
+            _export_actor(
+                gat_state,
+                Path(self.temp.name) / "old_gat_v13.txt",
+                training_protocol={
+                    **GAT_BATCHED_TRAINING_PROTOCOL,
+                    "k_epochs": 1,
+                },
+            )
+
+        old_checkpoint = GATGRUSmartATPGPPOAgent(
+            {"test": self.graph}, rnd_beta=0, k_epochs=4,
+        ).training_state_dict()
+        old_checkpoint["format"] = (
+            "RL_PODEM_SMARTATPG_GAT_GRU_PPO_V5_11D_CO_NO_BUF"
+        )
+        with self.assertRaisesRegex(ValueError, "Incompatible SmartATPG checkpoint"):
+            GATGRUSmartATPGPPOAgent(
+                {"test": self.graph}, rnd_beta=0, k_epochs=4,
+            ).load_training_state_dict(old_checkpoint)
 
     def test_gat_gru_dimensions_gradients_and_portable_parity(self):
         import cpp_podem
@@ -891,11 +960,16 @@ class SmartATPGTests(unittest.TestCase):
                 self.assertIsNotNone(parameter.grad)
                 self.assertGreater(float(parameter.grad.abs().sum()), 0.0)
 
-        model_path = Path(self.temp.name) / "gat_gru_v12.txt"
-        export_actor(policy.state_dict(), model_path)
+        model_path = Path(self.temp.name) / "gat_gru_v14.txt"
+        export_actor(
+            policy.state_dict(), model_path,
+            training_protocol=GAT_BATCHED_TRAINING_PROTOCOL,
+        )
         model = load_portable_model(model_path)
         self.assertEqual(model.encoder_variant, "level_gat_gru")
-        self.assertEqual(model.model_format, "SMARTATPG_MODEL_V12")
+        self.assertEqual(
+            model.model_format, "SMARTATPG_MODEL_V14_GAT_BATCH8_EPOCH4"
+        )
         self.assertEqual(model.actor_input_dim, 12)
         self.assertFalse(any(
             name.startswith(("gate_encoder.", "objective_value_embedding."))
@@ -938,7 +1012,7 @@ class SmartATPGTests(unittest.TestCase):
         agent = GATGRUSmartATPGPPOAgent(
             {"test": graph}, advantage_method="gae",
             normalize_returns=False, normalize_advantages=True,
-            return_scale=100, rnd_beta=0, k_epochs=1,
+            return_scale=100, rnd_beta=0, k_epochs=4,
         )
         gates = {
             name: GraphGate(name, graph.circuit_hash, index)
@@ -947,7 +1021,12 @@ class SmartATPGTests(unittest.TestCase):
         agent.select_backtrace_action(gates["mid"], 1, [gates["a"], gates["b"]])
         agent.finish_episode(10)
         before = {key: value.clone() for key, value in agent.policy.state_dict().items()}
-        agent.update()
+        with patch.object(
+            agent.optimizer, "step", wraps=agent.optimizer.step
+        ) as optimizer_step:
+            metrics = agent.update()
+        self.assertEqual(optimizer_step.call_count, 4)
+        self.assertEqual(metrics["epochs"], 4)
         for prefix in (
             "graph_encoder.forward_pass", "graph_encoder.reverse_pass",
         ):
@@ -1023,7 +1102,9 @@ class SmartATPGTests(unittest.TestCase):
         for version in range(5, 12):
             legacy_model = Path(self.temp.name) / f"legacy_model_v{version}.txt"
             legacy_model.write_text(f"SMARTATPG_MODEL_V{version}\n", encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "requires a V12 model"):
+            with self.assertRaisesRegex(
+                ValueError, "Unsupported SmartATPG model format"
+            ):
                 load_portable_model(legacy_model)
 
     def test_embedding_v1_artifact_is_rejected(self):

@@ -18,7 +18,7 @@ from smartatpg_portable import (
     FEATURE_SCHEMA,
     GATE_EMBEDDING_DIM,
     GRAPH_CONFIG,
-    MODEL_FORMAT,
+    GAT_MODEL_FORMAT,
     LEGACY_MODEL_FORMAT,
     export_embeddings,
     load_graph,
@@ -121,7 +121,7 @@ def _validate_training_protocol(protocol):
             batched
             and (
                 protocol["faults_per_update"] != 8
-                or protocol["k_epochs"] != 1
+                or protocol["k_epochs"] != 4
             )
         )
         or not isinstance(protocol["training_circuit_count"], int)
@@ -232,7 +232,7 @@ def _prepare_models(model_paths, manifest, output_dir):
             or model.actor_input_dim != record["actor_input_dim"]
             or model.decision_state_dim != record["decision_state_dim"]
             or model.model_format != (
-                MODEL_FORMAT
+                GAT_MODEL_FORMAT
                 if model.faults_per_update is not None
                 else LEGACY_MODEL_FORMAT
             )

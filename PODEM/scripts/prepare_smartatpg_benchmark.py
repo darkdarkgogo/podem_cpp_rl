@@ -15,7 +15,7 @@ from smartatpg_portable import (
     GAT_GRU_GRAPH_CONFIG,
     FEATURE_SCHEMA,
     GATE_EMBEDDING_DIM,
-    MODEL_FORMAT,
+    GAT_MODEL_FORMAT,
     LEGACY_MODEL_FORMAT,
     load_model,
     sha256_file,
@@ -51,7 +51,7 @@ def _validate_training_protocol(protocol):
             batched
             and (
                 protocol["faults_per_update"] != 8
-                or protocol["k_epochs"] != 1
+                or protocol["k_epochs"] != 4
             )
         )
         or not isinstance(protocol["training_circuit_count"], int)
@@ -165,7 +165,7 @@ def prepare(output_dir, gat_gru_model_path, resume=False):
             raise ValueError(f"Wrong encoder variant for benchmark model {name}")
         expected_dim = ACTOR_INPUT_DIM + int(variant == "level_gat_gru")
         expected_model_format = (
-            MODEL_FORMAT
+            GAT_MODEL_FORMAT
             if model.faults_per_update is not None
             else LEGACY_MODEL_FORMAT
         )

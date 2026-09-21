@@ -17,6 +17,10 @@ from .smartatpg_rewards import (
 from .smartatpg_features import FEATURE_DIM, FEATURE_SCHEMA, GRAPH_CONFIG_ID
 
 
+MEAN_MODEL_FORMAT = "SMARTATPG_MODEL_V13_BATCH8_EPOCH1"
+GAT_MODEL_FORMAT = "SMARTATPG_MODEL_V14_GAT_BATCH8_EPOCH4"
+
+
 def _load_cpp_embedding_artifact(
     path: Union[str, Path], *, expected_backend="smartatpg", include_metadata=False,
 ) -> Tuple[str, dict[str, torch.Tensor]]:
@@ -260,6 +264,7 @@ def export_actor_v2_state_dict(
     if not all(key in metadata for key in protocol_keys):
         raise ValueError("SmartATPG training protocol metadata is incomplete")
     manifest_hash = str(metadata["manifest_hash"])
+    expected_k_epochs = 4 if variant == "level_gat_gru" else 1
     if (
         len(manifest_hash) != 64
         or any(char not in "0123456789abcdef" for char in manifest_hash)
@@ -268,22 +273,26 @@ def export_actor_v2_state_dict(
             metadata["encoder_variant"]
         )
         or int(metadata["normal_rounds"]) != (2 if has_batch_protocol else 5)
+        or (variant == "level_gat_gru" and not has_batch_protocol)
         or int(metadata["training_circuit_count"]) <= 0
         or int(metadata["validation_circuit_count"]) <= 0
         or (
             has_batch_protocol
             and (
                 int(metadata["faults_per_update"]) != 8
-                or int(metadata["k_epochs"]) != 1
+                or int(metadata["k_epochs"]) != expected_k_epochs
             )
         )
     ):
         raise ValueError("SmartATPG training protocol metadata is invalid")
     with temporary.open("w", encoding="utf-8", newline="\n") as output:
-        output.write(
-            "SMARTATPG_MODEL_V13_BATCH8_EPOCH1\n"
-            if has_batch_protocol else "SMARTATPG_MODEL_V12\n"
+        model_format = (
+            GAT_MODEL_FORMAT
+            if variant == "level_gat_gru"
+            else MEAN_MODEL_FORMAT if has_batch_protocol
+            else "SMARTATPG_MODEL_V12"
         )
+        output.write(model_format + "\n")
         for key in (
             "backend", "feature_schema", "encoder_variant", "graph_config",
             "gate_embedding_dim", "actor_input_dim", "action_mask_dim",

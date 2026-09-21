@@ -14,11 +14,12 @@ try:
 except ModuleNotFoundError:
     torch = None
 
+from prepare_smartatpg_training import training_hyperparameters
+
 ROOT = Path(__file__).resolve().parents[1]
 BACKTRACK_LIMIT = 100
 NORMAL_TRAINING_ROUNDS = 2
 FAULTS_PER_UPDATE = 8
-PPO_EPOCHS_PER_UPDATE = 1
 
 
 def _atomic_json(path, value):
@@ -101,6 +102,7 @@ def main(argv=None):
     parser.add_argument("--continue-from", type=Path)
     parser.add_argument("--gpu", type=int, default=0)
     args = parser.parse_args(argv)
+    hyperparameters = training_hyperparameters("level_gat_gru")
     if not sys.platform.startswith("linux"):
         raise RuntimeError("This training launcher is intended for Linux")
     if args.rounds <= 0 or args.backtrack_limit <= 0:
@@ -157,7 +159,7 @@ def main(argv=None):
         str(gat_gru_dir),
         "--rounds", str(args.rounds),
         "--seed", str(args.seed),
-        "--k-epochs", str(PPO_EPOCHS_PER_UPDATE),
+        "--k-epochs", str(hyperparameters["k_epochs"]),
         "--encoder", "level_gat_gru",
     ]
     if args.continue_from:
