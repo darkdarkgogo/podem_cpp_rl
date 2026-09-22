@@ -188,10 +188,12 @@ public:
       int seed, const std::string &reward_scheme,
       const std::string &journal_path,
       const std::string &circuit_name,
-      const std::string &progress_label = "NATIVE_VALIDATE")
+      const std::string &progress_label = "NATIVE_VALIDATE",
+      bool record_all_reward_events = false)
       : actor_(std::move(actor)), total_faults_(total_faults), seed_(seed),
         reward_scheme_(reward_scheme), circuit_name_(circuit_name),
-        progress_label_(progress_label) {
+        progress_label_(progress_label),
+        record_all_reward_events_(record_all_reward_events) {
     if (reward_scheme_ != "cubic_backtrack_v1" &&
         reward_scheme_ != "legacy_pi_exponential") {
       throw std::invalid_argument("Unknown SmartATPG reward scheme");
@@ -236,7 +238,7 @@ public:
   }
   void on_backtrack(unsigned long sequence) override {
     if (reward_scheme_ != "cubic_backtrack_v1" ||
-        !decision_sequences_.count(sequence)) {
+        !records_reward_event(sequence)) {
       return;
     }
     ++backtrack_count_;
@@ -247,12 +249,12 @@ public:
     reward_ -= 0.5 + 9.802960494 * x * x * x;
   }
   void on_backtrace_step(unsigned long sequence) override {
-    if (decision_sequences_.count(sequence)) reward_ -= 0.1;
+    if (records_reward_event(sequence)) reward_ -= 0.1;
   }
   void on_pi_not_done(unsigned long sequence, int backtracks,
                       unsigned long pi_visits) override {
     if (reward_scheme_ != "legacy_pi_exponential" ||
-        !decision_sequences_.count(sequence)) {
+        !records_reward_event(sequence)) {
       return;
     }
 
@@ -329,6 +331,10 @@ public:
   const std::vector<NativeValidationRecord> &records() const { return records_; }
 
 private:
+  bool records_reward_event(unsigned long sequence) const {
+    return record_all_reward_events_ || decision_sequences_.count(sequence);
+  }
+
   void write_record(const NativeValidationRecord &record) {
     if (!journal_.is_open()) return;
     const int detected = record.outcome == TRUE ? 1 : 0;
@@ -359,6 +365,7 @@ private:
   std::string current_fault_id_;
   std::string circuit_name_;
   std::string progress_label_;
+  bool record_all_reward_events_ = false;
   double reward_ = 0.0;
   bool run_started_ = false;
   std::chrono::steady_clock::time_point interval_started_;
@@ -460,7 +467,7 @@ py::list run_native_scoap_validation(
   const auto actor = std::make_shared<NativeHeuristicPolicy>();
   const auto policy = std::make_shared<NativeValidationPolicy>(
       actor, fault_ids.size(), seed, reward_scheme, "", circuit_name,
-      "SCOAP_VALIDATE");
+      "SCOAP_VALIDATE", true);
   ATPG atpg;
   atpg.detected_num = 1;
   atpg.set_backtrack_limit(backtrack_limit);

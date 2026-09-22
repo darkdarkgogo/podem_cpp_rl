@@ -870,6 +870,44 @@ class SmartATPGTests(unittest.TestCase):
                         str(self.path), 200, 14, fault_ids, scheme, "test",
                     )
 
+    def test_native_scoap_validation_counts_sequence_zero_reward_events(self):
+        import cpp_podem
+        from compare_smartatpg_validation import ScoapValidationEvaluator
+        from train_smartatpg import _evaluate_fault
+
+        path = (
+            Path(__file__).resolve().parent / "fixtures"
+            / "native_scoap_sequence_zero.bench"
+        )
+        fault_id = "y:GO:sa0"
+        for scheme in (MEAN_REWARD_SCHEME, GAT_REWARD_SCHEME):
+            with self.subTest(reward_scheme=scheme):
+                reference = _evaluate_fault(
+                    ScoapValidationEvaluator(),
+                    {"name": "sequence-zero", "circuit": str(path)},
+                    fault_id,
+                    100,
+                    14,
+                    scheme,
+                )
+                native = cpp_podem.run_native_scoap_validation(
+                    str(path), 100, 14, [fault_id], scheme, "sequence-zero",
+                )
+
+                self.assertEqual(native[0]["fault_id"], fault_id)
+                self.assertEqual(native[0]["outcome"], reference["outcome"])
+                self.assertEqual(
+                    native[0]["backtracks"], reference["backtracks"]
+                )
+                self.assertEqual(
+                    native[0]["backtrace_steps"],
+                    reference["backtrace_steps"],
+                )
+                self.assertAlmostEqual(
+                    native[0]["return"], reference["return"], places=9,
+                )
+                self.assertAlmostEqual(native[0]["return"], 99.8, places=9)
+
     def test_v12_contains_fanin_mean_encoder_and_portable_inference_matches_torch(self):
         state = self.agent().policy_old.state_dict()
         model_path = Path(self.temp.name) / "model_v12.txt"

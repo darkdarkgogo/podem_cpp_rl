@@ -1,0 +1,5 @@
+INPUT(a)
+INPUT(b)
+n = AND(a, b)
+y = NOT(n)
+OUTPUT(y)
