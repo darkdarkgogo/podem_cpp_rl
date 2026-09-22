@@ -148,6 +148,14 @@ struct NativeValidationRecord {
   double seconds;
 };
 
+class NativeHeuristicPolicy : public smartatpg::DecisionPolicy {
+public:
+  bool needs_gate_names() const override { return false; }
+  int select(const smartatpg::DecisionRequest &request) override {
+    return request.heuristic_action;
+  }
+};
+
 std::string json_string(const std::string &value) {
   std::ostringstream output;
   output << '"';
@@ -179,9 +187,11 @@ public:
       std::shared_ptr<smartatpg::DecisionPolicy> actor, std::size_t total_faults,
       int seed, const std::string &reward_scheme,
       const std::string &journal_path,
-      const std::string &circuit_name)
+      const std::string &circuit_name,
+      const std::string &progress_label = "NATIVE_VALIDATE")
       : actor_(std::move(actor)), total_faults_(total_faults), seed_(seed),
-        reward_scheme_(reward_scheme), circuit_name_(circuit_name) {
+        reward_scheme_(reward_scheme), circuit_name_(circuit_name),
+        progress_label_(progress_label) {
     if (reward_scheme_ != "cubic_backtrack_v1" &&
         reward_scheme_ != "legacy_pi_exponential") {
       throw std::invalid_argument("Unknown SmartATPG reward scheme");
@@ -305,8 +315,14 @@ public:
     write_record(records_.back());
     if (records_.size() % 1000 == 0 || records_.size() == total_faults_) {
       if (journal_.is_open()) journal_.flush();
-      std::fprintf(stdout, "NATIVE_VALIDATE completed=%zu/%zu\n",
-                   records_.size(), total_faults_);
+      if (progress_label_ == "SCOAP_VALIDATE") {
+        std::fprintf(stdout, "%s circuit=%s completed=%zu/%zu\n",
+                     progress_label_.c_str(), circuit_name_.c_str(),
+                     records_.size(), total_faults_);
+      } else {
+        std::fprintf(stdout, "NATIVE_VALIDATE completed=%zu/%zu\n",
+                     records_.size(), total_faults_);
+      }
       std::fflush(stdout);
     }
   }
@@ -342,6 +358,7 @@ private:
   std::unordered_set<unsigned long> decision_sequences_;
   std::string current_fault_id_;
   std::string circuit_name_;
+  std::string progress_label_;
   double reward_ = 0.0;
   bool run_started_ = false;
   std::chrono::steady_clock::time_point interval_started_;
@@ -411,6 +428,72 @@ py::list run_native_validation(
     const auto &record = records[index];
     if (record.fault_id != fault_ids[index]) {
       throw std::runtime_error("Native validation returned faults out of order");
+    }
+    py::dict item;
+    item["fault_id"] = record.fault_id;
+    item["outcome"] = record.outcome;
+    item["backtracks"] = record.backtracks;
+    item["backtrace_steps"] = record.backtrace_steps;
+    item["return"] = record.reward;
+    item["atpg_seconds"] = record.seconds;
+    result.append(item);
+  }
+  return result;
+}
+
+py::list run_native_scoap_validation(
+    const std::string &circuit_path, int backtrack_limit, int seed,
+    const std::vector<std::string> &fault_ids,
+    const std::string &reward_scheme, const std::string &circuit_name) {
+  if (fault_ids.empty()) {
+    throw std::invalid_argument("Native validation requires fault IDs");
+  }
+  if (backtrack_limit != 100) {
+    throw std::invalid_argument(
+        "Native validation requires backtrack_limit=100");
+  }
+  if (reward_scheme != "cubic_backtrack_v1" &&
+      reward_scheme != "legacy_pi_exponential") {
+    throw std::invalid_argument("Unknown SmartATPG reward scheme");
+  }
+
+  const auto actor = std::make_shared<NativeHeuristicPolicy>();
+  const auto policy = std::make_shared<NativeValidationPolicy>(
+      actor, fault_ids.size(), seed, reward_scheme, "", circuit_name,
+      "SCOAP_VALIDATE");
+  ATPG atpg;
+  atpg.detected_num = 1;
+  atpg.set_backtrack_limit(backtrack_limit);
+  atpg.set_seed(seed);
+  atpg.set_total_attempt_num(1);
+  atpg.set_SAF_atpg(true);
+  atpg.set_SCOAP(true);
+  atpg.set_rl_mode("backtrace_rl");
+  atpg.set_quiet(true);
+  {
+    py::gil_scoped_release release;
+    atpg.input(circuit_path);
+    atpg.set_decision_policy(policy);
+    atpg.level_circuit();
+    atpg.rearrange_gate_inputs();
+    atpg.create_dummy_gate();
+    atpg.generate_fault_list();
+    atpg.retain_faults(fault_ids);
+    atpg.set_drop_detected_faults(false);
+    policy->start_run();
+    atpg.test();
+  }
+  const auto &records = policy->records();
+  if (records.size() != fault_ids.size()) {
+    throw std::runtime_error(
+        "Native SCOAP validation returned the wrong fault count");
+  }
+  py::list result;
+  for (std::size_t index = 0; index < records.size(); ++index) {
+    const auto &record = records[index];
+    if (record.fault_id != fault_ids[index]) {
+      throw std::runtime_error(
+          "Native SCOAP validation returned faults out of order");
     }
     py::dict item;
     item["fault_id"] = record.fault_id;
@@ -581,6 +664,10 @@ PYBIND11_MODULE(cpp_podem, module) {
              py::arg("seed"), py::arg("fault_ids"),
              py::arg("reward_scheme"),
              py::arg("journal_path") = "", py::arg("circuit_name") = "");
+  module.def("run_native_scoap_validation", &run_native_scoap_validation,
+             py::arg("circuit_path"), py::arg("backtrack_limit"),
+             py::arg("seed"), py::arg("fault_ids"),
+             py::arg("reward_scheme"), py::arg("circuit_name") = "");
   module.def("profile_stuck_at", &profile_stuck_at,
              py::arg("circuit_path"), py::arg("backtrack_limit") = 97,
              py::arg("seed") = 14, py::arg("fault_map_path") = "",

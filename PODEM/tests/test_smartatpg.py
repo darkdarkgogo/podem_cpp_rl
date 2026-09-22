@@ -813,6 +813,63 @@ class SmartATPGTests(unittest.TestCase):
                         fault_ids, scheme, "", "",
                     )
 
+    def test_native_scoap_validation_matches_python_policy(self):
+        import cpp_podem
+        from compare_smartatpg_validation import ScoapValidationEvaluator
+        from train_smartatpg import _evaluate_fault
+
+        fault_ids = [
+            item["fault_id"]
+            for item in catalog_cpp_podem(self.path)["faults"]
+        ]
+        for scheme in (MEAN_REWARD_SCHEME, GAT_REWARD_SCHEME):
+            with self.subTest(reward_scheme=scheme):
+                evaluator = ScoapValidationEvaluator()
+                expected = [
+                    _evaluate_fault(
+                        evaluator,
+                        {"name": "test", "circuit": str(self.path)},
+                        fault_id,
+                        100,
+                        14,
+                        scheme,
+                    )
+                    for fault_id in fault_ids
+                ]
+                native = cpp_podem.run_native_scoap_validation(
+                    str(self.path), 100, 14, fault_ids, scheme, "test",
+                )
+
+                self.assertEqual(
+                    [item["fault_id"] for item in native], fault_ids
+                )
+                for actual, reference in zip(native, expected):
+                    self.assertEqual(actual["fault_id"], reference["fault_id"])
+                    self.assertEqual(actual["outcome"], reference["outcome"])
+                    self.assertEqual(
+                        actual["backtracks"], reference["backtracks"]
+                    )
+                    self.assertEqual(
+                        actual["backtrace_steps"], reference["backtrace_steps"]
+                    )
+                    self.assertAlmostEqual(
+                        actual["return"], reference["return"], places=9,
+                    )
+                    self.assertGreaterEqual(actual["atpg_seconds"], 0.0)
+
+                with self.assertRaisesRegex(ValueError, "fault IDs"):
+                    cpp_podem.run_native_scoap_validation(
+                        str(self.path), 100, 14, [], scheme, "test",
+                    )
+                with self.assertRaisesRegex(ValueError, "reward scheme"):
+                    cpp_podem.run_native_scoap_validation(
+                        str(self.path), 100, 14, fault_ids, "unknown", "test",
+                    )
+                with self.assertRaisesRegex(ValueError, "backtrack_limit=100"):
+                    cpp_podem.run_native_scoap_validation(
+                        str(self.path), 200, 14, fault_ids, scheme, "test",
+                    )
+
     def test_v12_contains_fanin_mean_encoder_and_portable_inference_matches_torch(self):
         state = self.agent().policy_old.state_dict()
         model_path = Path(self.temp.name) / "model_v12.txt"
