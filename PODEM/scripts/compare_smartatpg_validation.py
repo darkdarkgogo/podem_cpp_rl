@@ -4,11 +4,11 @@ import argparse
 import csv
 import json
 import math
+import time
 from pathlib import Path
 
 from train_smartatpg import (
     _atomic_json,
-    _evaluate_fault,
     _load_validation_catalogs,
     _manifest_hash,
     _resolve_circuit_records,
@@ -141,6 +141,61 @@ class ScoapValidationEvaluator:
             "",
             True,
         ))
+
+
+def _evaluate_scoap_batch(item, fault_ids, backtrack_limit, seed, reward_scheme):
+    try:
+        import cpp_podem
+    except ImportError as error:
+        raise ImportError(
+            "Native SCOAP validation requires the rebuilt cpp_podem extension"
+        ) from error
+    if not hasattr(cpp_podem, "run_native_scoap_validation"):
+        raise RuntimeError(
+            "cpp_podem is stale; rebuild it with: python -m pip install -e ."
+        )
+    started = time.perf_counter()
+    native_records = cpp_podem.run_native_scoap_validation(
+        str(Path(item["circuit"]).resolve()), backtrack_limit, seed, fault_ids,
+        reward_scheme, item["name"],
+    )
+    wall_seconds = time.perf_counter() - started
+    if len(native_records) != len(fault_ids):
+        raise RuntimeError("Native SCOAP validation returned the wrong fault count")
+    records = []
+    for fault_id, raw in zip(fault_ids, native_records):
+        if raw["fault_id"] != fault_id:
+            raise RuntimeError("Native SCOAP validation returned faults out of order")
+        outcome = int(raw["outcome"])
+        record_return = float(raw["return"])
+        atpg_seconds = float(raw["atpg_seconds"])
+        if not math.isfinite(record_return):
+            raise ValueError(
+                f"Non-finite validation return for {item['name']} {fault_id}"
+            )
+        if not math.isfinite(atpg_seconds):
+            raise ValueError(
+                f"Non-finite validation time for {item['name']} {fault_id}"
+            )
+        records.append({
+            "circuit": item["name"],
+            "fault_id": fault_id,
+            "outcome": outcome,
+            "detected": int(outcome == 1),
+            "redundant": int(outcome == 0),
+            "aborted": int(outcome not in (0, 1)),
+            "backtracks": int(raw["backtracks"]),
+            "backtrace_steps": int(raw["backtrace_steps"]),
+            "return": record_return,
+            "test_vectors": int(outcome == 1),
+            "atpg_seconds": atpg_seconds,
+        })
+    print(
+        f"SCOAP_CIRCUIT_DONE circuit={item['name']} "
+        f"faults={len(records)} wall_s={wall_seconds:.3f}",
+        flush=True,
+    )
+    return records
 
 
 def _read_json(path, description):
@@ -378,10 +433,10 @@ def _scoap_identity(identity, seed):
     }
 
 
-def _load_or_run_scoap(output_dir, identity, circuits, seed):
+def _load_or_run_scoap(output_dir, identity, circuits, seed, force=False):
     path = Path(output_dir) / "scoap_validation.json"
     expected_identity = _scoap_identity(identity, seed)
-    if path.is_file():
+    if path.is_file() and not force:
         saved = _read_json(path, "SCOAP validation cache")
         if saved.get("format") != SCOAP_FORMAT:
             raise ValueError("SCOAP validation cache has the wrong format")
@@ -396,19 +451,15 @@ def _load_or_run_scoap(output_dir, identity, circuits, seed):
         _validate_summary(recalculated, circuits, 0)
         return saved
 
-    evaluator = ScoapValidationEvaluator()
-    by_name = {item["name"]: item for item in circuits}
-    records = [
-        _evaluate_fault(
-            evaluator,
-            by_name[circuit_name],
-            fault_id,
+    records = []
+    for item in circuits:
+        records.extend(_evaluate_scoap_batch(
+            item,
+            item["episode_fault_ids"],
             identity["backtrack_limit"],
             seed,
             identity["reward_scheme"],
-        )
-        for circuit_name, fault_id in _validation_order(circuits)
-    ]
+        ))
     summary = _summarize_validation(records, circuits, 0)
     _validate_summary(summary, circuits, 0)
     payload = {
@@ -441,6 +492,7 @@ def build_validation_comparison(
     gat_manifest_path, mean_manifest_path, gat_dir=None, mean_dir=None,
     output_dir=None,
     seed=None,
+    force_scoap=False,
 ):
     if output_dir is None:
         # Backward-compatible Python call shape used by older tooling:
@@ -506,7 +558,7 @@ def build_validation_comparison(
             )
 
     baseline_payload = _load_or_run_scoap(
-        output_dir, gat_identity, circuits, seed
+        output_dir, gat_identity, circuits, seed, force=force_scoap,
     )
     baseline_summary = baseline_payload["summary"]
     baseline_rows = {
@@ -606,10 +658,11 @@ def main(argv=None):
     parser.add_argument("mean_dir", type=Path)
     parser.add_argument("output_dir", type=Path)
     parser.add_argument("--seed", type=int)
+    parser.add_argument("--force-scoap", action="store_true")
     args = parser.parse_args(argv)
     build_validation_comparison(
         args.gat_manifest, args.mean_manifest, args.gat_dir, args.mean_dir,
-        args.output_dir, args.seed,
+        args.output_dir, args.seed, args.force_scoap,
     )
 
 

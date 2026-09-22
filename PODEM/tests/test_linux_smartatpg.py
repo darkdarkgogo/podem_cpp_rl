@@ -8,7 +8,7 @@ import unittest
 from concurrent.futures import Future
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
@@ -20,7 +20,8 @@ from benchmark_smartatpg import (
     _summarize_preprocessing, _write_reports, percentage_change, run_benchmark,
 )
 from compare_smartatpg_validation import (
-    ScoapValidationEvaluator, build_validation_comparison,
+    _evaluate_scoap_batch, _load_or_run_scoap, build_validation_comparison,
+    main as compare_validation_main,
 )
 from run_smartatpg_benchmark_linux import main as run_benchmark_main
 from run_smartatpg_training_linux import main as run_training_main
@@ -178,9 +179,20 @@ class ValidationComparisonTests(unittest.TestCase):
         return directory
 
     @staticmethod
-    def _baseline_record(
-        _evaluator, item, fault_id, _limit, _seed, _reward_scheme,
+    def _native_scoap_records(
+        _circuit_path, _limit, _seed, fault_ids, _reward_scheme, _circuit_name,
     ):
+        return [{
+            "fault_id": fault_id,
+            "outcome": 1 if fault_id == "f0" else 0,
+            "backtracks": 10,
+            "backtrace_steps": 20,
+            "return": 0.0,
+            "atpg_seconds": 2.0,
+        } for fault_id in fault_ids]
+
+    @staticmethod
+    def _baseline_record(item, fault_id):
         detected = int(fault_id == "f0")
         return {
             "circuit": item["name"], "fault_id": fault_id,
@@ -223,8 +235,10 @@ class ValidationComparisonTests(unittest.TestCase):
                 side_effect=lambda _manifest, items: items,
             ),
             patch(
-                "compare_smartatpg_validation._evaluate_fault",
-                side_effect=self._baseline_record,
+                "compare_smartatpg_validation._evaluate_scoap_batch",
+                side_effect=lambda item, fault_ids, *_args: [
+                    self._baseline_record(item, fault_id) for fault_id in fault_ids
+                ],
             ),
         )
         return manifest, gat, mean, output, patches
@@ -241,7 +255,8 @@ class ValidationComparisonTests(unittest.TestCase):
                     manifest, gat, mean, output
                 )
             self.assertEqual(result, resumed)
-            self.assertEqual(evaluate.call_count, 2)
+            self.assertEqual(evaluate.call_count, 1)
+            self.assertEqual(evaluate.call_args.args[1], ["f0", "f1"])
             self.assertEqual(
                 result["format"], "SMARTATPG_DUAL_VALIDATION_COMPARISON_V2"
             )
@@ -292,29 +307,106 @@ class ValidationComparisonTests(unittest.TestCase):
             self.assertNotIn("gat_return_total", direct_row)
             self.assertNotIn("return_total_gat_minus_mean", direct_row)
 
-    def test_scoap_evaluator_uses_native_backtrace_heuristic_protocol(self):
-        captured = {}
-
-        def run_stuck_at(*args):
-            captured["args"] = args
-            return {"episodes": 1, "atpg_seconds": 0.25}
-
-        event_callback = object()
+    def test_scoap_batch_normalizes_one_native_circuit_call(self):
+        item = {
+            "name": "v", "circuit": "v.bench",
+            "episode_fault_ids": ["f0", "f1"],
+        }
+        native = Mock(side_effect=self._native_scoap_records)
         with patch.dict(sys.modules, {
-            "cpp_podem": SimpleNamespace(run_stuck_at=run_stuck_at),
+            "cpp_podem": SimpleNamespace(run_native_scoap_validation=native),
         }):
-            result = ScoapValidationEvaluator().run(
-                "v.bench", backtrack_limit=100, seed=2026,
-                fault_ids=["f0"], use_scoap=False,
-                event_callback=event_callback,
+            records = _evaluate_scoap_batch(
+                item, item["episode_fault_ids"], 100, 2026,
+                "cubic_backtrack_v1",
             )
-        args = captured["args"]
-        self.assertEqual(result["episodes"], 1)
-        self.assertEqual(args[2], event_callback)
-        self.assertEqual(args[3:6], (100, 2026, ["f0"]))
-        self.assertEqual(args[7], "backtrace_rl")
-        self.assertIs(args[9], True)
-        self.assertEqual(args[1]({"heuristic_action": 1}), 1)
+        native.assert_called_once_with(
+            str(Path("v.bench").resolve()), 100, 2026, ["f0", "f1"],
+            "cubic_backtrack_v1", "v",
+        )
+        self.assertEqual(len(records), 2)
+        self.assertEqual(set(records[0]), {
+            "circuit", "fault_id", "outcome", "detected", "redundant",
+            "aborted", "backtracks", "backtrace_steps", "return",
+            "test_vectors", "atpg_seconds",
+        })
+        self.assertEqual(records[0]["circuit"], "v")
+        self.assertEqual(records[0]["detected"], 1)
+        self.assertEqual(records[1]["redundant"], 1)
+
+    def test_scoap_batch_rejects_invalid_native_results(self):
+        item = {"name": "v", "circuit": "v.bench"}
+        cases = (
+            ([], "wrong fault count"),
+            ([{"fault_id": "f1", "outcome": 1, "backtracks": 0,
+               "backtrace_steps": 0, "return": 0.0, "atpg_seconds": 0.0}],
+             "out of order"),
+            ([{"fault_id": "f0", "outcome": 1, "backtracks": 0,
+               "backtrace_steps": 0, "return": float("nan"), "atpg_seconds": 0.0}],
+             "Non-finite validation return"),
+            ([{"fault_id": "f0", "outcome": 1, "backtracks": 0,
+               "backtrace_steps": 0, "return": 0.0, "atpg_seconds": float("inf")}],
+             "Non-finite validation time"),
+        )
+        for native_result, message in cases:
+            with self.subTest(message=message), patch.dict(sys.modules, {
+                "cpp_podem": SimpleNamespace(
+                    run_native_scoap_validation=lambda *_args: native_result,
+                ),
+            }), self.assertRaisesRegex((RuntimeError, ValueError), message):
+                _evaluate_scoap_batch(
+                    item, ["f0"], 100, 2026, "cubic_backtrack_v1",
+                )
+        with patch.dict(sys.modules, {"cpp_podem": SimpleNamespace()}), self.assertRaisesRegex(
+            RuntimeError, "python -m pip install -e ."
+        ):
+            _evaluate_scoap_batch(item, ["f0"], 100, 2026, "cubic_backtrack_v1")
+
+    def test_scoap_cache_reuse_force_bypass_and_cli_forwarding(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest, gat, mean, output, patches = self._build(root)
+            native = Mock(side_effect=self._native_scoap_records)
+            with patches[0], patches[1], patch.dict(sys.modules, {
+                "cpp_podem": SimpleNamespace(run_native_scoap_validation=native),
+            }):
+                build_validation_comparison(manifest, gat, mean, output)
+                build_validation_comparison(manifest, gat, mean, output)
+                build_validation_comparison(
+                    manifest, gat, mean, output, force_scoap=True,
+                )
+            self.assertEqual(native.call_count, 2)
+            self.assertTrue((output / "scoap_validation.json").is_file())
+        with patch("compare_smartatpg_validation.build_validation_comparison") as build:
+            compare_validation_main([
+                "gat-manifest", "mean-manifest", "gat-dir", "mean-dir",
+                "output-dir", "--force-scoap",
+            ])
+        self.assertTrue(build.call_args.args[-1])
+
+    def test_scoap_load_batches_once_per_circuit(self):
+        circuits = [
+            {"name": "v", "circuit": "v.bench", "episode_fault_ids": ["f0", "f1"]},
+            {"name": "w", "circuit": "w.bench", "episode_fault_ids": ["f2"]},
+        ]
+        identity = {
+            "manifest_hash": "manifest", "validation_catalog_hash": "catalog",
+            "validation_circuits": ["v", "w"], "backtrack_limit": 100,
+            "reward_scheme": "cubic_backtrack_v1",
+        }
+        native = Mock(side_effect=self._native_scoap_records)
+        with tempfile.TemporaryDirectory() as directory, patch.dict(sys.modules, {
+            "cpp_podem": SimpleNamespace(run_native_scoap_validation=native),
+        }):
+            output = Path(directory)
+            _load_or_run_scoap(output, identity, circuits, 2026)
+            _load_or_run_scoap(output, identity, circuits, 2026)
+            _load_or_run_scoap(output, identity, circuits, 2026, force=True)
+        self.assertEqual(native.call_count, 4)
+        self.assertEqual(
+            [call.args[3] for call in native.call_args_list],
+            [["f0", "f1"], ["f2"], ["f0", "f1"], ["f2"]],
+        )
 
     def test_rejects_incompatible_run_identity_and_rounds(self):
         cases = (
@@ -382,14 +474,13 @@ class ValidationComparisonTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             manifest, gat, mean, output, patches = self._build(root)
-            def zero_work(evaluator, item, fault_id, limit, seed, reward_scheme):
-                record = self._baseline_record(
-                    evaluator, item, fault_id, limit, seed, reward_scheme,
-                )
-                record.update(backtracks=0, backtrace_steps=0, atpg_seconds=0.0)
-                return record
+            def zero_work(item, fault_ids, _limit, _seed, _reward_scheme):
+                records = [self._baseline_record(item, fault_id) for fault_id in fault_ids]
+                for record in records:
+                    record.update(backtracks=0, backtrace_steps=0, atpg_seconds=0.0)
+                return records
             with patches[0], patches[1], patch(
-                "compare_smartatpg_validation._evaluate_fault", side_effect=zero_work
+                "compare_smartatpg_validation._evaluate_scoap_batch", side_effect=zero_work
             ):
                 result = build_validation_comparison(manifest, gat, mean, output)
             self.assertIsNone(result["comparisons"][0]["rows"][0]["backtracks_reduction_percent"])
