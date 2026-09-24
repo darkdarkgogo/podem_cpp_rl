@@ -1,6 +1,8 @@
 import importlib.util
 import hashlib
 import json
+import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -53,10 +55,39 @@ class SmartATPGEntryPointTests(unittest.TestCase):
             )
             json_path = root / "value.json"
             lines_path = root / "records.jsonl"
-            atomic_json(json_path, {"value": 1})
-            atomic_json_lines(lines_path, [{"value": 1}, {"value": 2}])
-            self.assertTrue(json_path.read_bytes().endswith(b"\n"))
-            self.assertEqual(lines_path.read_bytes().count(b"\n"), 2)
+            atomic_json(json_path, {"z": [2, 1], "a": {"b": True}})
+            atomic_json_lines(lines_path, [{"z": 2, "a": 1}, {"value": 2}])
+            expected_json = (
+                '{\n  "a": {\n    "b": true\n  },\n  "z": [\n'
+                '    2,\n    1\n  ]\n}\n'
+            ).replace("\n", os.linesep).encode("utf-8")
+            self.assertEqual(json_path.read_bytes(), expected_json)
+            self.assertEqual(
+                lines_path.read_bytes(),
+                b'{"a":1,"z":2}\n{"value":2}\n',
+            )
+
+    def test_validation_core_import_is_transitively_torch_free(self):
+        script = f"""
+import builtins
+import sys
+sys.path.insert(0, {str(PYTHON)!r})
+real_import = builtins.__import__
+def without_torch(name, *args, **kwargs):
+    if name == 'torch' or name.startswith('torch.'):
+        raise AssertionError('validation_core attempted to import torch')
+    return real_import(name, *args, **kwargs)
+builtins.__import__ = without_torch
+import rl_podem.validation_core
+assert 'torch' not in sys.modules
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", script],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_training_and_validation_modules_have_one_way_boundaries(self):
         training_source = (
