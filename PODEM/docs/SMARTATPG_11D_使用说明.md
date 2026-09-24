@@ -72,6 +72,10 @@ Validation 不提供 checkpoint/resume，也不读取旧 SCOAP cache。中断后
 
 三种方法使用同一 ordered validation fault catalog、seed 和 backtrack limit，并按顺序执行以避免并发负载污染比较。
 
+## 内部代码边界
+
+`rl_podem.training` 只包含训练工作流；`rl_podem.validation` 负责独立验证编排；不依赖 PyTorch 的 catalog、native batch、summary 和 best-round score 集中在 `rl_podem.validation_core`。两个工作流只通过 `rl_podem.artifact_io` 共享 checkpoint 格式和原子文件写入约定，验证实现不再导入训练实现。
+
 ## 其他工具
 
 通用 BENCH 转换、数据生成、绘图与 native build 工具位于 `PODEM/tools/`。它们不是 SmartATPG 正式训练/验证入口。

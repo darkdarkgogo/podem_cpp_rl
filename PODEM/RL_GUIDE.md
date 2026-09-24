@@ -36,3 +36,12 @@ python3 scripts/validate_smartatpg.py \
 主表对每个验证电路并排给出三种方法的 backtracks、backtrace steps、ATPG runtime 和 fault coverage，最后一行为 TOTAL。验证不提供 resume，也不会读取旧的 SCOAP cache。
 
 正式 runtime 只使用逐 fault `atpg_seconds` 的和：模型/embedding 加载、图构建、circuit input、levelize、fault-list generation 与写盘不计时；`ATPG::test()` 内的 Actor forward 计时。
+
+## 内部模块边界
+
+- `rl_podem.training` 只负责训练、恢复和每轮模型导出；
+- `rl_podem.validation` 只负责 fresh validation 编排与结果写出；
+- `rl_podem.validation_core` 负责 fault catalog、native batch、记录汇总和 best-round score，且不依赖 PyTorch；
+- `rl_podem.artifact_io` 提供训练和验证共用的 checkpoint 格式标识、manifest hash 与原子 JSON 写入。
+
+`validation` 不导入 `training`，`training` 也不导入 `validation_core`。
