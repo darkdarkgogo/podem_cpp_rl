@@ -1,4 +1,5 @@
 import importlib.util
+import hashlib
 import json
 import sys
 import tempfile
@@ -14,6 +15,12 @@ if str(PYTHON) not in sys.path:
     sys.path.insert(0, str(PYTHON))
 
 from rl_podem.validation_tables import build_three_way_row
+from rl_podem.artifact_io import (
+    INFERENCE_CHECKPOINT_FORMAT,
+    atomic_json,
+    atomic_json_lines,
+    manifest_hash,
+)
 
 try:
     import torch
@@ -33,6 +40,39 @@ def _load_train_entry():
 
 
 class SmartATPGEntryPointTests(unittest.TestCase):
+    def test_shared_artifact_contract_and_atomic_writers(self):
+        self.assertEqual(
+            INFERENCE_CHECKPOINT_FORMAT, "SMARTATPG_INFERENCE_ROUND_V1",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = root / "manifest.json"
+            manifest.write_bytes(b"manifest\n")
+            self.assertEqual(
+                manifest_hash(manifest), hashlib.sha256(b"manifest\n").hexdigest(),
+            )
+            json_path = root / "value.json"
+            lines_path = root / "records.jsonl"
+            atomic_json(json_path, {"value": 1})
+            atomic_json_lines(lines_path, [{"value": 1}, {"value": 2}])
+            self.assertTrue(json_path.read_bytes().endswith(b"\n"))
+            self.assertEqual(lines_path.read_bytes().count(b"\n"), 2)
+
+    def test_training_and_validation_modules_have_one_way_boundaries(self):
+        training_source = (
+            PYTHON / "rl_podem" / "training.py"
+        ).read_text(encoding="utf-8")
+        validation_source = (
+            PYTHON / "rl_podem" / "validation.py"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("from .training import", validation_source)
+        self.assertNotIn("validation_core", training_source)
+        for name in (
+            "_native_validation_batch", "_load_validation_catalogs",
+            "_summarize_validation", "validation_score",
+        ):
+            self.assertNotIn(f"def {name}(", training_source)
+
     def test_scripts_directory_has_only_two_experiment_entries(self):
         self.assertEqual(
             {path.name for path in SCRIPTS.glob("*.py")},

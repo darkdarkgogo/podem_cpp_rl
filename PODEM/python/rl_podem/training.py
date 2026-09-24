@@ -9,6 +9,11 @@ from pathlib import Path
 
 import torch
 
+from .artifact_io import (
+    INFERENCE_CHECKPOINT_FORMAT,
+    atomic_json as _atomic_json,
+    manifest_hash as _manifest_hash,
+)
 from .data_split import (
     BACKTRACK_LIMIT,
     FAULTS_PER_UPDATE,
@@ -46,7 +51,6 @@ from .smartatpg_features import load_circuit_graph
 
 CHECKPOINT_FORMAT = "SMARTATPG_DATA_SPLIT_TRAINING_V6_11D_CO_NO_BUF"
 BEST_CHECKPOINT_FORMAT = "SMARTATPG_DATA_SPLIT_BEST_V6_11D_CO_NO_BUF"
-INFERENCE_CHECKPOINT_FORMAT = "SMARTATPG_INFERENCE_ROUND_V1"
 AGENT_TYPES = {
     "fanin_mean": SmartATPGPPOAgent,
     "level_gat_gru": GATGRUSmartATPGPPOAgent,
@@ -58,10 +62,6 @@ PAPER_REWARD = {
     "detected": 100.0,
     "undetected": -100.0,
 }
-
-
-def _manifest_hash(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
 def _clone(value):
@@ -81,27 +81,6 @@ def _atomic_torch_save(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     torch.save(value, temporary)
-    temporary.replace(path)
-
-
-def _atomic_json(path, value):
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(
-        json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
-    temporary.replace(path)
-
-
-def _atomic_json_lines(path, records):
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    with temporary.open("w", encoding="utf-8", newline="\n") as stream:
-        for record in records:
-            stream.write(json.dumps(record, sort_keys=True, separators=(",", ":")))
-            stream.write("\n")
     temporary.replace(path)
 
 

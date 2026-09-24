@@ -8,16 +8,18 @@ from pathlib import Path
 
 import torch
 
+from .artifact_io import (
+    INFERENCE_CHECKPOINT_FORMAT,
+    atomic_json as _atomic_json,
+    atomic_json_lines as _atomic_json_lines,
+    manifest_hash as _manifest_hash,
+)
 from .smartatpg_artifacts import export_descriptors, policy_from_state
 from .smartatpg_features import load_circuit_graph
 from .smartatpg_rewards import reward_scheme_for_encoder
 from .data_split import discover_validation_dataset
 from .training import (
-    INFERENCE_CHECKPOINT_FORMAT,
-    _atomic_json,
-    _atomic_json_lines,
     _load_validation_catalogs,
-    _manifest_hash,
     _native_validation_batch,
     _summarize_validation,
     validation_score,
