@@ -23,6 +23,7 @@ Each model directory contains:
 - `inference_final.pth` and `model_final.txt` for the final trained state.
 
 Training does not load validation graphs, generate validation embeddings, call native validation, compute validation scores, or write validation state/metrics/best-model files.
+Its preparation manifest contains only training circuits and training artifact hashes; validation circuits are discovered and checked only by the independent validation command.
 
 ## Validation behavior
 
@@ -59,4 +60,3 @@ SmartATPG orchestration, comparison, and preparation launchers superseded by the
 - The comparison has six circuit rows plus TOTAL and uses only summed per-fault `atpg_seconds` for runtime.
 - Validation does not create `validation_state.json`, resume state, or consume a prior SCOAP result.
 - Documentation names only `train_smartatpg.py` and `validate_smartatpg.py` as formal SmartATPG experiment commands.
-

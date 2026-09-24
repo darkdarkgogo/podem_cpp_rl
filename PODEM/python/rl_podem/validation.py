@@ -11,6 +11,7 @@ import torch
 from .smartatpg_artifacts import export_descriptors, policy_from_state
 from .smartatpg_features import load_circuit_graph
 from .smartatpg_rewards import reward_scheme_for_encoder
+from .data_split import discover_validation_dataset
 from .training import (
     INFERENCE_CHECKPOINT_FORMAT,
     _atomic_json,
@@ -18,7 +19,6 @@ from .training import (
     _load_validation_catalogs,
     _manifest_hash,
     _native_validation_batch,
-    _resolve_circuit_records,
     _summarize_validation,
     validation_score,
 )
@@ -233,9 +233,8 @@ def run_fresh_validation(run_dir, dataset_root=None, output_dir=None, seed=2026)
     run_summary = _read_json(run_dir / "train_summary.json", "training summary")
     if run_summary.get("format") != "SMARTATPG_DUAL_TRAINING_V3_SEPARATED_VALIDATION":
         raise ValueError("Training summary is incompatible with separated validation")
-    if dataset_root is not None and Path(dataset_root).resolve() != Path(
-        run_summary["dataset_root"]
-    ).resolve():
+    training_dataset_root = Path(run_summary["dataset_root"]).resolve()
+    if dataset_root is not None and Path(dataset_root).resolve() != training_dataset_root:
         raise ValueError("Validation dataset root differs from the training run")
     if int(seed) != int(run_summary["seed"]):
         raise ValueError("Validation seed must match the training seed")
@@ -243,18 +242,13 @@ def run_fresh_validation(run_dir, dataset_root=None, output_dir=None, seed=2026)
     manifests = {key: Path(value) for key, value in run_summary["manifests"].items()}
     model_dirs = {key: Path(value) for key, value in run_summary["training_dirs"].items()}
     model_specs = {"gat": "level_gat_gru", "mean": "fanin_mean"}
-    circuit_sets = {}
+    validation_paths = discover_validation_dataset(training_dataset_root)
+    circuits = [
+        {"name": path.stem, "circuit": str(path)} for path in validation_paths
+    ]
+    circuits = _load_validation_catalogs({"format": "fresh-validation"}, circuits)
     for name in ("gat", "mean"):
-        manifest = _read_json(manifests[name], f"{name} training manifest")
-        _, circuits = _resolve_circuit_records(manifest, manifests[name])
-        circuit_sets[name] = _load_validation_catalogs(manifest, circuits)
-    catalogs = {
-        name: [(item["name"], item["episode_fault_ids"]) for item in circuits]
-        for name, circuits in circuit_sets.items()
-    }
-    if catalogs["gat"] != catalogs["mean"]:
-        raise ValueError("GAT and Mean validation fault catalogs differ")
-    circuits = circuit_sets["gat"]
+        _read_json(manifests[name], f"{name} training manifest")
 
     model_results = {}
     selection = {}

@@ -82,6 +82,8 @@ class SCOAPFeatureTests(unittest.TestCase):
         root = Path(__file__).resolve().parents[1]
         circuit = root / "sample_circuits/c432_binary.bench"
         fault_map = root / "sample_circuits/c432_binary.faultmap"
+        if not circuit.is_file() or not fault_map.is_file():
+            self.skipTest("c432 binary fixture is not present in this checkout")
         baseline = {
             row["fault_id"]: row for row in profile_cpp_podem(
                 circuit, backtrack_limit=2000, seed=14,

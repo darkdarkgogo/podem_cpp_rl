@@ -1,5 +1,7 @@
 import importlib.util
+import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -12,6 +14,13 @@ if str(PYTHON) not in sys.path:
     sys.path.insert(0, str(PYTHON))
 
 from rl_podem.validation_tables import build_three_way_row
+
+try:
+    import torch
+    from rl_podem import validation
+except ModuleNotFoundError:
+    torch = None
+    validation = None
 
 
 def _load_train_entry():
@@ -63,6 +72,127 @@ class SmartATPGEntryPointTests(unittest.TestCase):
             self.assertLess(body.index("atpg.input"), body.index("policy->start_run()"))
             self.assertLess(body.index("atpg.retain_faults"), body.index("policy->start_run()"))
             self.assertLess(body.index("policy->start_run()"), body.index("atpg.test()"))
+
+    def test_native_timer_excludes_previous_fault_reporting_io(self):
+        source = (ROOT / "src" / "python_bindings.cpp").read_text(encoding="utf-8")
+        start = source.index("void on_episode_complete() override")
+        end = source.index("\nprivate:", start)
+        body = source[start:end]
+        self.assertLess(body.index("write_record(records_.back())"), body.rindex("interval_started_"))
+        self.assertLess(body.index("std::fflush(stdout)"), body.rindex("interval_started_"))
+
+
+@unittest.skipIf(torch is None, "PyTorch is not installed")
+class FreshValidationTests(unittest.TestCase):
+    @staticmethod
+    def _record(circuit, fault_id, *, detected, backtracks):
+        outcome = 1 if detected else 0
+        return {
+            "circuit": circuit,
+            "fault_id": fault_id,
+            "outcome": outcome,
+            "detected": int(detected),
+            "redundant": int(not detected),
+            "aborted": 0,
+            "backtracks": backtracks,
+            "backtrace_steps": backtracks + 1,
+            "return": 100.0 if detected else -100.0,
+            "test_vectors": int(detected),
+            "atpg_seconds": 0.01,
+        }
+
+    def test_checkpoint_rejects_training_manifest_mismatch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = root / "training_manifest.json"
+            manifest.write_text('{"identity": 1}\n', encoding="utf-8")
+            checkpoint = root / "inference_round_01.pth"
+            torch.save({
+                "format": validation.INFERENCE_CHECKPOINT_FORMAT,
+                "manifest_hash": "0" * 64,
+                "encoder_variant": "level_gat_gru",
+                "reward_scheme": "cubic_backtrack_v1",
+                "backtrack_limit": 100,
+                "round": 1,
+                "policy_old": {"weight": torch.tensor([1.0])},
+            }, checkpoint)
+            with self.assertRaisesRegex(ValueError, "identity mismatch"):
+                validation._load_inference_checkpoint(
+                    checkpoint, "level_gat_gru", manifest, 1,
+                )
+
+    def test_fresh_validation_evaluates_all_rounds_and_scoap_once(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            run_dir = root / "run"
+            run_dir.mkdir()
+            dataset = root / "dataset"
+            paths = []
+            for name in ("b12_C", "b15_C", "b17_C", "b20_C", "b21_C", "b22_C"):
+                path = dataset / "validation" / f"{name}.bench"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("INPUT(a)\nOUTPUT(a)\n", encoding="utf-8")
+                paths.append(path)
+            manifests = {}
+            model_dirs = {}
+            for name in ("gat", "mean"):
+                manifests[name] = root / f"{name}_manifest.json"
+                manifests[name].write_text("{}\n", encoding="utf-8")
+                model_dirs[name] = root / f"{name}_models"
+            (run_dir / "train_summary.json").write_text(json.dumps({
+                "format": "SMARTATPG_DUAL_TRAINING_V3_SEPARATED_VALIDATION",
+                "dataset_root": str(dataset),
+                "seed": 2026,
+                "rounds": 2,
+                "manifests": {key: str(value) for key, value in manifests.items()},
+                "training_dirs": {key: str(value) for key, value in model_dirs.items()},
+            }), encoding="utf-8")
+
+            def add_catalog(_manifest, circuits):
+                for item in circuits:
+                    item["episode_fault_ids"] = [f"{item['name']}:f0"]
+                return circuits
+
+            evaluated = []
+
+            def evaluate(name, _encoder, _manifest, _model_dir, circuits,
+                         _output_dir, round_number, _seed):
+                evaluated.append((name, round_number, id(circuits)))
+                detected = round_number == 2 if name == "gat" else True
+                backtracks = round_number if name == "gat" else round_number * 10
+                records = [self._record(
+                    item["name"], item["episode_fault_ids"][0],
+                    detected=detected, backtracks=backtracks,
+                ) for item in circuits]
+                return records, validation._summarize_validation(
+                    records, circuits, round_number,
+                )
+
+            scoap_calls = []
+
+            def scoap(item, fault_ids, _seed):
+                scoap_calls.append(item["name"])
+                return [self._record(
+                    item["name"], fault_ids[0], detected=True, backtracks=30,
+                )]
+
+            with (
+                patch.object(validation, "discover_validation_dataset", return_value=tuple(paths)),
+                patch.object(validation, "_load_validation_catalogs", side_effect=add_catalog),
+                patch.object(validation, "_evaluate_model_round", side_effect=evaluate),
+                patch.object(validation, "_evaluate_scoap_batch", side_effect=scoap),
+            ):
+                result = validation.run_fresh_validation(run_dir)
+
+            self.assertEqual([(name, round_) for name, round_, _ in evaluated], [
+                ("gat", 1), ("gat", 2), ("mean", 1), ("mean", 2),
+            ])
+            self.assertEqual(len({identity for _, _, identity in evaluated}), 1)
+            self.assertEqual(scoap_calls, [path.stem for path in paths])
+            self.assertEqual(result["model_selection"]["gat"]["best_round"], 2)
+            self.assertEqual(result["model_selection"]["mean"]["best_round"], 1)
+            self.assertEqual(len(result["rows"]), 7)
+            self.assertEqual(result["rows"][-1]["circuit"], "TOTAL")
 
 
 class ThreeWayTableTests(unittest.TestCase):

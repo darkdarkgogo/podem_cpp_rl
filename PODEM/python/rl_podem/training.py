@@ -169,31 +169,21 @@ def validation_score(summary, round_number):
 
 def _resolve_circuit_records(manifest, manifest_path):
     _validate_prepared_manifest(manifest, manifest_path)
-    result = {}
-    for split, key in (
-        ("train", "train_circuits"),
-        ("validation", "validation_circuits"),
-    ):
-        records = []
-        for raw in manifest[key]:
-            item = dict(raw)
-            item["circuit"] = str(
-                resolve_manifest_path(manifest_path, raw["circuit"])
+    records = []
+    for raw in manifest["train_circuits"]:
+        item = dict(raw)
+        item["circuit"] = str(
+            resolve_manifest_path(manifest_path, raw["circuit"])
+        )
+        item["profile"] = str(
+            resolve_manifest_path(manifest_path, raw["profile"])
+        )
+        if "fault_map" in raw:
+            item["fault_map"] = str(
+                resolve_manifest_path(manifest_path, raw["fault_map"])
             )
-            if "profile" in raw:
-                item["profile"] = str(
-                    resolve_manifest_path(manifest_path, raw["profile"])
-                )
-            if "fault_map" in raw:
-                item["fault_map"] = str(
-                    resolve_manifest_path(manifest_path, raw["fault_map"])
-                )
-            records.append(item)
-        result[split] = records
-    names = [item["name"] for split in result.values() for item in split]
-    if len(names) != len(set(names)):
-        raise ValueError("Training and validation circuit names must be disjoint")
-    return result["train"], result["validation"]
+        records.append(item)
+    return records
 
 
 def _catalog_fault_ids(circuit_path):
@@ -591,9 +581,7 @@ def main(argv=None):
             f"SmartATPG {args.encoder} training requires "
             f"k_epochs={hyperparameters['k_epochs']}"
         )
-    train_circuits, validation_circuits = _resolve_circuit_records(
-        manifest, args.manifest
-    )
+    train_circuits = _resolve_circuit_records(manifest, args.manifest)
     if int(manifest["normal_rounds"]) != args.rounds:
         raise ValueError("Requested rounds do not match the training manifest")
     if int(manifest["backtrack_limit"]) != BACKTRACK_LIMIT:
@@ -655,7 +643,7 @@ def main(argv=None):
             len(item["episode_fault_ids"]) for item in train_circuits
         ),
         "training_circuit_count": len(train_circuits),
-        "validation_circuit_count": len(validation_circuits),
+        "validation_circuit_count": int(manifest["validation_circuit_count"]),
         "device": str(device),
         "paper_reward": PAPER_REWARD,
         "reward_scheme": reward_scheme,

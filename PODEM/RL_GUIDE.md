@@ -14,7 +14,7 @@ python3 scripts/train_smartatpg.py \
   --seed 2026
 ```
 
-GAT-GRU 与 Mean 分别在两张 GPU 上训练。每轮都会同时保存完整的 `inference_round_XX.pth` 与 native `model_round_XX.txt`；前者包含稍后生成 validation embedding 所需的图编码器权重。`training_state.pth` 只用于训练恢复。
+GAT-GRU 与 Mean 分别在两张 GPU 上训练。训练 manifest 仅包含 train circuits，验证目录缺失也不影响训练准备。每轮都会同时保存完整的 `inference_round_XX.pth` 与 native `model_round_XX.txt`；前者包含稍后生成 validation embedding 所需的图编码器权重。`training_state.pth` 只用于训练恢复。
 
 ## 验证
 
@@ -26,7 +26,7 @@ python3 scripts/validate_smartatpg.py \
   --seed 2026
 ```
 
-验证按顺序评估 GAT-GRU 各轮、Mean 各轮和 fresh SCOAP baseline，分别选择两个模型的 best round，并生成：
+验证运行时才独立发现六个 validation circuits，再按顺序评估 GAT-GRU 各轮、Mean 各轮和 fresh SCOAP baseline，分别选择两个模型的 best round，并生成：
 
 - `validation_three_way_comparison.csv`
 - `validation_three_way_comparison.json`

@@ -99,4 +99,3 @@
 - [ ] Remove tests of deleted launchers and replace them with package/public-entry coverage.
 - [ ] Run the complete test suite with `python -m pytest -q`.
 - [ ] Inspect `git diff --check` and `git status --short` before handoff.
-

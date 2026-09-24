@@ -567,6 +567,7 @@ class SmartATPGTests(unittest.TestCase):
         before = {key: value.detach().clone() for key, value in agent.policy_old.state_dict().items()}
         request = {
             "mode": "backtrace",
+            "sequence": 1,
             "objective_name": "y",
             "objective_value": 1,
             "candidate_names": ["n", "b"],
@@ -836,10 +837,12 @@ class SmartATPGTests(unittest.TestCase):
         from rl_podem.validation import ScoapValidationEvaluator
         from rl_podem.training import _evaluate_fault
 
-        path = (
+        fixture = (
             Path(__file__).resolve().parent / "fixtures"
             / "native_scoap_sequence_zero.bench"
         )
+        path = Path(self.temp.name) / fixture.name
+        shutil.copy2(fixture, path)
         fault_id = "y:GO:sa0"
         for scheme in (MEAN_REWARD_SCHEME, GAT_REWARD_SCHEME):
             with self.subTest(reward_scheme=scheme):
@@ -1076,6 +1079,8 @@ class SmartATPGTests(unittest.TestCase):
     def test_native_backtrace_lock_reuses_an_unfinished_rl_choice(self):
         import cpp_podem
         fixture = Path(__file__).resolve().parents[1] / "sample_circuits/c432_binary.bench"
+        if not fixture.is_file() or not fixture.with_suffix(".faultmap").is_file():
+            self.skipTest("c432 binary fixture is not present in this checkout")
         circuit = Path(self.temp.name) / fixture.name
         fault_map = circuit.with_suffix(".faultmap")
         shutil.copy2(fixture, circuit)

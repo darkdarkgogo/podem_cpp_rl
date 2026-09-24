@@ -546,7 +546,8 @@ def write_bench(circuit: BenchCircuit, destination: Path, header: Iterable[str] 
     lines.extend(
         f"{gate.output} = {gate.kind}({','.join(gate.inputs)})" for gate in circuit.gates
     )
-    destination.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+    with destination.open("w", encoding="utf-8", newline="\n") as output:
+        output.write("\n".join(lines) + "\n")
 
 
 def _source_hash(path: Path) -> str:

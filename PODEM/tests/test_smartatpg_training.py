@@ -28,6 +28,8 @@ from rl_podem.data_split import (
     TRAIN_FAULTS_PER_CIRCUIT,
     discover_dataset,
     discover_mean_dataset,
+    discover_mean_training_dataset,
+    discover_training_dataset,
     prepare,
     select_training_faults,
     select_validation_faults,
@@ -110,7 +112,7 @@ class SmartATPGPreparationTests(unittest.TestCase):
         self.assertEqual(MEAN_TRAIN_FAULTS_PER_CIRCUIT, 100)
         self.assertEqual(
             MANIFEST_FORMAT,
-            "SMARTATPG_DATA_SPLIT_MANIFEST_V10_TRAIN_ONLY_VALIDATION_LAZY_11D_CO_NO_BUF",
+            "SMARTATPG_DATA_SPLIT_MANIFEST_V11_TRAIN_ONLY_11D_CO_NO_BUF",
         )
         self.assertEqual(
             LEGACY_MANIFEST_FORMAT,
@@ -242,7 +244,6 @@ class SmartATPGPreparationTests(unittest.TestCase):
             dataset = root / "data"
             output = root / "preparation"
             (dataset / "train_mean").mkdir(parents=True)
-            (dataset / "validation").mkdir()
             for name in preparation.MEAN_REQUIRED_ASSETS:
                 (dataset / "train_mean" / name).write_text(
                     "INPUT(a)\nOUTPUT(a)\n", encoding="utf-8"
@@ -250,14 +251,6 @@ class SmartATPGPreparationTests(unittest.TestCase):
             (dataset / "train_mean" / "s38417_scan_binary.bench.uf").write_text(
                 "ignored\n", encoding="utf-8"
             )
-            (dataset / "validation" / "v.bench").write_text(
-                "INPUT(a)\nOUTPUT(a)\n", encoding="utf-8"
-            )
-            original_discover = discover_mean_dataset
-
-            def small_mean_discover(path):
-                return original_discover(path, expected_validation_names=("v",))
-
             def fake_profile(source, split, seed, graph_identity, *, name=None,
                              fault_map=None):
                 profiles = [
@@ -282,7 +275,6 @@ class SmartATPGPreparationTests(unittest.TestCase):
             fake_graph = type("Graph", (), {"circuit_hash": "hash", "names": ["a"]})()
             with (
                 patch.object(preparation, "VALIDATION_NAMES", ("v",)),
-                patch.object(preparation, "discover_mean_dataset", small_mean_discover),
                 patch.object(preparation, "load_graph", return_value=fake_graph),
                 patch.object(preparation, "_profile_payload", side_effect=fake_profile),
             ):
@@ -333,25 +325,20 @@ class SmartATPGPreparationTests(unittest.TestCase):
             with self.assertRaisesRegex(FileExistsError, "non-empty"):
                 prepare(Path(directory) / "data", output)
 
-    def test_preparation_is_relocatable_and_rejects_changed_completed_profile(self):
+    def test_training_preparation_never_requires_or_reads_validation_split(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             dataset = root / "data"
             output = root / "artifacts" / "preparation"
             (dataset / "train").mkdir(parents=True)
-            (dataset / "validation").mkdir()
-            for split, name in (("train", "t"), ("validation", "v")):
-                (dataset / split / f"{name}.bench").write_text(
-                    "INPUT(a)\nOUTPUT(a)\n", encoding="utf-8"
-                )
+            (dataset / "train" / "t.bench").write_text(
+                "INPUT(a)\nOUTPUT(a)\n", encoding="utf-8"
+            )
 
-            original_discover = discover_dataset
+            original_discover = discover_training_dataset
 
             def small_discover(path):
-                return original_discover(
-                    path, expected_train_count=1,
-                    expected_validation_names=("v",),
-                )
+                return original_discover(path, expected_train_count=1)
 
             profiled_splits = []
 
@@ -383,7 +370,7 @@ class SmartATPGPreparationTests(unittest.TestCase):
             with (
                 patch.object(preparation, "TRAIN_CIRCUIT_COUNT", 1),
                 patch.object(preparation, "VALIDATION_NAMES", ("v",)),
-                patch.object(preparation, "discover_dataset", small_discover),
+                patch.object(preparation, "discover_training_dataset", small_discover),
                 patch.object(preparation, "_profile_payload", fake_profile),
             ):
                 manifest = preparation.prepare(dataset, output)
@@ -394,7 +381,7 @@ class SmartATPGPreparationTests(unittest.TestCase):
                     ["t:hard", "t:sa0"],
                 )
                 self.assertEqual(profiled_splits, ["train"])
-                validation = manifest["validation_circuits"][0]
+                self.assertNotIn("validation_circuits", manifest)
                 self.assertEqual(manifest["normal_rounds"], 2)
                 self.assertEqual(manifest["faults_per_update"], 8)
                 self.assertEqual(manifest["k_epochs"], 4)
@@ -406,8 +393,6 @@ class SmartATPGPreparationTests(unittest.TestCase):
                     preparation._validate_manifest(
                         old_gat_manifest, output / "training_manifest.json"
                     )
-                self.assertNotIn("profile", validation)
-                self.assertNotIn("episode_fault_ids", validation)
                 self.assertNotIn("validation_episode_count", manifest)
                 self.assertFalse((output / "profiles" / "validation").exists())
                 self.assertEqual(preparation.prepare(dataset, output, resume=True), manifest)
@@ -424,24 +409,7 @@ class SmartATPGPreparationTests(unittest.TestCase):
                 tampered["train_circuits"][0]["episode_fault_ids"].reverse()
                 with self.assertRaisesRegex(ValueError, "fault list changed"):
                     preparation._validate_manifest(tampered, manifest_path)
-                self.assertNotIn("circuit_hash", validation)
-                self.assertNotIn("gate_count", validation)
-                self.assertNotIn("artifact_sha256", validation)
-
-                validation_source = dataset / "validation" / "v.bench"
-                validation_text = validation_source.read_text(encoding="utf-8")
-                validation_source.write_text(
-                    validation_text + "\n", encoding="utf-8"
-                )
-                self.assertEqual(
-                    preparation._validate_manifest(manifest, manifest_path), manifest
-                )
-                validation_source.write_text("not a BENCH circuit\n", encoding="utf-8")
-                with self.assertRaisesRegex(ValueError, "validation graph is invalid"):
-                    preparation._validate_manifest(
-                        manifest, manifest_path, validate_validation_graphs=True,
-                    )
-                validation_source.write_text(validation_text, encoding="utf-8")
+                self.assertFalse((dataset / "validation").exists())
                 added = dataset / "train" / "added.bench"
                 added.write_text("INPUT(a)\nOUTPUT(a)\n", encoding="utf-8")
                 with self.assertRaisesRegex(ValueError, "exactly 1"):
@@ -623,101 +591,6 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
         self.assertEqual(result["circuits"][0]["test_vectors"], 1)
         self.assertAlmostEqual(result["atpg_seconds"], 0.6)
 
-    @unittest.skip("validation identity is now owned by independent validation")
-    def test_validation_identity_declares_protocol_and_catalog(self):
-        config = {
-            "manifest_hash": "a" * 64,
-            "seed": 2026,
-            "encoder_variant": "fanin_mean",
-            "reward_scheme": MEAN_REWARD_SCHEME,
-            "rounds": 2,
-            "faults_per_update": 8,
-            "k_epochs": 1,
-            "backtrack_limit": 100,
-            "validation_catalog_hash": "b" * 64,
-        }
-        identity = _validation_identity(config, [
-            {"name": "b12_C"}, {"name": "b15_C"},
-        ])
-        self.assertEqual(identity, {
-            "format": "SMARTATPG_VALIDATION_IDENTITY_V1",
-            "manifest_hash": "a" * 64,
-            "seed": 2026,
-            "encoder_variant": "fanin_mean",
-            "reward_scheme": MEAN_REWARD_SCHEME,
-            "normal_rounds": 2,
-            "faults_per_update": 8,
-            "k_epochs": 1,
-            "backtrack_limit": 100,
-            "validation_catalog_hash": "b" * 64,
-            "validation_circuits": ["b12_C", "b15_C"],
-        })
-        self.assertEqual(identity["encoder_variant"], "fanin_mean")
-        self.assertEqual(identity["validation_circuits"], ["b12_C", "b15_C"])
-        self.assertEqual(identity["faults_per_update"], 8)
-
-    @unittest.skip("training no longer creates validation identity")
-    def test_v8_fresh_resume_creates_identity_for_both_encoders(self):
-        train = [{"name": "t", "circuit": "t.bench", "episode_fault_ids": ["t0"]}]
-        validation = [{"name": "v", "circuit": "v.bench", "episode_fault_ids": ["v0"]}]
-        for encoder in ("level_gat_gru", "fanin_mean"):
-            with self.subTest(encoder=encoder), tempfile.TemporaryDirectory() as directory:
-                root = Path(directory)
-                manifest = root / "manifest.json"
-                manifest.write_text(json.dumps({
-                    "format": MANIFEST_FORMAT, "normal_rounds": 2,
-                    "backtrack_limit": BACKTRACK_LIMIT,
-                }), encoding="utf-8")
-                output = root / "training"
-                with (
-                    patch.object(training, "_resolve_circuit_records", return_value=(train, validation)),
-                    patch.object(training, "_load_validation_catalogs", return_value=validation),
-                    patch.object(training, "load_circuit_graph", return_value=object()),
-                    patch.object(training, "AGENT_TYPES", {encoder: lambda *_a, **_k: object()}),
-                    patch.object(training, "CppPodemBacktraceV2Trainer", return_value=object()),
-                    patch.object(training, "_initial_state", side_effect=RuntimeError("reached initial state")),
-                ):
-                    with self.assertRaisesRegex(RuntimeError, "reached initial state"):
-                        training.main([str(manifest), str(output), "--encoder", encoder,
-                                       "--seed", "77", "--resume"])
-                identity = json.loads((output / "validation_identity.json").read_text("utf-8"))
-                self.assertEqual(identity["encoder_variant"], encoder)
-                self.assertEqual(identity["seed"], 77)
-
-    @unittest.skip("training resume is independent of validation identity")
-    def test_v8_real_resume_requires_matching_identity(self):
-        train = [{"name": "t", "circuit": "t.bench", "episode_fault_ids": ["t0"]}]
-        validation = [{"name": "v", "circuit": "v.bench", "episode_fault_ids": ["v0"]}]
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            manifest = root / "manifest.json"
-            manifest.write_text(json.dumps({"format": MANIFEST_FORMAT,
-                                            "normal_rounds": 2, "backtrack_limit": 100}),
-                                encoding="utf-8")
-            output = root / "training"
-            output.mkdir()
-            (output / "training_state.pth").write_bytes(b"checkpoint")
-            with (
-                patch.object(training, "_resolve_circuit_records", return_value=(train, validation)),
-                patch.object(training, "_load_validation_catalogs", return_value=validation),
-                patch.object(training, "load_circuit_graph", return_value=object()),
-                patch.object(training, "AGENT_TYPES", {"level_gat_gru": lambda *_a, **_k: object()}),
-                patch.object(training, "CppPodemBacktraceV2Trainer", return_value=object()),
-            ):
-                args = [str(manifest), str(output), "--resume"]
-                with self.assertRaisesRegex(FileNotFoundError, "validation_identity"):
-                    training.main(args)
-                identity = _validation_identity({
-                    "manifest_hash": training._manifest_hash(manifest), "seed": 2026,
-                    "encoder_variant": "level_gat_gru", "rounds": 2,
-                    "reward_scheme": "cubic_backtrack_v1",
-                    "faults_per_update": 8, "k_epochs": 4, "backtrack_limit": 100,
-                    "validation_catalog_hash": training._validation_catalog_hash(validation),
-                }, validation)
-                (output / "validation_identity.json").write_text(json.dumps(identity), encoding="utf-8")
-                with self.assertRaisesRegex(ValueError, "Validation identity changed"):
-                    training.main(args + ["--seed", "2027"])
-
     def test_training_rejects_legacy_gat_manifests(self):
         for manifest_format in (
             LEGACY_MANIFEST_FORMAT, LAZY_VALIDATION_MANIFEST_FORMAT,
@@ -735,22 +608,6 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, "supported data-split"):
                         training.main([str(manifest_path), str(output_dir)])
 
-    @unittest.skip("independent validation has no resume JSONL")
-    def test_validation_jsonl_recovers_an_appended_record_before_state_update(self):
-        with tempfile.TemporaryDirectory() as directory:
-            state_path = Path(directory) / "validation_state.json"
-            records_path = Path(directory) / "validation_records.jsonl"
-            state, records = _load_validation_state(
-                state_path, records_path, "a" * 64, 1
-            )
-            self.assertEqual((state["next_index"], records), (0, []))
-            _append_json_line(records_path, {"circuit": "v", "fault_id": "f0"})
-            state, records = _load_validation_state(
-                state_path, records_path, "a" * 64, 1
-            )
-            self.assertEqual(state["next_index"], 1)
-            self.assertEqual(records[0]["fault_id"], "f0")
-
     def test_best_score_uses_the_approved_lexicographic_order(self):
         base = {
             "detected_faults": 10, "backtracks_total": 20,
@@ -765,68 +622,6 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
             validation_score(base, 1),
         )
         self.assertLess(validation_score(base, 1), validation_score(base, 2))
-
-    @unittest.skip("best-round selection moved to independent validation")
-    def test_new_best_validation_round_clears_the_previous_best_marker(self):
-        state = _initial_state("a" * 64, {"rounds": 2})
-        round_one = {
-            "round": 1,
-            "detected_faults": 10,
-            "backtracks_total": 20,
-            "backtrace_steps_total": 30,
-            "return_total": 40.0,
-        }
-        round_two = {
-            "round": 2,
-            "detected_faults": 11,
-            "backtracks_total": 20,
-            "backtrace_steps_total": 30,
-            "return_total": 40.0,
-        }
-
-        self.assertTrue(_record_validation_metric(
-            state, round_one, validation_score(round_one, 1)
-        ))
-        self.assertTrue(_record_validation_metric(
-            state, round_two, validation_score(round_two, 2)
-        ))
-
-        self.assertEqual(state["best_round"], 2)
-        self.assertEqual(
-            [item["is_best"] for item in state["validation_metrics"]],
-            [False, True],
-        )
-
-    @unittest.skip("best-round selection moved to independent validation")
-    def test_non_best_validation_round_preserves_the_previous_best_marker(self):
-        state = _initial_state("a" * 64, {"rounds": 2})
-        round_one = {
-            "round": 1,
-            "detected_faults": 11,
-            "backtracks_total": 20,
-            "backtrace_steps_total": 30,
-            "return_total": 40.0,
-        }
-        round_two = {
-            "round": 2,
-            "detected_faults": 10,
-            "backtracks_total": 20,
-            "backtrace_steps_total": 30,
-            "return_total": 40.0,
-        }
-
-        self.assertTrue(_record_validation_metric(
-            state, round_one, validation_score(round_one, 1)
-        ))
-        self.assertFalse(_record_validation_metric(
-            state, round_two, validation_score(round_two, 2)
-        ))
-
-        self.assertEqual(state["best_round"], 1)
-        self.assertEqual(
-            [item["is_best"] for item in state["validation_metrics"]],
-            [True, False],
-        )
 
     def test_same_task_resume_requires_exact_manifest_and_config(self):
         config = {

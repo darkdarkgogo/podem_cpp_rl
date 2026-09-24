@@ -313,7 +313,6 @@ public:
     if (!std::isfinite(records_.back().seconds)) {
       throw std::runtime_error("Non-finite native validation time");
     }
-    interval_started_ = completed;
     write_record(records_.back());
     if (records_.size() % 1000 == 0 || records_.size() == total_faults_) {
       if (journal_.is_open()) journal_.flush();
@@ -327,6 +326,9 @@ public:
       }
       std::fflush(stdout);
     }
+    // Start the next ATPG interval only after journal/progress I/O, so one
+    // fault's reporting overhead is never charged to the following fault.
+    interval_started_ = std::chrono::steady_clock::now();
   }
   const std::vector<NativeValidationRecord> &records() const { return records_; }
 

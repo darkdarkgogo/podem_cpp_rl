@@ -1,4 +1,4 @@
-"""Prepare encoder-specific training data and shared validation data."""
+"""Prepare encoder-specific SmartATPG training data."""
 
 import argparse
 import hashlib
@@ -21,7 +21,7 @@ LAZY_VALIDATION_MANIFEST_FORMAT = (
     "SMARTATPG_DATA_SPLIT_MANIFEST_V7_LAZY_VALIDATION_CATALOG_11D_CO_NO_BUF"
 )
 MANIFEST_FORMAT = (
-    "SMARTATPG_DATA_SPLIT_MANIFEST_V10_TRAIN_ONLY_VALIDATION_LAZY_11D_CO_NO_BUF"
+    "SMARTATPG_DATA_SPLIT_MANIFEST_V11_TRAIN_ONLY_11D_CO_NO_BUF"
 )
 PREPARATION_STATE_FORMAT = "SMARTATPG_DATA_SPLIT_PREPARATION_V3"
 PROFILE_FORMAT = "SMARTATPG_HEURISTIC_FAULT_PROFILE_V1"
@@ -133,29 +133,16 @@ def resolve_manifest_path(manifest_path, value):
     return (Path(manifest_path).resolve().parent / path).resolve()
 
 
-def discover_dataset(
+def discover_training_dataset(
     dataset_root, *, expected_train_count=TRAIN_CIRCUIT_COUNT,
-    expected_validation_names=VALIDATION_NAMES,
 ):
     dataset_root = Path(dataset_root).resolve()
     train_dir = dataset_root / "train"
-    validation_dir = dataset_root / "validation"
-    for split, directory in (("train", train_dir), ("validation", validation_dir)):
-        if not directory.is_dir():
-            raise FileNotFoundError(f"Missing SmartATPG {split} directory: {directory}")
-    entries = {
-        "train": tuple(train_dir.iterdir()),
-        "validation": tuple(validation_dir.iterdir()),
-    }
+    if not train_dir.is_dir():
+        raise FileNotFoundError(f"Missing SmartATPG train directory: {train_dir}")
+    entries = tuple(train_dir.iterdir())
     train_paths = tuple(sorted(
-        (path for path in entries["train"] if path.is_file() and path.suffix == ".bench"),
-        key=lambda path: path.name,
-    ))
-    validation_paths = tuple(sorted(
-        (
-            path for path in entries["validation"]
-            if path.is_file() and path.suffix == ".bench"
-        ),
+        (path for path in entries if path.is_file() and path.suffix == ".bench"),
         key=lambda path: path.name,
     ))
     if len(train_paths) != expected_train_count:
@@ -163,62 +150,31 @@ def discover_dataset(
             f"SmartATPG train split must contain exactly {expected_train_count} "
             f"BENCH files, found {len(train_paths)}"
         )
-    validation_names = tuple(path.stem for path in validation_paths)
-    if validation_names != tuple(expected_validation_names):
-        raise ValueError(
-            "SmartATPG validation split must contain exactly: "
-            + ", ".join(expected_validation_names)
-        )
-    all_paths = (*train_paths, *validation_paths)
-    stems = [path.stem for path in all_paths]
+    stems = [path.stem for path in train_paths]
     if len(stems) != len(set(stems)):
-        raise ValueError("SmartATPG dataset contains duplicate circuit names")
-    for split, directory in (("train", train_dir), ("validation", validation_dir)):
-        unexpected = sorted(
-            path.name for path in entries[split]
-            if not path.is_file() or path.suffix != ".bench"
+        raise ValueError("SmartATPG train split contains duplicate circuit names")
+    unexpected = sorted(
+        path.name for path in entries
+        if not path.is_file() or path.suffix != ".bench"
+    )
+    if unexpected:
+        raise ValueError(
+            "SmartATPG train directory contains non-BENCH files: "
+            + ", ".join(unexpected)
         )
-        if unexpected:
-            raise ValueError(
-                f"SmartATPG {split} directory contains non-BENCH files: "
-                + ", ".join(unexpected)
-            )
-    return {"train": train_paths, "validation": validation_paths}
+    return train_paths
 
 
-def discover_mean_dataset(
-    dataset_root, *, expected_validation_names=VALIDATION_NAMES,
-):
+def discover_mean_training_dataset(dataset_root):
     dataset_root = Path(dataset_root).resolve()
     train_dir = dataset_root / "train_mean"
-    validation_dir = dataset_root / "validation"
-    for split, directory in (("train_mean", train_dir), ("validation", validation_dir)):
-        if not directory.is_dir():
-            raise FileNotFoundError(f"Missing SmartATPG {split} directory: {directory}")
+    if not train_dir.is_dir():
+        raise FileNotFoundError(f"Missing SmartATPG train_mean directory: {train_dir}")
     assets = tuple(train_dir / name for name in MEAN_REQUIRED_ASSETS)
     missing = [path.name for path in assets if not path.is_file()]
     if missing:
         raise FileNotFoundError(
             "Missing SmartATPG train_mean assets: " + ", ".join(missing)
-        )
-    validation_paths = tuple(sorted(
-        (path for path in validation_dir.iterdir()
-         if path.is_file() and path.suffix == ".bench"),
-        key=lambda path: path.name,
-    ))
-    if tuple(path.stem for path in validation_paths) != tuple(expected_validation_names):
-        raise ValueError(
-            "SmartATPG validation split must contain exactly: "
-            + ", ".join(expected_validation_names)
-        )
-    unexpected_validation = sorted(
-        path.name for path in validation_dir.iterdir()
-        if not path.is_file() or path.suffix != ".bench"
-    )
-    if unexpected_validation:
-        raise ValueError(
-            "SmartATPG validation directory contains non-BENCH files: "
-            + ", ".join(unexpected_validation)
         )
     return {
         "train": (
@@ -227,8 +183,64 @@ def discover_mean_dataset(
             {"name": "s38417", "circuit": train_dir / "s38417_scan_binary.bench",
              "fault_map": train_dir / "s38417_scan_binary.faultmap"},
         ),
-        "validation": validation_paths,
         "assets": assets,
+    }
+
+
+def discover_validation_dataset(
+    dataset_root, *, expected_validation_names=VALIDATION_NAMES,
+):
+    validation_dir = Path(dataset_root).resolve() / "validation"
+    if not validation_dir.is_dir():
+        raise FileNotFoundError(
+            f"Missing SmartATPG validation directory: {validation_dir}"
+        )
+    entries = tuple(validation_dir.iterdir())
+    validation_paths = tuple(sorted(
+        (path for path in entries if path.is_file() and path.suffix == ".bench"),
+        key=lambda path: path.name,
+    ))
+    if tuple(path.stem for path in validation_paths) != tuple(expected_validation_names):
+        raise ValueError(
+            "SmartATPG validation split must contain exactly: "
+            + ", ".join(expected_validation_names)
+        )
+    unexpected = sorted(
+        path.name for path in entries
+        if not path.is_file() or path.suffix != ".bench"
+    )
+    if unexpected:
+        raise ValueError(
+            "SmartATPG validation directory contains non-BENCH files: "
+            + ", ".join(unexpected)
+        )
+    return validation_paths
+
+
+def discover_dataset(
+    dataset_root, *, expected_train_count=TRAIN_CIRCUIT_COUNT,
+    expected_validation_names=VALIDATION_NAMES,
+):
+    """Compatibility helper for callers that intentionally need both splits."""
+    return {
+        "train": discover_training_dataset(
+            dataset_root, expected_train_count=expected_train_count,
+        ),
+        "validation": discover_validation_dataset(
+            dataset_root, expected_validation_names=expected_validation_names,
+        ),
+    }
+
+
+def discover_mean_dataset(
+    dataset_root, *, expected_validation_names=VALIDATION_NAMES,
+):
+    """Compatibility helper for callers that intentionally need both splits."""
+    return {
+        **discover_mean_training_dataset(dataset_root),
+        "validation": discover_validation_dataset(
+            dataset_root, expected_validation_names=expected_validation_names,
+        ),
     }
 
 
@@ -306,18 +318,17 @@ def _validate_profiles(profiles, *, split, circuit_name):
 
 def _training_contract(dataset_root, encoder_variant):
     if encoder_variant == "level_gat_gru":
-        discovered = discover_dataset(dataset_root)
+        train_paths = discover_training_dataset(dataset_root)
         return {
             "train": tuple({"name": path.stem, "circuit": path, "fault_map": None}
-                           for path in discovered["train"]),
-            "validation": discovered["validation"],
-            "assets": discovered["train"],
+                           for path in train_paths),
+            "assets": train_paths,
             "training_split": "train",
             "fault_limit": TRAIN_FAULTS_PER_CIRCUIT,
             "fault_filter": FAULT_FILTER,
         }
     if encoder_variant == "fanin_mean":
-        discovered = discover_mean_dataset(dataset_root)
+        discovered = discover_mean_training_dataset(dataset_root)
         return {
             **discovered,
             "training_split": "train_mean",
@@ -336,13 +347,6 @@ def _inventory(dataset_root, contract):
                 "sha256": sha256_file(path),
             }
             for path in contract["assets"]
-        ],
-        "validation": [
-            {
-                "name": path.stem,
-                "dataset_path": _relative_path(path, dataset_root),
-            }
-            for path in contract["validation"]
         ],
     }
 
@@ -433,20 +437,12 @@ def _record(manifest_path, profile_path, source, split, payload, *, name=None,
     return record
 
 
-def _validation_record(manifest_path, source):
-    return {
-        "name": source.stem,
-        "circuit": _relative_path(source, Path(manifest_path).parent),
-    }
-
-
-def _validate_manifest(manifest, manifest_path, *, validate_validation_graphs=False):
+def _validate_manifest(manifest, manifest_path):
     manifest_format = manifest.get("format")
     supported_formats = (MANIFEST_FORMAT,)
     if manifest_format not in supported_formats:
         raise ValueError("Existing data-split SmartATPG manifest configuration changed")
     current_format = manifest_format == MANIFEST_FORMAT
-    profiled_validation = manifest_format == LEGACY_MANIFEST_FORMAT
     encoder_variant = manifest.get("encoder_variant", "level_gat_gru")
     if not current_format and encoder_variant != "level_gat_gru":
         raise ValueError("Legacy SmartATPG manifests require level_gat_gru")
@@ -483,127 +479,78 @@ def _validate_manifest(manifest, manifest_path, *, validate_validation_graphs=Fa
         raise ValueError("SmartATPG manifest circuit counts are invalid")
     if Path(str(manifest.get("dataset_root", ""))).is_absolute():
         raise ValueError("SmartATPG manifest dataset root must be relative")
-    expected_train = contract["train"]
-    expected_validation = contract["validation"]
-    all_names = []
-    for split, key in (("train", "train_circuits"), ("validation", "validation_circuits")):
-        circuits = manifest.get(key)
-        if not isinstance(circuits, list) or not circuits:
-            raise ValueError(f"SmartATPG manifest has no {split} circuits")
-        names = [item.get("name") for item in circuits]
-        if names != sorted(names) or len(names) != len(set(names)):
-            raise ValueError(f"SmartATPG {split} circuit order or names are invalid")
-        if split == "train" and len(circuits) != expected_train_count:
-            raise ValueError("SmartATPG manifest must contain all training circuits")
-        if split == "validation" and tuple(names) != VALIDATION_NAMES:
-            raise ValueError("SmartATPG manifest validation circuits are invalid")
-        expected_entries = (
-            expected_train if split == "train"
-            else tuple({"name": path.stem, "circuit": path, "fault_map": None}
-                       for path in expected_validation)
+    if "validation_circuits" in manifest or "validation_episode_count" in manifest:
+        raise ValueError("Training manifests must not contain validation data")
+    circuits = manifest.get("train_circuits")
+    if not isinstance(circuits, list) or not circuits:
+        raise ValueError("SmartATPG manifest has no train circuits")
+    names = [item.get("name") for item in circuits]
+    if names != sorted(names) or len(names) != len(set(names)):
+        raise ValueError("SmartATPG train circuit order or names are invalid")
+    if len(circuits) != expected_train_count:
+        raise ValueError("SmartATPG manifest must contain all training circuits")
+    expected_entries = contract["train"]
+    if names != [entry["name"] for entry in expected_entries]:
+        raise ValueError("SmartATPG train dataset inventory changed")
+    for item, expected_entry in zip(circuits, expected_entries):
+        expected_artifacts = {"circuit", "profile"}
+        if expected_entry.get("fault_map") is not None:
+            expected_artifacts.add("fault_map")
+        if set(item.get("artifact_sha256", {})) != expected_artifacts:
+            raise ValueError(
+                f"Manifest train artifact list is incomplete: {item.get('name')}"
+            )
+        for artifact_key, expected_hash in item.get("artifact_sha256", {}).items():
+            path = resolve_manifest_path(manifest_path, item[artifact_key])
+            if not path.is_file() or sha256_file(path) != expected_hash:
+                raise ValueError(f"Manifest artifact changed: {path}")
+        source_path = resolve_manifest_path(manifest_path, item["circuit"])
+        if source_path != expected_entry["circuit"].resolve():
+            raise ValueError(f"Manifest train source path changed: {item['name']}")
+        expected_fault_map = expected_entry.get("fault_map")
+        if expected_fault_map is None:
+            if "fault_map" in item:
+                raise ValueError(
+                    f"Manifest train has an unexpected fault map: {item['name']}"
+                )
+        elif (
+            resolve_manifest_path(manifest_path, item.get("fault_map", ""))
+            != expected_fault_map.resolve()
+        ):
+            raise ValueError(f"Manifest train fault map changed: {item['name']}")
+        profile_path = resolve_manifest_path(manifest_path, item["profile"])
+        payload = json.loads(profile_path.read_text(encoding="utf-8"))
+        profile_expected = {
+            "format": PROFILE_FORMAT,
+            "split": "train",
+            "name": item["name"],
+            "source_sha256": sha256_file(source_path),
+            "circuit_hash": item.get("circuit_hash"),
+            "gate_count": item.get("gate_count"),
+            "backtrack_limit": BACKTRACK_LIMIT,
+            "profile_seed": manifest.get("profile_seed"),
+        }
+        if expected_fault_map is not None:
+            profile_expected["fault_map_sha256"] = sha256_file(expected_fault_map)
+        if any(payload.get(key) != value for key, value in profile_expected.items()):
+            raise ValueError(f"Manifest train profile metadata changed: {item['name']}")
+        profiles = _validate_profiles(
+            payload.get("profiles"), split="train", circuit_name=item["name"]
         )
-        if names != [entry["name"] for entry in expected_entries]:
-            raise ValueError(f"SmartATPG {split} dataset inventory changed")
-        all_names.extend(names)
-        for item, expected_entry in zip(circuits, expected_entries):
-            uses_profile = split == "train" or profiled_validation
-            expected_artifacts = {"circuit", "profile"} if uses_profile else set()
-            if expected_entry.get("fault_map") is not None:
-                expected_artifacts.add("fault_map")
-            if set(item.get("artifact_sha256", {})) != expected_artifacts:
-                raise ValueError(
-                    f"Manifest {split} artifact list is incomplete: {item.get('name')}"
-                )
-            for artifact_key, expected_hash in item.get("artifact_sha256", {}).items():
-                path = resolve_manifest_path(manifest_path, item[artifact_key])
-                if not path.is_file() or sha256_file(path) != expected_hash:
-                    raise ValueError(f"Manifest artifact changed: {path}")
-            source_path = resolve_manifest_path(manifest_path, item["circuit"])
-            if source_path != expected_entry["circuit"].resolve():
-                raise ValueError(
-                    f"Manifest {split} source path changed: {item['name']}"
-                )
-            expected_fault_map = expected_entry.get("fault_map")
-            if expected_fault_map is None:
-                if "fault_map" in item:
-                    raise ValueError(
-                        f"Manifest {split} has an unexpected fault map: {item['name']}"
-                    )
-            elif resolve_manifest_path(manifest_path, item.get("fault_map", "")) != expected_fault_map.resolve():
-                raise ValueError(
-                    f"Manifest {split} fault map changed: {item['name']}"
-                )
-            if not uses_profile:
-                forbidden = {
-                    "profile", "profiled_faults", "episode_faults",
-                    "episode_fault_ids",
-                }
-                if forbidden.intersection(item):
-                    raise ValueError(
-                        f"Manifest validation record contains profile data: "
-                        f"{item['name']}"
-                    )
-                if validate_validation_graphs:
-                    try:
-                        load_graph(source_path)
-                    except Exception as error:
-                        raise ValueError(
-                            f"Manifest validation graph is invalid: {item['name']}"
-                        ) from error
-                continue
-            profile_path = resolve_manifest_path(manifest_path, item["profile"])
-            payload = json.loads(profile_path.read_text(encoding="utf-8"))
-            profile_expected = {
-                "format": PROFILE_FORMAT,
-                "split": split,
-                "name": item["name"],
-                "source_sha256": sha256_file(source_path),
-                "circuit_hash": item.get("circuit_hash"),
-                "gate_count": item.get("gate_count"),
-                "backtrack_limit": BACKTRACK_LIMIT,
-                "profile_seed": manifest.get("profile_seed"),
-            }
-            if expected_fault_map is not None:
-                profile_expected["fault_map_sha256"] = sha256_file(expected_fault_map)
-            if any(payload.get(key) != value for key, value in profile_expected.items()):
-                raise ValueError(
-                    f"Manifest {split} profile metadata changed: {item['name']}"
-                )
-            profiles = _validate_profiles(
-                payload.get("profiles"), split=split, circuit_name=item["name"]
-            )
-            selected = (
-                select_training_faults(
-                    profiles, limit=expected_fault_limit,
-                    circuit_name=item["name"],
-                )
-                if split == "train"
-                else select_validation_faults(profiles)
-            )
-            if item.get("episode_faults") != selected or item.get(
-                "episode_fault_ids"
-            ) != [str(row["fault_id"]) for row in selected]:
-                raise ValueError(f"Manifest {split} fault list changed: {item['name']}")
-            if item.get("profiled_faults") != len(profiles):
-                raise ValueError(f"Manifest profile count changed: {item['name']}")
-    if len(all_names) != len(set(all_names)):
-        raise ValueError("Training and validation circuit names must be disjoint")
+        selected = select_training_faults(
+            profiles, limit=expected_fault_limit, circuit_name=item["name"],
+        )
+        if item.get("episode_faults") != selected or item.get(
+            "episode_fault_ids"
+        ) != [str(row["fault_id"]) for row in selected]:
+            raise ValueError(f"Manifest train fault list changed: {item['name']}")
+        if item.get("profiled_faults") != len(profiles):
+            raise ValueError(f"Manifest profile count changed: {item['name']}")
     expected_train_episodes = sum(
         len(item["episode_fault_ids"]) for item in manifest["train_circuits"]
     )
     if manifest.get("training_episode_count") != expected_train_episodes:
         raise ValueError("SmartATPG manifest episode counts are invalid")
-    if profiled_validation:
-        expected_validation_episodes = sum(
-            len(item["episode_fault_ids"])
-            for item in manifest["validation_circuits"]
-        )
-        if manifest.get("validation_episode_count") != expected_validation_episodes:
-            raise ValueError("SmartATPG manifest episode counts are invalid")
-    elif "validation_episode_count" in manifest:
-        raise ValueError(
-            "Lazy validation manifests must not persist an episode count"
-        )
     if current_format:
         hyperparameters = training_hyperparameters(encoder_variant)
         if (
@@ -713,7 +660,7 @@ def prepare(
         state = {**expected_state, "completed": {}}
         _atomic_json(state_path, state)
 
-    records = {"train": [], "validation": []}
+    records = {"train": []}
     completed = state.get("completed", {})
     if not isinstance(completed, dict):
         raise ValueError("Preparation state has an invalid completed-profile map")
@@ -763,11 +710,6 @@ def prepare(
                 fault_limit=contract["fault_limit"],
             )
         )
-    records["validation"] = [
-        _validation_record(manifest_path, source)
-        for source in contract["validation"]
-    ]
-
     hyperparameters = training_hyperparameters(encoder_variant)
     manifest = {
         "format": MANIFEST_FORMAT,
@@ -784,12 +726,11 @@ def prepare(
         "faults_per_update": FAULTS_PER_UPDATE,
         "k_epochs": hyperparameters["k_epochs"],
         "train_circuit_count": len(records["train"]),
-        "validation_circuit_count": len(records["validation"]),
+        "validation_circuit_count": len(VALIDATION_NAMES),
         "training_episode_count": sum(
             len(item["episode_fault_ids"]) for item in records["train"]
         ),
         "train_circuits": records["train"],
-        "validation_circuits": records["validation"],
     }
     _validate_manifest(manifest, manifest_path)
     _atomic_json(manifest_path, manifest)

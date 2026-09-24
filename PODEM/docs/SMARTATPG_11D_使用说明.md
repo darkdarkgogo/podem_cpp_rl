@@ -24,7 +24,7 @@ python3 scripts/train_smartatpg.py \
   --seed 2026
 ```
 
-训练入口为 GAT-GRU 与 Mean 分别准备训练 manifest，并在两张 GPU 上并行运行。每个 worker 只加载 train circuits；不会加载 validation graph、生成 validation embedding、运行 native validation、计算 validation score 或选择 best round。
+训练入口为 GAT-GRU 与 Mean 分别准备训练 manifest，并在两张 GPU 上并行运行。训练 manifest 只记录 train circuits，不枚举、不哈希 validation 文件；每个 worker 也不会加载 validation graph、生成 validation embedding、运行 native validation、计算 validation score 或选择 best round。
 
 每轮训练结束保存：
 
@@ -47,7 +47,7 @@ python3 scripts/validate_smartatpg.py \
   --seed 2026
 ```
 
-验证脚本按顺序执行：
+验证脚本在启动时独立发现并校验 `data/validation` 中的六个电路，然后按顺序执行：
 
 1. 对 GAT-GRU 每轮 checkpoint 生成 validation embedding，并按电路运行 native batch；
 2. 对 Mean 每轮执行相同流程；
