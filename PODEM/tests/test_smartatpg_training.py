@@ -42,17 +42,19 @@ if torch is not None:
         AGENT_TYPES,
         BEST_CHECKPOINT_FORMAT,
         _episode_order,
-        _evaluate_fault,
         _fault_update_boundary,
         _inference_payload,
         _initial_state,
-        _catalog_fault_ids,
         _load_continuation,
+        _training_protocol,
+        _validate_resume,
+    )
+    from rl_podem.validation_core import (
+        _catalog_fault_ids,
+        _evaluate_fault,
         _load_validation_catalogs,
         _summarize_fault_records,
         _summarize_validation,
-        _training_protocol,
-        _validate_resume,
         _validation_catalog_hash,
         _validation_order,
         validation_score,
@@ -461,7 +463,7 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
     def test_new_manifest_loads_validation_fault_catalog_at_runtime(self):
         circuits = [{"name": "v", "circuit": "v.bench"}]
         catalog = {"faults": [{"fault_id": "f0"}, {"fault_id": "f1"}]}
-        with patch("rl_podem.training.catalog_cpp_podem", return_value=catalog) as load:
+        with patch("rl_podem.validation_core.catalog_cpp_podem", return_value=catalog) as load:
             result = _load_validation_catalogs(
                 {"format": MANIFEST_FORMAT}, circuits
             )
@@ -475,7 +477,7 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
             "name": "v", "circuit": "v.bench",
             "episode_fault_ids": ["f1", "f0"],
         }]
-        with patch("rl_podem.training.catalog_cpp_podem") as load:
+        with patch("rl_podem.validation_core.catalog_cpp_podem") as load:
             result = _load_validation_catalogs(
                 {"format": LEGACY_MANIFEST_FORMAT}, circuits
             )
@@ -483,7 +485,7 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
         self.assertEqual(result[0]["episode_fault_ids"], ["f1", "f0"])
 
     def test_runtime_catalog_rejects_duplicate_fault_ids(self):
-        with patch("rl_podem.training.catalog_cpp_podem", return_value={
+        with patch("rl_podem.validation_core.catalog_cpp_podem", return_value={
             "faults": [{"fault_id": "f0"}, {"fault_id": "f0"}],
         }):
             with self.assertRaisesRegex(ValueError, "duplicate"):

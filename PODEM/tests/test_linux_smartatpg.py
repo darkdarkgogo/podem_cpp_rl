@@ -65,8 +65,14 @@ class SmartATPGEntryPointTests(unittest.TestCase):
         validation_source = (
             PYTHON / "rl_podem" / "validation.py"
         ).read_text(encoding="utf-8")
+        validation_core_source = (
+            PYTHON / "rl_podem" / "validation_core.py"
+        ).read_text(encoding="utf-8")
         self.assertNotIn("from .training import", validation_source)
         self.assertNotIn("validation_core", training_source)
+        self.assertNotIn("training", validation_core_source)
+        self.assertNotIn("import torch", validation_core_source)
+        self.assertNotIn("cpp_bridge", validation_core_source)
         for name in (
             "_native_validation_batch", "_load_validation_catalogs",
             "_summarize_validation", "validation_score",

@@ -8,6 +8,13 @@ BACKTRACK_SCALE = 9.802960494
 
 GAT_REWARD_SCHEME = "cubic_backtrack_v1"
 MEAN_REWARD_SCHEME = "legacy_pi_exponential"
+PAPER_REWARD = {
+    "non_pi": -0.1,
+    "alpha": 7.5,
+    "beta": 0.07,
+    "detected": 100.0,
+    "undetected": -100.0,
+}
 
 
 def reward_scheme_for_encoder(encoder_variant: str) -> str:

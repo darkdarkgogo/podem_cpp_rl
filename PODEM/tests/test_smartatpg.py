@@ -683,7 +683,7 @@ class SmartATPGTests(unittest.TestCase):
     def test_native_validation_matches_python_policy_without_callbacks(self):
         import cpp_podem
         from rl_podem.cpp_bridge import CppPodemBacktraceV2Evaluator
-        from rl_podem.training import _evaluate_fault
+        from rl_podem.validation_core import _evaluate_fault
 
         fault_ids = [
             item["fault_id"]
@@ -778,7 +778,7 @@ class SmartATPGTests(unittest.TestCase):
     def test_native_scoap_validation_matches_python_policy(self):
         import cpp_podem
         from rl_podem.validation import ScoapValidationEvaluator
-        from rl_podem.training import _evaluate_fault
+        from rl_podem.validation_core import _evaluate_fault
 
         fault_ids = [
             item["fault_id"]
@@ -835,7 +835,7 @@ class SmartATPGTests(unittest.TestCase):
     def test_native_scoap_validation_counts_sequence_zero_reward_events(self):
         import cpp_podem
         from rl_podem.validation import ScoapValidationEvaluator
-        from rl_podem.training import _evaluate_fault
+        from rl_podem.validation_core import _evaluate_fault
 
         fixture = (
             Path(__file__).resolve().parent / "fixtures"

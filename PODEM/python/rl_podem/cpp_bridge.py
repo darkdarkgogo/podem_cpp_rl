@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any, Callable, Optional, Tuple, Union
 
 import torch
 
 from .ppo import BacktracePPOAgentV2
+from .native_io import _native_circuit_path, catalog_cpp_podem
 from .smartatpg_rewards import (
     GAT_REWARD_SCHEME,
     MEAN_REWARD_SCHEME,
@@ -110,19 +110,6 @@ def _fnv1a_file_hash(path: Union[str, Path]) -> str:
     return f"{value:016x}"
 
 
-def _native_circuit_path(path: Union[str, Path]) -> str:
-    resolved = Path(path).resolve()
-    if os.name != "nt":
-        return str(resolved)
-    try:
-        # The legacy C++ reader uses narrow paths. A relative ASCII path avoids
-        # losing Unicode characters from the absolute Windows workspace path.
-        relative = os.path.relpath(resolved, Path.cwd())
-    except ValueError:
-        return str(resolved)
-    return relative if relative.isascii() else str(resolved)
-
-
 def profile_cpp_podem(
     circuit_path: Union[str, Path],
     backtrack_limit: int = 97,
@@ -144,25 +131,6 @@ def profile_cpp_podem(
             seed,
             _native_circuit_path(fault_map_path) if fault_map_path else "",
             use_scoap,
-        )
-    )
-
-
-def catalog_cpp_podem(
-    circuit_path: Union[str, Path],
-    fault_map_path: Optional[Union[str, Path]] = None,
-) -> dict[str, Any]:
-    try:
-        import cpp_podem
-    except ImportError as error:
-        raise ImportError(
-            "Cannot import cpp_podem. Install this project in the active environment with "
-            "'python -m pip install -e .'."
-        ) from error
-    return dict(
-        cpp_podem.catalog_stuck_at(
-            _native_circuit_path(circuit_path),
-            _native_circuit_path(fault_map_path) if fault_map_path else "",
         )
     )
 
