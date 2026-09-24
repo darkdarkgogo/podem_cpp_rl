@@ -1,38 +1,38 @@
 # SmartATPG RL 使用入口
 
-当前正式训练与评测使用逐 level 双向 GAT-GRU（agentATPG）。节点初始特征和图 embedding 均为11维：6维 gate 类型 one-hot（不含 BUF）加 level、fanout、静态 SCOAP CC0、CC1、CO。Actor/Critic 在11维 embedding 后拼接1维目标值 `object_val`，因此输入为12维；mask 仅在 logits 后使用。训练环境与 C++ 编译评测环境已经分离。
+正式实验只有训练和验证两个入口。训练不会读取 validation fault catalog、生成 validation embedding、计算 validation score 或自动开始 comparison；训练完成后必须显式运行验证命令。
 
-完整中文说明见 [`docs/SMARTATPG_11D_使用说明.md`](docs/SMARTATPG_11D_使用说明.md)。
-
-训练环境：
+## 训练
 
 ```bash
-chmod +x train_smartatpg_linux.sh benchmark_smartatpg_linux.sh tensorboard_smartatpg_linux.sh
-./train_smartatpg_linux.sh
+cd PODEM
+python3 scripts/train_smartatpg.py \
+  --dataset-root data \
+  --output-dir artifacts/smartatpg_dual \
+  --gat-gpu 0 \
+  --mean-gpu 1 \
+  --seed 2026
 ```
 
-单 GAT 训练读取 `data/train` 的1024个电路；双模型训练中，mean 改读 `data/train_mean` 的 `c6288` 和 `s38417_scan_binary`，后者通过 fault map 保留 scan 版本的 fault ID。GAT 每电路最多选30个困难且可检测的 fault，mean 每电路最多选100个，不足时全部使用。两者都在 `data/validation` 的6个固定电路上验证完整 fault catalog。正式流程的 backtrack 上限为100，训练固定2轮、每8个 fault 更新一次。
+GAT-GRU 与 Mean 分别在两张 GPU 上训练。每轮都会同时保存完整的 `inference_round_XX.pth` 与 native `model_round_XX.txt`；前者包含稍后生成 validation embedding 所需的图编码器权重。`training_state.pth` 只用于训练恢复。
 
-同一任务中断后直接重跑命令即可从 `training_state.pth` 恢复。要把当前完整 checkpoint 迁移到另一批电路或 fault 清单继续训练，指定新的空输出目录并传入：
+## 验证
 
 ```bash
-./train_smartatpg_linux.sh --output-dir artifacts/next_run \
-  --dataset-root /path/to/next/data \
-  --continue-from /path/to/current/best_training_state.pth
+python3 scripts/validate_smartatpg.py \
+  --run-dir artifacts/smartatpg_dual \
+  --dataset-root data \
+  --output-dir artifacts/smartatpg_dual/validation \
+  --seed 2026
 ```
 
-该方式完整继承图编码器、Actor、Critic、`policy_old`、PPO/RND 优化器、RND 统计和 PyTorch 随机数状态，但重新开始新任务的2轮进度与最佳验证记录。
+验证按顺序评估 GAT-GRU 各轮、Mean 各轮和 fresh SCOAP baseline，分别选择两个模型的 best round，并生成：
 
-TensorBoard：
+- `validation_three_way_comparison.csv`
+- `validation_three_way_comparison.json`
+- `model_selection.json`
+- `detailed/{scoap,gat,mean}_records.jsonl`
 
-```bash
-./tensorboard_smartatpg_linux.sh
-```
+主表对每个验证电路并排给出三种方法的 backtracks、backtrace steps、ATPG runtime 和 fault coverage，最后一行为 TOTAL。验证不提供 resume，也不会读取旧的 SCOAP cache。
 
-编译评测环境：
-
-```bash
-./benchmark_smartatpg_linux.sh
-```
-
-正式时间比较只使用 C++ PODEM 报告的 ATPG 区间时间，不包含图 embedding、编译和 Python 编排时间。
+正式 runtime 只使用逐 fault `atpg_seconds` 的和：模型/embedding 加载、图构建、circuit input、levelize、fault-list generation 与写盘不计时；`ATPG::test()` 内的 Actor forward 计时。

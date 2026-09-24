@@ -1,91 +1,18 @@
-"""Train versioned 11D SmartATPG and select the best model on validation."""
+"""Prepare training data and train GAT-GRU and Mean SmartATPG models."""
 
 import argparse
-import hashlib
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
-import math
 import os
-import random
-import time
 from pathlib import Path
-
-import torch
-
-from prepare_smartatpg_training import (
-    BACKTRACK_LIMIT,
-    FAULTS_PER_UPDATE,
-    HEURISTIC,
-    LEGACY_MANIFEST_FORMAT,
-    LEGACY_TRAINING_ROUNDS,
-    LAZY_VALIDATION_MANIFEST_FORMAT,
-    MANIFEST_FORMAT,
-    NORMAL_TRAINING_ROUNDS,
-    _validate_manifest as _validate_prepared_manifest,
-    resolve_manifest_path,
-    sha256_file,
-    training_hyperparameters,
-    validation_fault_ids,
-)
-from rl_podem.cpp_bridge import (
-    _native_circuit_path,
-    CppPodemBacktraceV2Trainer,
-    catalog_cpp_podem,
-)
-from rl_podem.smartatpg_rewards import (
-    BACKTRACK_MAX,
-    GAT_REWARD_SCHEME,
-    MEAN_REWARD_SCHEME,
-    reward_scheme_for_encoder,
-    smartatpg_backtrack_reward,
-    smartatpg_pi_reward,
-)
-from rl_podem.gat_gru import GATGRUSmartATPGPPOAgent
-from rl_podem.ppo import device
-from rl_podem.smartatpg import SmartATPGPPOAgent
-from rl_podem.smartatpg_artifacts import (
-    export_actor, export_descriptors, policy_from_state,
-)
-from rl_podem.smartatpg_features import load_circuit_graph
+import subprocess
+import sys
+import time
 
 
-CHECKPOINT_FORMAT = "SMARTATPG_DATA_SPLIT_TRAINING_V6_11D_CO_NO_BUF"
-BEST_CHECKPOINT_FORMAT = "SMARTATPG_DATA_SPLIT_BEST_V6_11D_CO_NO_BUF"
-VALIDATION_STATE_FORMAT = "SMARTATPG_DATA_SPLIT_VALIDATION_STATE_V2_JSONL"
-AGENT_TYPES = {
-    "fanin_mean": SmartATPGPPOAgent,
-    "level_gat_gru": GATGRUSmartATPGPPOAgent,
-}
-PAPER_REWARD = {
-    "non_pi": -0.1,
-    "alpha": 7.5,
-    "beta": 0.07,
-    "detected": 100.0,
-    "undetected": -100.0,
-}
-
-
-def _manifest_hash(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
-
-
-def _clone(value):
-    if torch.is_tensor(value):
-        return value.detach().cpu().clone()
-    if isinstance(value, dict):
-        return {key: _clone(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_clone(item) for item in value]
-    if isinstance(value, tuple):
-        return tuple(_clone(item) for item in value)
-    return value
-
-
-def _atomic_torch_save(path, value):
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    torch.save(value, temporary)
-    temporary.replace(path)
+ROOT = Path(__file__).resolve().parents[1]
+BACKTRACK_LIMIT = 100
+NORMAL_TRAINING_ROUNDS = 2
 
 
 def _atomic_json(path, value):
@@ -98,965 +25,165 @@ def _atomic_json(path, value):
     temporary.replace(path)
 
 
-def _atomic_json_lines(path, records):
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    with temporary.open("w", encoding="utf-8", newline="\n") as stream:
-        for record in records:
-            stream.write(json.dumps(record, sort_keys=True, separators=(",", ":")))
-            stream.write("\n")
-    temporary.replace(path)
+def _environment(gpu=None):
+    environment = os.environ.copy()
+    environment.update({
+        "PYTHONUNBUFFERED": "1",
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONPATH": os.pathsep.join([
+            str(ROOT / "python"), environment.get("PYTHONPATH", ""),
+        ]),
+    })
+    if gpu is not None:
+        environment["CUDA_VISIBLE_DEVICES"] = str(gpu)
+    return environment
 
 
-def _append_json_line(path, record):
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8", newline="\n") as stream:
-        stream.write(json.dumps(record, sort_keys=True, separators=(",", ":")))
-        stream.write("\n")
-        stream.flush()
-        os.fsync(stream.fileno())
-
-
-def _native_validation_batch(
-    item, fault_ids, embedding_path, actor_path, records_path, seed,
-    reward_scheme,
-):
-    try:
-        import cpp_podem
-    except ImportError as error:
-        raise ImportError(
-            "Native validation requires the rebuilt cpp_podem extension"
-        ) from error
-    if not hasattr(cpp_podem, "run_native_validation"):
-        raise RuntimeError(
-            "cpp_podem is stale; rebuild it with: python -m pip install -e ."
+def _run_logged(command, log_path, environment, prefix=""):
+    log_path = Path(log_path)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with log_path.open("w", encoding="utf-8", newline="\n") as log:
+        process = subprocess.Popen(
+            command, cwd=ROOT, env=environment,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, encoding="utf-8", errors="replace", bufsize=1,
         )
-    native_records = cpp_podem.run_native_validation(
-        _native_circuit_path(item["circuit"]),
-        _native_circuit_path(embedding_path),
-        _native_circuit_path(actor_path),
-        BACKTRACK_LIMIT, seed, fault_ids, reward_scheme,
-        _native_circuit_path(records_path), item["name"],
-    )
-    if len(native_records) != len(fault_ids):
-        raise RuntimeError("Native validation returned the wrong fault count")
-    records = []
-    for fault_id, raw in zip(fault_ids, native_records):
-        if raw["fault_id"] != fault_id:
-            raise RuntimeError("Native validation returned faults out of order")
-        outcome = int(raw["outcome"])
-        if not math.isfinite(float(raw["return"])):
-            raise ValueError(
-                f"Non-finite validation return for {item['name']} {fault_id}"
-            )
-        if not math.isfinite(float(raw["atpg_seconds"])):
-            raise ValueError(
-                f"Non-finite validation time for {item['name']} {fault_id}"
-            )
-        records.append({
-            "circuit": item["name"],
-            "fault_id": fault_id,
-            "outcome": outcome,
-            "detected": int(outcome == 1),
-            "redundant": int(outcome == 0),
-            "aborted": int(outcome not in (0, 1)),
-            "backtracks": int(raw["backtracks"]),
-            "backtrace_steps": int(raw["backtrace_steps"]),
-            "return": float(raw["return"]),
-            "test_vectors": int(outcome == 1),
-            "atpg_seconds": float(raw["atpg_seconds"]),
-        })
-    return records
+        assert process.stdout is not None
+        for line in process.stdout:
+            log.write(line)
+            log.flush()
+            print(prefix + line, end="", flush=True)
+        return process.wait()
 
 
-def validation_score(summary, round_number):
-    return (
-        -int(summary["detected_faults"]),
-        int(summary["backtracks_total"]),
-        int(summary["backtrace_steps_total"]),
-        -float(summary["return_total"]),
-        int(round_number),
-    )
-
-
-def _record_validation_metric(state, evaluation, score):
-    """Append one validation result while keeping exactly one best marker."""
-    is_best = state["best_score"] is None or score < tuple(state["best_score"])
-    if is_best:
-        state["best_score"] = list(score)
-        state["best_round"] = int(evaluation["round"])
-    state["validation_metrics"].append(evaluation)
-    for metric in state["validation_metrics"]:
-        metric["is_best"] = int(metric["round"]) == state["best_round"]
-    return is_best
-
-
-def _resolve_circuit_records(manifest, manifest_path):
-    _validate_prepared_manifest(manifest, manifest_path)
-    result = {}
-    for split, key in (
-        ("train", "train_circuits"),
-        ("validation", "validation_circuits"),
-    ):
-        records = []
-        for raw in manifest[key]:
-            item = dict(raw)
-            item["circuit"] = str(
-                resolve_manifest_path(manifest_path, raw["circuit"])
-            )
-            if "profile" in raw:
-                item["profile"] = str(
-                    resolve_manifest_path(manifest_path, raw["profile"])
-                )
-            if "fault_map" in raw:
-                item["fault_map"] = str(
-                    resolve_manifest_path(manifest_path, raw["fault_map"])
-                )
-            records.append(item)
-        result[split] = records
-    names = [item["name"] for split in result.values() for item in split]
-    if len(names) != len(set(names)):
-        raise ValueError("Training and validation circuit names must be disjoint")
-    return result["train"], result["validation"]
-
-
-def _catalog_fault_ids(circuit_path):
-    return validation_fault_ids(catalog_cpp_podem(circuit_path), circuit_path)
-
-
-def _load_validation_catalogs(manifest, circuits):
-    if manifest.get("format") == LEGACY_MANIFEST_FORMAT:
-        return circuits
-    for index, item in enumerate(circuits, 1):
-        item["episode_fault_ids"] = _catalog_fault_ids(item["circuit"])
-        print(
-            f"CATALOG split=validation index={index}/{len(circuits)} "
-            f"circuit={item['name']} faults={len(item['episode_fault_ids'])}",
-            flush=True,
-        )
-    return circuits
-
-
-def _validation_catalog_hash(circuits):
-    payload = [
-        {"name": item["name"], "fault_ids": item["episode_fault_ids"]}
-        for item in circuits
-    ]
-    encoded = json.dumps(
-        payload, sort_keys=True, separators=(",", ":")
-    ).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
-
-
-def _fault_update_boundary(next_index, total_faults, batch_size):
-    if batch_size <= 0 or not 1 <= next_index <= total_faults:
-        raise ValueError("Fault-update boundary arguments are invalid")
-    return next_index == total_faults or next_index % batch_size == 0
-
-
-def _episode_order(circuits, seed, round_number):
-    episodes = [
-        (item["name"], fault_id)
-        for item in circuits
-        for fault_id in item["episode_fault_ids"]
-    ]
-    random.Random(seed + round_number).shuffle(episodes)
-    return episodes
-
-
-def _validation_order(circuits):
-    return [
-        (item["name"], fault_id)
-        for item in circuits
-        for fault_id in item["episode_fault_ids"]
-    ]
-
-
-def _evaluate_fault(
-    evaluator, item, fault_id, backtrack_limit, seed, reward_scheme,
-):
-    if backtrack_limit != BACKTRACK_MAX:
-        raise ValueError(
-            f"SmartATPG validation requires backtrack_limit={BACKTRACK_MAX}"
-        )
-    if reward_scheme not in (GAT_REWARD_SCHEME, MEAN_REWARD_SCHEME):
-        raise ValueError(f"Unknown SmartATPG reward scheme: {reward_scheme}")
-    agent = getattr(evaluator, "agent", None)
-    if agent is not None:
-        expected_scheme = reward_scheme_for_encoder(agent.encoder_variant)
-        if reward_scheme != expected_scheme:
-            raise ValueError(
-                "SmartATPG reward scheme does not match evaluator encoder"
-            )
-    extrinsic_return = 0.0
-    terminal = None
-    backtrack_count = 0
-
-    def event_callback(event):
-        nonlocal extrinsic_return, terminal, backtrack_count
-        if event["event"] == "backtrace_step":
-            decision_sequences = getattr(evaluator, "decision_sequences", None)
-            if decision_sequences is None or int(event["decision_sequence"]) in decision_sequences:
-                extrinsic_return += PAPER_REWARD["non_pi"]
-        elif event["event"] == "backtrack":
-            decision_sequences = getattr(evaluator, "decision_sequences", None)
-            if (
-                reward_scheme == GAT_REWARD_SCHEME
-                and (
-                    decision_sequences is None
-                    or int(event["decision_sequence"]) in decision_sequences
-                )
-            ):
-                backtrack_count += 1
-                extrinsic_return += smartatpg_backtrack_reward(backtrack_count)
-        elif event["event"] == "pi_not_done":
-            decision_sequences = getattr(evaluator, "decision_sequences", None)
-            if (
-                reward_scheme == MEAN_REWARD_SCHEME
-                and (
-                    decision_sequences is None
-                    or int(event["decision_sequence"]) in decision_sequences
-                )
-            ):
-                extrinsic_return += smartatpg_pi_reward(
-                    int(event["backtracks"]),
-                    int(event["pi_visits"]),
-                    PAPER_REWARD["alpha"],
-                    PAPER_REWARD["beta"],
-                )
-        elif event["event"] == "episode_end":
-            if terminal is not None:
-                raise RuntimeError("Validation fault produced multiple terminal events")
-            terminal = dict(event)
-            extrinsic_return += (
-                PAPER_REWARD["detected"]
-                if int(event["outcome"]) == 1
-                else PAPER_REWARD["undetected"]
-            )
-
-    summary = evaluator.run(
-        item["circuit"],
-        backtrack_limit=backtrack_limit,
-        seed=seed,
-        fault_ids=[fault_id],
-        use_scoap=True,
-        event_callback=event_callback,
-    )
-    if int(summary["episodes"]) != 1 or terminal is None:
-        raise RuntimeError("Validation fault did not produce exactly one episode")
-    if terminal.get("fault_id") != fault_id:
-        raise RuntimeError("Validation terminal fault does not match the request")
-    outcome = int(terminal["outcome"])
-    if not math.isfinite(extrinsic_return):
-        raise ValueError(
-            f"Non-finite validation return for {item['name']} {fault_id}"
-        )
-    atpg_seconds = float(summary["atpg_seconds"])
-    if not math.isfinite(atpg_seconds):
-        raise ValueError(
-            f"Non-finite validation time for {item['name']} {fault_id}"
-        )
-    return {
-        "circuit": item["name"],
-        "fault_id": fault_id,
-        "outcome": outcome,
-        "detected": int(outcome == 1),
-        "redundant": int(outcome == 0),
-        "aborted": int(outcome not in (0, 1)),
-        "backtracks": int(terminal["backtracks"]),
-        "backtrace_steps": int(terminal["backtrace_steps"]),
-        "return": float(extrinsic_return),
-        "test_vectors": int(outcome == 1),
-        "atpg_seconds": atpg_seconds,
-    }
-
-
-def _summarize_fault_records(records):
-    for item in records:
-        if not math.isfinite(float(item["return"])):
-            raise ValueError(
-                "Non-finite validation return for "
-                f"{item.get('circuit', '<unknown>')} "
-                f"{item.get('fault_id', '<unknown>')}"
-            )
-        if not math.isfinite(float(item["atpg_seconds"])):
-            raise ValueError(
-                "Non-finite validation time for "
-                f"{item.get('circuit', '<unknown>')} "
-                f"{item.get('fault_id', '<unknown>')}"
-            )
-    count = len(records)
-    totals = {
-        "episodes": count,
-        "detected_faults": sum(int(item["detected"]) for item in records),
-        "redundant_faults": sum(int(item["redundant"]) for item in records),
-        "aborted_faults": sum(int(item["aborted"]) for item in records),
-        "backtracks_total": sum(int(item["backtracks"]) for item in records),
-        "backtrace_steps_total": sum(
-            int(item["backtrace_steps"]) for item in records
-        ),
-        "return_total": sum(float(item["return"]) for item in records),
-        "test_vectors": sum(int(item["test_vectors"]) for item in records),
-        "atpg_seconds": sum(float(item["atpg_seconds"]) for item in records),
-    }
-    divisor = max(1, count)
-    totals.update(
-        fault_coverage=totals["detected_faults"] / divisor,
-        backtracks_mean=totals["backtracks_total"] / divisor,
-        backtrace_steps_mean=totals["backtrace_steps_total"] / divisor,
-        return_mean=totals["return_total"] / divisor,
-    )
-    if not all(math.isfinite(float(totals[key])) for key in (
-        "return_total", "return_mean",
-    )):
-        raise ValueError("Non-finite validation return summary")
-    return totals
-
-
-def _summarize_validation(records, circuits, round_number):
-    expected = _validation_order(circuits)
-    actual = [(item.get("circuit"), item.get("fault_id")) for item in records]
-    if actual != expected:
-        raise ValueError("Validation must cover the full fault catalog exactly once")
-    totals = _summarize_fault_records(records)
-    per_circuit = [
-        {
-            "circuit": item["name"],
-            **_summarize_fault_records([
-                record for record in records if record["circuit"] == item["name"]
-            ]),
+def _run_parallel(jobs):
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = {
+            executor.submit(
+                _run_logged, job["command"], job["log"], job["environment"],
+                job["prefix"],
+            ): job["name"]
+            for job in jobs
         }
-        for item in circuits
+        failures = []
+        for future in as_completed(futures):
+            code = future.result()
+            if code:
+                failures.append((futures[future], code))
+        if failures:
+            detail = ", ".join(f"{name}={code}" for name, code in failures)
+            raise RuntimeError(f"SmartATPG training failed: {detail}")
+
+
+def _required_artifacts(model_dir, rounds):
+    paths = [
+        model_dir / "training_state.pth",
+        model_dir / "inference_final.pth",
+        model_dir / "model_final.txt",
     ]
-    return {"round": round_number, **totals, "circuits": per_circuit}
-
-
-def _save_state(path, agent, state):
-    payload = dict(state)
-    payload["agent"] = agent.training_state_dict()
-    payload["torch_random_state"] = torch.get_rng_state()
-    payload["torch_cuda_random_state"] = (
-        torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
-    )
-    _atomic_torch_save(path, payload)
-
-
-def _restore_torch_rng(saved):
-    if "torch_random_state" not in saved:
-        raise ValueError("Checkpoint is missing the PyTorch random state")
-    torch.set_rng_state(saved["torch_random_state"])
-    if saved.get("torch_cuda_random_state") is not None and torch.cuda.is_available():
-        torch.cuda.set_rng_state_all(saved["torch_cuda_random_state"])
-
-
-def _training_protocol(config):
-    protocol = {
-        "manifest_hash": config["manifest_hash"],
-        "backtrack_limit": config["backtrack_limit"],
-        "reward_scheme": config["reward_scheme"],
-        "normal_rounds": config["rounds"],
-        "training_circuit_count": config["training_circuit_count"],
-        "validation_circuit_count": config["validation_circuit_count"],
-    }
-    if "faults_per_update" in config:
-        protocol["faults_per_update"] = config["faults_per_update"]
-        protocol["k_epochs"] = config["k_epochs"]
-    return protocol
-
-
-def _validation_identity(config, validation_circuits):
-    return {
-        "format": "SMARTATPG_VALIDATION_IDENTITY_V1",
-        "manifest_hash": config["manifest_hash"],
-        "seed": config["seed"],
-        "encoder_variant": config["encoder_variant"],
-        "reward_scheme": config["reward_scheme"],
-        "normal_rounds": config["rounds"],
-        "faults_per_update": config["faults_per_update"],
-        "k_epochs": config["k_epochs"],
-        "backtrack_limit": config["backtrack_limit"],
-        "validation_catalog_hash": config["validation_catalog_hash"],
-        "validation_circuits": [item["name"] for item in validation_circuits],
-    }
-
-
-def _initial_state(manifest_digest, config, continuation=None):
-    return {
-        "format": CHECKPOINT_FORMAT,
-        "manifest_hash": manifest_digest,
-        "config": config,
-        "phase": "training",
-        "current_round": 1,
-        "episode_index": 0,
-        "completed_episodes": 0,
-        "validation_metrics": [],
-        "best_score": None,
-        "best_round": None,
-        "best_agent": None,
-        "continuation": continuation,
-    }
-
-
-def _validate_resume(saved, manifest_digest, config):
-    if saved.get("format") != CHECKPOINT_FORMAT:
-        raise ValueError("Checkpoint is incompatible with data-split SmartATPG training")
-    if saved.get("manifest_hash") != manifest_digest:
-        raise ValueError("Training manifest changed since checkpoint")
-    if saved.get("config") != config:
-        raise ValueError("Training configuration changed since checkpoint")
-    if saved.get("phase") not in ("training", "validation"):
-        raise ValueError("Checkpoint phase is invalid")
-    current_round = int(saved.get("current_round", 0))
-    episode_index = int(saved.get("episode_index", -1))
-    rounds = int(config["rounds"])
-    if not 1 <= current_round <= rounds + 1 or episode_index < 0:
-        raise ValueError("Checkpoint training position is invalid")
-    phase = saved["phase"]
-    episodes_per_round = int(config["training_episode_count"])
-    if episode_index > episodes_per_round:
-        raise ValueError("Checkpoint episode position exceeds the training fault set")
-    if phase == "validation" and episode_index != 0:
-        raise ValueError("Validation checkpoint must not contain a training position")
-    if current_round == rounds + 1 and (
-        phase != "training" or episode_index != 0
-    ):
-        raise ValueError("Completed checkpoint has an invalid phase")
-    expected_completed = (current_round - 1) * episodes_per_round
-    if phase == "training":
-        expected_completed += episode_index
-    else:
-        expected_completed += episodes_per_round
-    if int(saved.get("completed_episodes", -1)) != expected_completed:
-        raise ValueError("Checkpoint completed-episode count is inconsistent")
-    batch_size = int(config.get("faults_per_update", 1))
-    if (
-        phase == "training"
-        and episode_index not in (0, episodes_per_round)
-        and episode_index % batch_size != 0
-    ):
-        raise ValueError("Checkpoint is not at a fault-update boundary")
-    return saved
-
-
-def _load_continuation(path, agent, expected_config):
-    path = Path(path).resolve()
-    saved = torch.load(path, map_location="cpu")
-    if saved.get("format") not in (CHECKPOINT_FORMAT, BEST_CHECKPOINT_FORMAT):
-        raise ValueError("Continuation requires a current data-split 11D checkpoint")
-    if not isinstance(saved.get("agent"), dict):
-        raise ValueError("Continuation checkpoint has no complete agent state")
-    saved_config = saved.get("config")
-    protocol_keys = ("encoder_variant", "reward_scheme", "backtrack_limit")
-    if not isinstance(saved_config, dict) or any(
-        saved_config.get(key) != expected_config.get(key)
-        for key in protocol_keys
-    ):
-        raise ValueError(
-            "Continuation checkpoint uses an incompatible SmartATPG protocol"
-        )
-    agent.load_training_state_dict(saved["agent"])
-    _restore_torch_rng(saved)
-    return {
-        "source_checkpoint": str(path),
-        "source_checkpoint_sha256": sha256_file(path),
-        "source_manifest_hash": saved.get("manifest_hash"),
-        "source_format": saved["format"],
-    }
-
-
-def _load_validation_state(path, records_path, manifest_digest, round_number):
-    path = Path(path)
-    records_path = Path(records_path)
-    fresh = {
-        "format": VALIDATION_STATE_FORMAT,
-        "manifest_hash": manifest_digest,
-        "round": round_number,
-        "next_index": 0,
-        "complete": False,
-    }
-    if not path.is_file():
-        _atomic_json_lines(records_path, [])
-        _atomic_json(path, fresh)
-        return fresh, []
-    state = json.loads(path.read_text(encoding="utf-8"))
-    if state.get("round") != round_number and state.get("complete") is True:
-        _atomic_json_lines(records_path, [])
-        _atomic_json(path, fresh)
-        return fresh, []
-    if state.get("round") != round_number:
-        raise ValueError("Incomplete validation state belongs to another round")
-    expected = {
-        "format": VALIDATION_STATE_FORMAT,
-        "manifest_hash": manifest_digest,
-        "round": round_number,
-    }
-    if any(state.get(key) != value for key, value in expected.items()):
-        raise ValueError("Validation resume state is incompatible")
-    if not records_path.is_file():
-        raise ValueError("Validation resume records are missing")
-    lines = records_path.read_text(encoding="utf-8").splitlines()
-    records = []
-    for index, line in enumerate(lines):
-        try:
-            records.append(json.loads(line))
-        except json.JSONDecodeError as error:
-            if index != len(lines) - 1:
-                raise ValueError("Validation resume records are corrupted") from error
-            _atomic_json_lines(records_path, records)
-    next_index = int(state.get("next_index", -1))
-    if next_index < 0 or len(records) < next_index:
-        raise ValueError("Validation resume position is invalid")
-    if len(records) > next_index:
-        state["next_index"] = len(records)
-        _atomic_json(path, state)
-    return state, records
+    for round_number in range(1, rounds + 1):
+        paths.extend((
+            model_dir / f"inference_round_{round_number:02d}.pth",
+            model_dir / f"model_round_{round_number:02d}.txt",
+        ))
+    return paths
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("manifest", type=Path)
-    parser.add_argument("output_dir", type=Path)
-    parser.add_argument("--rounds", type=int)
-    parser.add_argument("--seed", type=int, default=2026)
-    parser.add_argument("--rnd-beta", type=float, default=0.05)
-    parser.add_argument("--k-epochs", type=int)
+    parser.add_argument("--dataset-root", type=Path, default=ROOT / "data")
     parser.add_argument(
-        "--encoder", choices=tuple(AGENT_TYPES), default="level_gat_gru"
+        "--output-dir", type=Path, default=ROOT / "artifacts/smartatpg_dual",
     )
-    mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--resume", action="store_true")
-    mode.add_argument("--continue-from", type=Path)
+    parser.add_argument("--gat-gpu", type=int, default=0)
+    parser.add_argument("--mean-gpu", type=int, default=1)
+    parser.add_argument("--seed", type=int, default=2026)
+    parser.add_argument("--profile-seed", type=int, default=14)
+    parser.add_argument("--rounds", type=int, default=NORMAL_TRAINING_ROUNDS)
+    parser.add_argument("--backtrack-limit", type=int, default=BACKTRACK_LIMIT)
+    parser.add_argument("--gat-continue-from", type=Path)
+    parser.add_argument("--mean-continue-from", type=Path)
     args = parser.parse_args(argv)
-    args.manifest = args.manifest.resolve()
-    manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
-    supported_formats = (MANIFEST_FORMAT,)
-    if manifest.get("format") not in supported_formats:
-        raise ValueError("Training requires a supported data-split manifest")
-    manifest_encoder = manifest.get("encoder_variant")
-    if (
-        manifest.get("format") == MANIFEST_FORMAT
-        and manifest_encoder is not None
-        and manifest_encoder != args.encoder
-    ):
-        raise ValueError(
-            f"Training encoder {args.encoder} does not match manifest encoder "
-            f"{manifest_encoder}"
-        )
-    batched_training = manifest.get("format") == MANIFEST_FORMAT
-    hyperparameters = training_hyperparameters(args.encoder)
-    expected_rounds = (
-        NORMAL_TRAINING_ROUNDS if batched_training else LEGACY_TRAINING_ROUNDS
-    )
-    if args.rounds is None:
-        args.rounds = expected_rounds
-    if args.k_epochs is None:
-        args.k_epochs = hyperparameters["k_epochs"] if batched_training else 8
-    if args.rounds != expected_rounds:
-        raise ValueError(
-            f"This SmartATPG manifest requires exactly {expected_rounds} rounds"
-        )
-    if args.k_epochs <= 0:
-        raise ValueError("PPO epochs must be positive")
-    if batched_training and args.k_epochs != hyperparameters["k_epochs"]:
-        raise ValueError(
-            f"SmartATPG {args.encoder} training requires "
-            f"k_epochs={hyperparameters['k_epochs']}"
-        )
-    train_circuits, validation_circuits = _resolve_circuit_records(
-        manifest, args.manifest
-    )
-    validation_circuits = _load_validation_catalogs(
-        manifest, validation_circuits
-    )
-    if int(manifest["normal_rounds"]) != args.rounds:
-        raise ValueError("Requested rounds do not match the training manifest")
-    if int(manifest["backtrack_limit"]) != BACKTRACK_LIMIT:
-        raise ValueError(f"Training requires backtrack limit {BACKTRACK_LIMIT}")
+    if args.rounds != NORMAL_TRAINING_ROUNDS:
+        raise ValueError(f"SmartATPG training requires {NORMAL_TRAINING_ROUNDS} rounds")
+    if args.backtrack_limit != BACKTRACK_LIMIT:
+        raise ValueError(f"SmartATPG training requires backtrack limit {BACKTRACK_LIMIT}")
+    if min(args.gat_gpu, args.mean_gpu) < 0 or args.gat_gpu == args.mean_gpu:
+        raise ValueError("GAT and Mean require distinct non-negative GPU IDs")
 
     output_dir = args.output_dir.resolve()
-    checkpoint_path = output_dir / "training_state.pth"
-    best_checkpoint_path = output_dir / "best_training_state.pth"
-    model_best_path = output_dir / "model_best.txt"
-    model_latest_path = output_dir / "model_latest.txt"
-    metrics_path = output_dir / "validation_metrics.json"
-    validation_state_path = output_dir / "validation_state.json"
-    validation_records_path = output_dir / "validation_records.jsonl"
-    if args.continue_from and output_dir.exists() and any(output_dir.iterdir()):
-        raise FileExistsError("--continue-from requires an empty output directory")
-    if (
-        args.resume
-        and output_dir.exists()
-        and any(output_dir.iterdir())
-        and not checkpoint_path.is_file()
-    ):
-        raise FileExistsError("--resume requires training_state.pth in a non-empty directory")
-    if (
-        not args.resume
-        and not args.continue_from
-        and output_dir.exists()
-        and any(output_dir.iterdir())
-    ):
-        raise FileExistsError("Fresh training requires an empty output directory")
+    dataset_root = args.dataset_root.resolve()
+    preparation = output_dir / "preparation"
+    training = output_dir / "training"
+    logs = output_dir / "logs"
     output_dir.mkdir(parents=True, exist_ok=True)
-
-    torch.manual_seed(args.seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(args.seed)
-    all_circuits = [*train_circuits, *validation_circuits]
-    graphs = {
-        item["name"]: load_circuit_graph(item["circuit"]) for item in all_circuits
-    }
-    agent = AGENT_TYPES[args.encoder](
-        graphs,
-        hidden_dim=32,
-        lr_actor=hyperparameters["actor_lr"],
-        lr_critic=hyperparameters["critic_lr"],
-        rnd_beta=args.rnd_beta,
-        k_epochs=args.k_epochs,
-    )
-    reward_scheme = reward_scheme_for_encoder(args.encoder)
-    trainers = {
-        item["name"]: CppPodemBacktraceV2Trainer(
-            graphs[item["name"]], agent=agent,
-            auto_update=not batched_training,
-            reward_scheme=reward_scheme,
+    base_environment = _environment()
+    manifests = {}
+    for name, encoder in (("gat", "level_gat_gru"), ("mean", "fanin_mean")):
+        preparation_dir = preparation / name
+        command = [
+            sys.executable, "-m", "rl_podem.data_split",
+            str(dataset_root), str(preparation_dir),
+            "--encoder", encoder,
+            "--seed", str(args.profile_seed),
+            "--normal-rounds", str(args.rounds),
+            "--backtrack-limit", str(args.backtrack_limit),
+            "--resume",
+        ]
+        code = _run_logged(
+            command, logs / f"prepare_{name}.log", base_environment,
+            prefix=f"[{name.upper()}-PREP] ",
         )
-        for item in train_circuits
-    }
-    manifest_digest = _manifest_hash(args.manifest)
-    config = {
-        "rounds": args.rounds,
+        if code:
+            raise RuntimeError(f"{name} data preparation failed with exit code {code}")
+        manifests[name] = preparation_dir / "training_manifest.json"
+
+    jobs = []
+    for name, encoder, gpu, continuation in (
+        ("gat", "level_gat_gru", args.gat_gpu, args.gat_continue_from),
+        ("mean", "fanin_mean", args.mean_gpu, args.mean_continue_from),
+    ):
+        model_dir = training / name
+        command = [
+            sys.executable, "-m", "rl_podem.training",
+            str(manifests[name]), str(model_dir),
+            "--encoder", encoder, "--rounds", str(args.rounds),
+            "--seed", str(args.seed),
+        ]
+        if continuation is None:
+            command.append("--resume")
+        else:
+            command.extend(("--continue-from", str(continuation.resolve())))
+        jobs.append({
+            "name": name,
+            "command": command,
+            "log": logs / f"train_{name}.log",
+            "environment": _environment(gpu),
+            "prefix": f"[{name.upper()}] ",
+        })
+
+    started = time.perf_counter()
+    _run_parallel(jobs)
+    missing = [
+        str(path)
+        for name in ("gat", "mean")
+        for path in _required_artifacts(training / name, args.rounds)
+        if not path.is_file()
+    ]
+    if missing:
+        raise RuntimeError("Training completed without required artifacts: " + ", ".join(missing))
+    _atomic_json(output_dir / "train_summary.json", {
+        "format": "SMARTATPG_DUAL_TRAINING_V3_SEPARATED_VALIDATION",
+        "dataset_root": str(dataset_root),
         "seed": args.seed,
-        "rnd_beta": args.rnd_beta,
-        "k_epochs": args.k_epochs,
-        "backtrack_limit": BACKTRACK_LIMIT,
-        "actor_lr": hyperparameters["actor_lr"],
-        "critic_lr": hyperparameters["critic_lr"],
-        "training_episode_count": sum(
-            len(item["episode_fault_ids"]) for item in train_circuits
-        ),
-        "validation_episode_count": sum(
-            len(item["episode_fault_ids"]) for item in validation_circuits
-        ),
-        "training_circuit_count": len(train_circuits),
-        "validation_circuit_count": len(validation_circuits),
-        "device": str(device),
-        "paper_reward": PAPER_REWARD,
-        "reward_scheme": reward_scheme,
-        "encoder_variant": args.encoder,
-        "heuristic": HEURISTIC,
-        "manifest_hash": manifest_digest,
-    }
-    if manifest.get("format") != LEGACY_MANIFEST_FORMAT:
-        config["validation_catalog_hash"] = _validation_catalog_hash(
-            validation_circuits
-        )
-    if batched_training:
-        config["faults_per_update"] = FAULTS_PER_UPDATE
-        identity_path = output_dir / "validation_identity.json"
-        validation_identity = _validation_identity(config, validation_circuits)
-        if args.resume and checkpoint_path.is_file():
-            if not identity_path.is_file():
-                raise FileNotFoundError(
-                    "--resume requires validation_identity.json in the training directory"
-                )
-            saved_identity = json.loads(identity_path.read_text(encoding="utf-8"))
-            if saved_identity != validation_identity:
-                raise ValueError("Validation identity changed since the training run")
-        else:
-            _atomic_json(identity_path, validation_identity)
-    state = _initial_state(manifest_digest, config)
-    if args.resume:
-        if not checkpoint_path.is_file():
-            print("RESUME requested without checkpoint; starting a fresh run", flush=True)
-        else:
-            saved = _validate_resume(
-                torch.load(checkpoint_path, map_location="cpu"), manifest_digest, config
-            )
-            agent.load_training_state_dict(saved["agent"])
-            state.update({key: saved[key] for key in state})
-            _restore_torch_rng(saved)
-            print(
-                f"RESUME phase={state['phase']} round={state['current_round']} "
-                f"episode={state['episode_index']} total={state['completed_episodes']}",
-                flush=True,
-            )
-    elif args.continue_from:
-        continuation = _load_continuation(args.continue_from, agent, config)
-        state = _initial_state(manifest_digest, config, continuation=continuation)
-        print(
-            f"CONTINUE_FROM checkpoint={continuation['source_checkpoint']} ",
-            flush=True,
-        )
-
-    if not checkpoint_path.is_file():
-        _save_state(checkpoint_path, agent, state)
-    if state["continuation"] is not None:
-        _atomic_json(output_dir / "continuation.json", state["continuation"])
-
-    try:
-        from torch.utils.tensorboard import SummaryWriter
-    except ImportError as error:
-        raise RuntimeError("Install tensorboard before SmartATPG training") from error
-    writer = SummaryWriter(str(output_dir / "tensorboard"))
-    train_by_name = {item["name"]: item for item in train_circuits}
-    validation_by_name = {item["name"]: item for item in validation_circuits}
-    training_protocol = _training_protocol(config)
-    export_actor(
-        agent.policy_old.state_dict(),
-        model_latest_path,
-        training_protocol=training_protocol,
-    )
-    if state["best_agent"] is not None:
-        export_actor(
-            state["best_agent"]["policy_old"],
-            model_best_path,
-            best_round=state["best_round"],
-            best_score=state["best_score"],
-            training_protocol=training_protocol,
-        )
-
-    try:
-        while state["current_round"] <= args.rounds:
-            round_number = int(state["current_round"])
-            if state["phase"] == "training":
-                order = _episode_order(train_circuits, args.seed, round_number)
-                for index in range(int(state["episode_index"]), len(order)):
-                    circuit_name, fault_id = order[index]
-                    item = train_by_name[circuit_name]
-                    trainer = trainers[circuit_name]
-                    run_kwargs = {
-                        "backtrack_limit": BACKTRACK_LIMIT,
-                        "seed": args.seed + round_number,
-                        "fault_ids": [fault_id],
-                        "use_scoap": True,
-                    }
-                    if item.get("fault_map"):
-                        run_kwargs["fault_map_path"] = item["fault_map"]
-                    trainer.run(item["circuit"], **run_kwargs)
-                    if len(trainer.episode_metrics) != 1:
-                        raise RuntimeError("Training episode did not produce one metric")
-                    metrics = trainer.episode_metrics[0]
-                    state["episode_index"] = index + 1
-                    state["completed_episodes"] += 1
-                    step = int(state["completed_episodes"])
-                    episode_keys = [
-                        "backtracks", "backtrace_steps", "detected",
-                        "extrinsic_reward_sum", "scaled_intrinsic_reward_sum",
-                        "combined_reward_sum",
-                    ]
-                    if not batched_training:
-                        episode_keys.extend(("total_loss", "rnd_loss"))
-                    for key in episode_keys:
-                        writer.add_scalar(f"episode/{key}", metrics[key], step)
-                    writer.flush()
-                    print(
-                        f"EPISODE round={round_number}/{args.rounds} "
-                        f"index={index + 1}/{len(order)} circuit={circuit_name} "
-                        f"fault={fault_id} backtracks={metrics['backtracks']} "
-                        f"backtrace_steps={metrics['backtrace_steps']}",
-                        flush=True,
-                    )
-                    update_boundary = _fault_update_boundary(
-                        index + 1, len(order),
-                        FAULTS_PER_UPDATE if batched_training else 1,
-                    )
-                    if batched_training and update_boundary:
-                        update_metrics = agent.update()
-                        batch_faults = (index + 1) % FAULTS_PER_UPDATE
-                        if batch_faults == 0:
-                            batch_faults = FAULTS_PER_UPDATE
-                        update_step = (
-                            int(agent.update_count)
-                            if update_metrics is not None
-                            else (index + 1 + FAULTS_PER_UPDATE - 1)
-                            // FAULTS_PER_UPDATE
-                        )
-                        if update_metrics is not None:
-                            for key in (
-                                "total_loss", "policy_loss", "value_loss",
-                                "entropy", "rnd_loss", "steps",
-                            ):
-                                writer.add_scalar(
-                                    f"update/{key}", update_metrics[key],
-                                    update_step,
-                                )
-                            writer.flush()
-                        print(
-                            f"UPDATE round={round_number}/{args.rounds} "
-                            f"faults={batch_faults} completed={index + 1}/"
-                            f"{len(order)} optimizer_step="
-                            f"{int(update_metrics is not None)}",
-                            flush=True,
-                        )
-                    if not batched_training or update_boundary:
-                        export_actor(
-                            agent.policy_old.state_dict(),
-                            model_latest_path,
-                            training_protocol=training_protocol,
-                        )
-                        _save_state(checkpoint_path, agent, state)
-                state["phase"] = "validation"
-                state["episode_index"] = 0
-                _save_state(checkpoint_path, agent, state)
-
-            validation_order = _validation_order(validation_circuits)
-            native_dir = output_dir / "validation_native" / f"round_{round_number}"
-            actor_path = native_dir / "actor.txt"
-            actor_state = agent.policy_old.state_dict()
-            export_actor(actor_state, actor_path, training_protocol=training_protocol)
-            embedding_policy = policy_from_state(actor_state)
-            embedding_paths = {}
-            for item in validation_circuits:
-                embedding_path = native_dir / f"{item['name']}.emb"
-                export_descriptors(
-                    actor_state, graphs[item["name"]], embedding_path,
-                    embedding_policy,
-                )
-                embedding_paths[item["name"]] = embedding_path
-            print(
-                f"VALIDATE_START round={round_number}/{args.rounds} "
-                f"circuits={len(validation_circuits)} faults={len(validation_order)} "
-                f"backend=native_cpp load_once_per_circuit=1 "
-                f"per_circuit="
-                + ",".join(
-                    f"{item['name']}:{len(item['episode_fault_ids'])}"
-                    for item in validation_circuits
-                ),
-                flush=True,
-            )
-            validation_state, validation_records = _load_validation_state(
-                validation_state_path,
-                validation_records_path,
-                manifest_digest,
-                round_number,
-            )
-            completed_validation = [
-                (record.get("circuit"), record.get("fault_id"))
-                for record in validation_records
-            ]
-            if completed_validation != validation_order[:len(completed_validation)]:
-                raise ValueError("Validation resume records are not the expected prefix")
-            if int(validation_state["next_index"]) > len(validation_order):
-                raise ValueError("Validation resume position exceeds the fault catalog")
-            validation_started = time.perf_counter()
-            print(
-                f"VALIDATE_RESUME next_index={validation_state['next_index']} "
-                f"remaining={len(validation_order) - int(validation_state['next_index'])}",
-                flush=True,
-            )
-            index = int(validation_state["next_index"])
-            while index < len(validation_order):
-                circuit_name = validation_order[index][0]
-                circuit_end = index
-                while (
-                    circuit_end < len(validation_order)
-                    and validation_order[circuit_end][0] == circuit_name
-                ):
-                    circuit_end += 1
-                fault_ids = [
-                    fault_id
-                    for _, fault_id in validation_order[index:circuit_end]
-                ]
-                batch_started = time.perf_counter()
-                records = _native_validation_batch(
-                    validation_by_name[circuit_name], fault_ids,
-                    embedding_paths[circuit_name], actor_path,
-                    validation_records_path, args.seed, reward_scheme,
-                )
-                evaluation_seconds = time.perf_counter() - batch_started
-                save_started = time.perf_counter()
-                validation_records.extend(records)
-                index += len(records)
-                validation_state["next_index"] = index
-                _atomic_json(validation_state_path, validation_state)
-                save_seconds = time.perf_counter() - save_started
-                print(
-                    f"VALIDATE round={round_number}/{args.rounds} "
-                    f"index={index}/{len(validation_order)} "
-                    f"circuit={circuit_name} batch_faults={len(records)} "
-                    f"detected={sum(record['detected'] for record in records)} "
-                    f"backtracks={sum(record['backtracks'] for record in records)} "
-                    f"native_s={evaluation_seconds:.3f} "
-                    f"save_s={save_seconds:.3f}",
-                    flush=True,
-                )
-
-            print(
-                f"VALIDATE_DONE round={round_number}/{args.rounds} "
-                f"faults={len(validation_order)} "
-                f"run_elapsed_s={time.perf_counter() - validation_started:.1f}",
-                flush=True,
-            )
-            evaluation = _summarize_validation(
-                validation_records, validation_circuits, round_number
-            )
-            score = validation_score(evaluation, round_number)
-            is_best = _record_validation_metric(state, evaluation, score)
-            if is_best:
-                state["best_agent"] = _clone(agent.training_state_dict())
-                best_payload = {
-                    "format": BEST_CHECKPOINT_FORMAT,
-                    "manifest_hash": manifest_digest,
-                    "config": config,
-                    "round": round_number,
-                    "score": list(score),
-                    "validation": evaluation,
-                    "agent": state["best_agent"],
-                    "torch_random_state": torch.get_rng_state(),
-                    "torch_cuda_random_state": (
-                        torch.cuda.get_rng_state_all()
-                        if torch.cuda.is_available() else None
-                    ),
-                    "continuation": state["continuation"],
-                }
-                _atomic_torch_save(best_checkpoint_path, best_payload)
-                export_actor(
-                    state["best_agent"]["policy_old"],
-                    model_best_path,
-                    best_round=round_number,
-                    best_score=score,
-                    training_protocol=training_protocol,
-                )
-            for key in (
-                "backtracks_total", "backtracks_mean", "backtrace_steps_total",
-                "backtrace_steps_mean", "return_total", "return_mean",
-                "detected_faults", "fault_coverage",
-            ):
-                writer.add_scalar(f"validation/{key}", evaluation[key], round_number)
-            writer.add_scalar("validation/is_best", int(is_best), round_number)
-            writer.flush()
-            _atomic_json(metrics_path, state["validation_metrics"])
-            validation_state["complete"] = True
-            _atomic_json(validation_state_path, validation_state)
-            state["current_round"] = round_number + 1
-            state["episode_index"] = 0
-            state["phase"] = "training"
-            _save_state(checkpoint_path, agent, state)
-            print(
-                f"ROUND round={round_number}/{args.rounds} "
-                f"validation_detected={evaluation['detected_faults']}/"
-                f"{evaluation['episodes']} backtracks={evaluation['backtracks_total']} "
-                f"backtrace_steps={evaluation['backtrace_steps_total']} "
-                f"best={int(is_best)}",
-                flush=True,
-            )
-    finally:
-        writer.close()
-
-    export_actor(
-        agent.policy_old.state_dict(),
-        model_latest_path,
-        training_protocol=training_protocol,
-    )
-    print(
-        f"TRAINING_COMPLETE rounds={args.rounds} "
-        f"episodes={state['completed_episodes']} best_round={state['best_round']} "
-        f"device={device}",
-        flush=True,
-    )
+        "profile_seed": args.profile_seed,
+        "rounds": args.rounds,
+        "backtrack_limit": args.backtrack_limit,
+        "manifests": {key: str(value) for key, value in manifests.items()},
+        "training_dirs": {key: str(training / key) for key in ("gat", "mean")},
+        "elapsed_s": time.perf_counter() - started,
+    })
+    print(f"TRAINING_COMPLETE output={output_dir}", flush=True)
 
 
 if __name__ == "__main__":

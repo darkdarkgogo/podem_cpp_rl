@@ -7,9 +7,9 @@ import tempfile
 import unittest
 
 
-SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
-if str(SCRIPTS) not in sys.path:
-    sys.path.insert(0, str(SCRIPTS))
+TOOLS = Path(__file__).resolve().parents[1] / "tools"
+if str(TOOLS) not in sys.path:
+    sys.path.insert(0, str(TOOLS))
 
 from plot_final_comparison import (
     METRICS,
@@ -241,7 +241,7 @@ class FinalComparisonPlotTests(unittest.TestCase):
             result = subprocess.run(
                 [
                     sys.executable,
-                    str(SCRIPTS / "plot_final_comparison.py"),
+                    str(TOOLS / "plot_final_comparison.py"),
                     str(csv_path),
                 ],
                 check=False,
@@ -266,7 +266,7 @@ class FinalComparisonPlotTests(unittest.TestCase):
             result = subprocess.run(
                 [
                     sys.executable,
-                    str(SCRIPTS / "plot_final_comparison.py"),
+                    str(TOOLS / "plot_final_comparison.py"),
                     str(csv_path),
                     "--output-dir",
                     str(output_dir),

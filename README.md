@@ -1,6 +1,8 @@
 # PoDemFan_N-detect_ATPG_Test_Compression
 2023 VLSI Testing Final Project
 
+SmartATPG 的训练与验证已分离。正式命令见 [`PODEM/RL_GUIDE.md`](PODEM/RL_GUIDE.md)：先运行 `scripts/train_smartatpg.py`，再显式运行 `scripts/validate_smartatpg.py`。
+
 In all three directories `FAN_PODEM_PARALLEL`, `FANV2_PODEMV1`, `PODEM`
 - type `make` to compile the code into executables
 - type `make clean` to clean the executables

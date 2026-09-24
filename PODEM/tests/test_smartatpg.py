@@ -44,7 +44,7 @@ from rl_podem.smartatpg_artifacts import (
     policy_from_state,
 )
 from rl_podem.artifact_paths import training_output_paths
-from smartatpg_portable import (
+from rl_podem.smartatpg_portable import (
     CIRCUITS,
     compute_embeddings as compute_portable_embeddings,
     load_graph as load_portable_graph,
@@ -519,45 +519,6 @@ class SmartATPGTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Incompatible SmartATPG checkpoint"):
                 restored.load_training_state_dict(old_state)
 
-    def test_co_models_export_through_benchmark_bundle(self):
-        import cpp_podem
-        import prepare_smartatpg_benchmark as prepare_bundle
-        import benchmark_smartatpg as benchmark
-        root = Path(self.temp.name)
-        samples = root / "sample_circuits"
-        samples.mkdir()
-        for circuit_name in CIRCUITS:
-            fixture = BENCH
-            if circuit_name.startswith("s"):
-                fixture = fixture.replace("n = NOT(a)", "ff = DFF(a)\nn = NOT(ff)")
-            (samples / f"{circuit_name}.bench").write_text(
-                fixture, encoding="utf-8"
-            )
-        gat = root / "gat.txt"
-        export_actor(
-            GATGRUSmartATPGPolicy().state_dict(), gat,
-            best_round=1, best_score=(-1, 2, 3, -4, 1),
-            training_protocol=GAT_BATCHED_TRAINING_PROTOCOL,
-        )
-        bundle = root / "bundle"
-        with patch.object(prepare_bundle, "ROOT", root):
-            manifest = prepare_bundle.prepare(bundle, gat)
-            self.assertEqual(prepare_bundle.prepare(bundle, gat, resume=True), manifest)
-        benchmark._validate_manifest(manifest, bundle)
-        self.assertEqual(manifest["gate_embedding_dim"], 11)
-        self.assertEqual(manifest["models"]["smartatpg_gat_gru"]["actor_input_dim"], 12)
-        model_paths = {name: bundle / record["path"] for name, record in manifest["models"].items()}
-        for item in manifest["circuits"]:
-            item["circuit"] = str(bundle / item["circuit"])
-            item["fault_map"] = str(bundle / item["fault_map"])
-        models, _, _ = benchmark._prepare_models(
-            model_paths, manifest, root / "comparison"
-        )
-        graph = load_circuit_graph(manifest["circuits"][0]["circuit"])
-        for name in model_paths:
-            emb = models[name]["embeddings"]["c432"]
-            cpp_podem.validate_actor_artifacts(str(emb), str(model_paths[name]), graph.circuit_hash, list(graph.names), "smartatpg")
-
     def test_co_export_rejects_11d_encoder_tensors(self):
         for policy in (SmartATPGPolicy(), GATGRUSmartATPGPolicy()):
             state = policy.state_dict()
@@ -721,7 +682,7 @@ class SmartATPGTests(unittest.TestCase):
     def test_native_validation_matches_python_policy_without_callbacks(self):
         import cpp_podem
         from rl_podem.cpp_bridge import CppPodemBacktraceV2Evaluator
-        from train_smartatpg import _evaluate_fault
+        from rl_podem.training import _evaluate_fault
 
         fault_ids = [
             item["fault_id"]
@@ -815,8 +776,8 @@ class SmartATPGTests(unittest.TestCase):
 
     def test_native_scoap_validation_matches_python_policy(self):
         import cpp_podem
-        from compare_smartatpg_validation import ScoapValidationEvaluator
-        from train_smartatpg import _evaluate_fault
+        from rl_podem.validation import ScoapValidationEvaluator
+        from rl_podem.training import _evaluate_fault
 
         fault_ids = [
             item["fault_id"]
@@ -872,8 +833,8 @@ class SmartATPGTests(unittest.TestCase):
 
     def test_native_scoap_validation_counts_sequence_zero_reward_events(self):
         import cpp_podem
-        from compare_smartatpg_validation import ScoapValidationEvaluator
-        from train_smartatpg import _evaluate_fault
+        from rl_podem.validation import ScoapValidationEvaluator
+        from rl_podem.training import _evaluate_fault
 
         path = (
             Path(__file__).resolve().parent / "fixtures"
@@ -938,8 +899,6 @@ class SmartATPGTests(unittest.TestCase):
 
     def test_encoder_specific_actor_formats_and_training_protocols(self):
         import cpp_podem
-        import benchmark_smartatpg as benchmark
-        import prepare_smartatpg_benchmark as prepare_bundle
 
         state = self.agent().policy_old.state_dict()
         training_protocol = MEAN_BATCHED_TRAINING_PROTOCOL
@@ -997,22 +956,6 @@ class SmartATPGTests(unittest.TestCase):
                 str(gat_embeddings), str(old_gat_path),
                 self.graph.circuit_hash, list(self.graph.names), "smartatpg",
             )
-        self.assertEqual(
-            prepare_bundle._validate_training_protocol(
-                dict(GAT_BATCHED_TRAINING_PROTOCOL)
-            ),
-            GAT_BATCHED_TRAINING_PROTOCOL,
-        )
-        self.assertEqual(
-            benchmark._validate_training_protocol(
-                dict(GAT_BATCHED_TRAINING_PROTOCOL)
-            ),
-            GAT_BATCHED_TRAINING_PROTOCOL,
-        )
-        with self.assertRaisesRegex(ValueError, "incompatible"):
-            benchmark._validate_training_protocol({
-                **GAT_BATCHED_TRAINING_PROTOCOL, "k_epochs": 1,
-            })
         with self.assertRaisesRegex(ValueError, "protocol metadata is invalid"):
             _export_actor(
                 gat_state,

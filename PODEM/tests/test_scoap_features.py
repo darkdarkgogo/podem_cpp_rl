@@ -13,7 +13,7 @@ if str(SCRIPTS) not in sys.path:
 from rl_podem.smartatpg_features import COST_CAP, load_circuit_graph
 from rl_podem.smartatpg import SmartATPGPolicy
 from rl_podem.cpp_bridge import profile_cpp_podem
-from smartatpg_portable import load_graph
+from rl_podem.smartatpg_portable import load_graph
 
 
 class SCOAPFeatureTests(unittest.TestCase):

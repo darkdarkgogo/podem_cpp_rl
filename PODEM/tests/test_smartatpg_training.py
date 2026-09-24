@@ -15,8 +15,8 @@ SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-import prepare_smartatpg_training as preparation
-from prepare_smartatpg_training import (
+from rl_podem import data_split as preparation
+from rl_podem.data_split import (
     BACKTRACK_LIMIT,
     FAULTS_PER_UPDATE,
     FAULT_FILTER,
@@ -35,26 +35,23 @@ from prepare_smartatpg_training import (
     validation_fault_ids,
 )
 if torch is not None:
-    import train_smartatpg as training
-    from train_smartatpg import (
+    from rl_podem import training
+    from rl_podem.training import (
         AGENT_TYPES,
         BEST_CHECKPOINT_FORMAT,
         _episode_order,
         _evaluate_fault,
         _fault_update_boundary,
+        _inference_payload,
         _initial_state,
-        _append_json_line,
         _catalog_fault_ids,
         _load_continuation,
         _load_validation_catalogs,
-        _load_validation_state,
-        _record_validation_metric,
         _summarize_fault_records,
         _summarize_validation,
         _training_protocol,
         _validate_resume,
         _validation_catalog_hash,
-        _validation_identity,
         _validation_order,
         validation_score,
     )
@@ -113,7 +110,7 @@ class SmartATPGPreparationTests(unittest.TestCase):
         self.assertEqual(MEAN_TRAIN_FAULTS_PER_CIRCUIT, 100)
         self.assertEqual(
             MANIFEST_FORMAT,
-            "SMARTATPG_DATA_SPLIT_MANIFEST_V9_ENCODER_TRAIN_SPLIT_11D_CO_NO_BUF",
+            "SMARTATPG_DATA_SPLIT_MANIFEST_V10_TRAIN_ONLY_VALIDATION_LAZY_11D_CO_NO_BUF",
         )
         self.assertEqual(
             LEGACY_MANIFEST_FORMAT,
@@ -427,52 +424,24 @@ class SmartATPGPreparationTests(unittest.TestCase):
                 tampered["train_circuits"][0]["episode_fault_ids"].reverse()
                 with self.assertRaisesRegex(ValueError, "fault list changed"):
                     preparation._validate_manifest(tampered, manifest_path)
-                tampered_validation = json.loads(json.dumps(manifest))
-                tampered_validation["validation_circuits"][0][
-                    "circuit_hash"
-                ] = "changed"
-                with self.assertRaisesRegex(ValueError, "graph identity changed"):
-                    preparation._validate_manifest(
-                        tampered_validation, manifest_path
-                    )
+                self.assertNotIn("circuit_hash", validation)
+                self.assertNotIn("gate_count", validation)
+                self.assertNotIn("artifact_sha256", validation)
 
                 validation_source = dataset / "validation" / "v.bench"
                 validation_text = validation_source.read_text(encoding="utf-8")
                 validation_source.write_text(
                     validation_text + "\n", encoding="utf-8"
                 )
-                with self.assertRaisesRegex(
-                    ValueError, "configuration changed|artifact changed"
-                ):
-                    preparation._validate_manifest(manifest, manifest_path)
+                self.assertEqual(
+                    preparation._validate_manifest(manifest, manifest_path), manifest
+                )
+                validation_source.write_text("not a BENCH circuit\n", encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "validation graph is invalid"):
+                    preparation._validate_manifest(
+                        manifest, manifest_path, validate_validation_graphs=True,
+                    )
                 validation_source.write_text(validation_text, encoding="utf-8")
-                validation_identity = (
-                    validation["circuit_hash"], validation["gate_count"]
-                )
-                validation_payload = fake_profile(
-                    validation_source, "validation", 14, validation_identity
-                )
-                validation_profile = output / "profiles" / "validation" / "v.json"
-                preparation._atomic_json(validation_profile, validation_payload)
-                legacy = json.loads(json.dumps(manifest))
-                legacy["format"] = LEGACY_MANIFEST_FORMAT
-                legacy["normal_rounds"] = 5
-                legacy.pop("faults_per_update")
-                legacy.pop("k_epochs")
-                legacy["validation_circuits"] = [preparation._record(
-                    manifest_path, validation_profile, validation_source,
-                    "validation", validation_payload,
-                )]
-                legacy["validation_episode_count"] = 3
-                with self.assertRaisesRegex(ValueError, "configuration changed"):
-                    preparation._validate_manifest(legacy, manifest_path)
-                legacy_lazy = json.loads(json.dumps(manifest))
-                legacy_lazy["format"] = LAZY_VALIDATION_MANIFEST_FORMAT
-                legacy_lazy["normal_rounds"] = 5
-                legacy_lazy.pop("faults_per_update")
-                legacy_lazy.pop("k_epochs")
-                with self.assertRaisesRegex(ValueError, "configuration changed"):
-                    preparation._validate_manifest(legacy_lazy, manifest_path)
                 added = dataset / "train" / "added.bench"
                 added.write_text("INPUT(a)\nOUTPUT(a)\n", encoding="utf-8")
                 with self.assertRaisesRegex(ValueError, "exactly 1"):
@@ -492,6 +461,28 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
         self.assertIs(AGENT_TYPES["fanin_mean"], SmartATPGPPOAgent)
         self.assertIs(AGENT_TYPES["level_gat_gru"], GATGRUSmartATPGPPOAgent)
 
+    def test_inference_payload_keeps_complete_cpu_policy_state(self):
+        class Policy:
+            @staticmethod
+            def state_dict():
+                return {"graph_encoder.weight": torch.tensor([1.0])}
+
+        class Agent:
+            policy_old = Policy()
+
+        config = {
+            "manifest_hash": "a" * 64,
+            "encoder_variant": "level_gat_gru",
+            "reward_scheme": "cubic_backtrack_v1",
+            "backtrack_limit": 100,
+            "seed": 2026,
+        }
+        payload = _inference_payload(Agent(), config, 2)
+        self.assertEqual(payload["round"], 2)
+        self.assertEqual(payload["encoder_variant"], "level_gat_gru")
+        self.assertIn("graph_encoder.weight", payload["policy_old"])
+        self.assertEqual(payload["policy_old"]["graph_encoder.weight"].device.type, "cpu")
+
     def test_fault_update_boundary_batches_eight_and_flushes_remainder(self):
         boundaries = [
             index for index in range(1, 11)
@@ -502,7 +493,7 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
     def test_new_manifest_loads_validation_fault_catalog_at_runtime(self):
         circuits = [{"name": "v", "circuit": "v.bench"}]
         catalog = {"faults": [{"fault_id": "f0"}, {"fault_id": "f1"}]}
-        with patch("train_smartatpg.catalog_cpp_podem", return_value=catalog) as load:
+        with patch("rl_podem.training.catalog_cpp_podem", return_value=catalog) as load:
             result = _load_validation_catalogs(
                 {"format": MANIFEST_FORMAT}, circuits
             )
@@ -516,7 +507,7 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
             "name": "v", "circuit": "v.bench",
             "episode_fault_ids": ["f1", "f0"],
         }]
-        with patch("train_smartatpg.catalog_cpp_podem") as load:
+        with patch("rl_podem.training.catalog_cpp_podem") as load:
             result = _load_validation_catalogs(
                 {"format": LEGACY_MANIFEST_FORMAT}, circuits
             )
@@ -524,7 +515,7 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
         self.assertEqual(result[0]["episode_fault_ids"], ["f1", "f0"])
 
     def test_runtime_catalog_rejects_duplicate_fault_ids(self):
-        with patch("train_smartatpg.catalog_cpp_podem", return_value={
+        with patch("rl_podem.training.catalog_cpp_podem", return_value={
             "faults": [{"fault_id": "f0"}, {"fault_id": "f0"}],
         }):
             with self.assertRaisesRegex(ValueError, "duplicate"):
@@ -632,6 +623,7 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
         self.assertEqual(result["circuits"][0]["test_vectors"], 1)
         self.assertAlmostEqual(result["atpg_seconds"], 0.6)
 
+    @unittest.skip("validation identity is now owned by independent validation")
     def test_validation_identity_declares_protocol_and_catalog(self):
         config = {
             "manifest_hash": "a" * 64,
@@ -664,6 +656,7 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
         self.assertEqual(identity["validation_circuits"], ["b12_C", "b15_C"])
         self.assertEqual(identity["faults_per_update"], 8)
 
+    @unittest.skip("training no longer creates validation identity")
     def test_v8_fresh_resume_creates_identity_for_both_encoders(self):
         train = [{"name": "t", "circuit": "t.bench", "episode_fault_ids": ["t0"]}]
         validation = [{"name": "v", "circuit": "v.bench", "episode_fault_ids": ["v0"]}]
@@ -691,6 +684,7 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
                 self.assertEqual(identity["encoder_variant"], encoder)
                 self.assertEqual(identity["seed"], 77)
 
+    @unittest.skip("training resume is independent of validation identity")
     def test_v8_real_resume_requires_matching_identity(self):
         train = [{"name": "t", "circuit": "t.bench", "episode_fault_ids": ["t0"]}]
         validation = [{"name": "v", "circuit": "v.bench", "episode_fault_ids": ["v0"]}]
@@ -741,6 +735,7 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, "supported data-split"):
                         training.main([str(manifest_path), str(output_dir)])
 
+    @unittest.skip("independent validation has no resume JSONL")
     def test_validation_jsonl_recovers_an_appended_record_before_state_update(self):
         with tempfile.TemporaryDirectory() as directory:
             state_path = Path(directory) / "validation_state.json"
@@ -771,6 +766,7 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
         )
         self.assertLess(validation_score(base, 1), validation_score(base, 2))
 
+    @unittest.skip("best-round selection moved to independent validation")
     def test_new_best_validation_round_clears_the_previous_best_marker(self):
         state = _initial_state("a" * 64, {"rounds": 2})
         round_one = {
@@ -801,6 +797,7 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
             [False, True],
         )
 
+    @unittest.skip("best-round selection moved to independent validation")
     def test_non_best_validation_round_preserves_the_previous_best_marker(self):
         state = _initial_state("a" * 64, {"rounds": 2})
         round_one = {
@@ -882,7 +879,7 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             checkpoint = Path(directory) / "best.pth"
             checkpoint.write_bytes(b"checkpoint")
-            with patch("train_smartatpg.torch.load", return_value=saved):
+            with patch("rl_podem.training.torch.load", return_value=saved):
                 lineage = _load_continuation(checkpoint, agent, protocol)
         self.assertIs(agent.loaded, full_agent_state)
         self.assertEqual(lineage["source_manifest_hash"], "a" * 64)
@@ -890,9 +887,9 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
         reset = _initial_state("b" * 64, {"rounds": 5}, continuation=lineage)
         self.assertEqual(reset["current_round"], 1)
         self.assertEqual(reset["episode_index"], 0)
-        self.assertEqual(reset["validation_metrics"], [])
-        self.assertIsNone(reset["best_score"])
-        self.assertIsNone(reset["best_agent"])
+        self.assertNotIn("validation_metrics", reset)
+        self.assertNotIn("best_score", reset)
+        self.assertNotIn("best_agent", reset)
 
         invalid_configs = (
             {},
@@ -902,7 +899,7 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
         )
         for invalid in invalid_configs:
             with self.subTest(config=invalid), patch(
-                "train_smartatpg.torch.load",
+                "rl_podem.training.torch.load",
                 return_value={**saved, "config": invalid},
             ), self.assertRaisesRegex(ValueError, "incompatible SmartATPG protocol"):
                 _load_continuation(checkpoint, _FakeAgent(), protocol)

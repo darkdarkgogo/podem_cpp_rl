@@ -6,7 +6,7 @@ import json
 import os
 from pathlib import Path
 
-from smartatpg_portable import (
+from .smartatpg_portable import (
     ACTION_MASK_DIM,
     FEATURE_SCHEMA,
     GATE_EMBEDDING_DIM,
@@ -21,7 +21,7 @@ LAZY_VALIDATION_MANIFEST_FORMAT = (
     "SMARTATPG_DATA_SPLIT_MANIFEST_V7_LAZY_VALIDATION_CATALOG_11D_CO_NO_BUF"
 )
 MANIFEST_FORMAT = (
-    "SMARTATPG_DATA_SPLIT_MANIFEST_V9_ENCODER_TRAIN_SPLIT_11D_CO_NO_BUF"
+    "SMARTATPG_DATA_SPLIT_MANIFEST_V10_TRAIN_ONLY_VALIDATION_LAZY_11D_CO_NO_BUF"
 )
 PREPARATION_STATE_FORMAT = "SMARTATPG_DATA_SPLIT_PREPARATION_V3"
 PROFILE_FORMAT = "SMARTATPG_HEURISTIC_FAULT_PROFILE_V1"
@@ -56,7 +56,7 @@ MEAN_REQUIRED_ASSETS = (
     "s38417_scan_binary.bench",
     "s38417_scan_binary.faultmap",
 )
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def training_hyperparameters(encoder_variant):
@@ -341,7 +341,6 @@ def _inventory(dataset_root, contract):
             {
                 "name": path.stem,
                 "dataset_path": _relative_path(path, dataset_root),
-                "sha256": sha256_file(path),
             }
             for path in contract["validation"]
         ],
@@ -434,17 +433,14 @@ def _record(manifest_path, profile_path, source, split, payload, *, name=None,
     return record
 
 
-def _validation_record(manifest_path, source, graph_identity):
+def _validation_record(manifest_path, source):
     return {
         "name": source.stem,
         "circuit": _relative_path(source, Path(manifest_path).parent),
-        "artifact_sha256": {"circuit": sha256_file(source)},
-        "circuit_hash": graph_identity[0],
-        "gate_count": int(graph_identity[1]),
     }
 
 
-def _validate_manifest(manifest, manifest_path):
+def _validate_manifest(manifest, manifest_path, *, validate_validation_graphs=False):
     manifest_format = manifest.get("format")
     supported_formats = (MANIFEST_FORMAT,)
     if manifest_format not in supported_formats:
@@ -511,7 +507,7 @@ def _validate_manifest(manifest, manifest_path):
         all_names.extend(names)
         for item, expected_entry in zip(circuits, expected_entries):
             uses_profile = split == "train" or profiled_validation
-            expected_artifacts = {"circuit", "profile"} if uses_profile else {"circuit"}
+            expected_artifacts = {"circuit", "profile"} if uses_profile else set()
             if expected_entry.get("fault_map") is not None:
                 expected_artifacts.add("fault_map")
             if set(item.get("artifact_sha256", {})) != expected_artifacts:
@@ -547,20 +543,13 @@ def _validate_manifest(manifest, manifest_path):
                         f"Manifest validation record contains profile data: "
                         f"{item['name']}"
                     )
-                try:
-                    graph = load_graph(source_path)
-                except Exception as error:
-                    raise ValueError(
-                        f"Manifest validation graph is invalid: {item['name']}"
-                    ) from error
-                if (
-                    item.get("circuit_hash") != graph.circuit_hash
-                    or item.get("gate_count") != len(graph.names)
-                ):
-                    raise ValueError(
-                        f"Manifest validation graph identity changed: "
-                        f"{item['name']}"
-                    )
+                if validate_validation_graphs:
+                    try:
+                        load_graph(source_path)
+                    except Exception as error:
+                        raise ValueError(
+                            f"Manifest validation graph is invalid: {item['name']}"
+                        ) from error
                 continue
             profile_path = resolve_manifest_path(manifest_path, item["profile"])
             payload = json.loads(profile_path.read_text(encoding="utf-8"))
@@ -684,14 +673,8 @@ def prepare(
         return manifest
 
     graph_identities = {}
-    graph_entries = {
-        "train": contract["train"],
-        "validation": tuple(
-            {"name": path.stem, "circuit": path, "fault_map": None}
-            for path in contract["validation"]
-        ),
-    }
-    for split in ("train", "validation"):
+    graph_entries = {"train": contract["train"]}
+    for split in ("train",):
         for index, entry in enumerate(graph_entries[split], 1):
             source = entry["circuit"]
             try:
@@ -781,11 +764,8 @@ def prepare(
             )
         )
     records["validation"] = [
-        _validation_record(
-            manifest_path, entry["circuit"],
-            graph_identities[("validation", entry["name"])],
-        )
-        for entry in graph_entries["validation"]
+        _validation_record(manifest_path, source)
+        for source in contract["validation"]
     ]
 
     hyperparameters = training_hyperparameters(encoder_variant)
