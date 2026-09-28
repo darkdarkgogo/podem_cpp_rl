@@ -2,7 +2,7 @@
 
 SmartATPG 使用 11 维 gate embedding：6 维 gate 类型 one-hot（不含 BUF），以及 level、fanout、静态 SCOAP CC0、CC1、CO。GAT-GRU Actor/Critic 额外拼接 1 维目标值，Mean 保持 11 维输入。
 
-正式实验固定使用 backtrack limit 100、训练 2 轮、每 8 个 fault 更新一次。GAT-GRU 每个 PPO batch 训练 4 epoch；Mean 训练 1 epoch。训练与验证是两个独立命令。
+正式实验固定使用 backtrack limit 100、训练 2 轮。每个 rollout 收集 4 个完整 fault，GAT-GRU 与 Mean 都执行 4 个 PPO epoch；每个 epoch 重新打乱 transitions，并按 128 个 transition 切分 minibatch。训练与验证是两个独立命令。
 
 ## 安装
 
@@ -25,6 +25,8 @@ python3 scripts/train_smartatpg.py \
 ```
 
 训练入口为 GAT-GRU 与 Mean 分别准备训练 manifest，并在两张 GPU 上并行运行。训练 manifest 只记录 train circuits，不枚举、不哈希 validation 文件；每个 worker 也不会加载 validation graph、生成 validation embedding、运行 native validation、计算 validation score 或选择 best round。
+
+GAE 在 rollout 的原始 transition 顺序上计算一次，并在每个 fault terminal 重置；完成 GAE 和整段 Advantage normalization 后才允许 shuffle。最后不足 128 个 transition 的 minibatch 会正常执行 optimizer step，round 末不足 4 个 fault 的 rollout 也会更新。当前 checkpoint 与 native model 格式会拒绝旧的 8-fault、Mean-K1 或缺少 minibatch 协议字段的工件；旧 Actor 只能按既有 weights-only 规则显式 warm start。
 
 每轮训练结束保存：
 
