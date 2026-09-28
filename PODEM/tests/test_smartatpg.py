@@ -562,13 +562,16 @@ class SmartATPGTests(unittest.TestCase):
         agent = SmartATPGPPOAgent({"test": self.graph}, rnd_beta=0)
         self.assertEqual(agent.lr_actor, 0.001)
         self.assertEqual(agent.lr_critic, 0.01)
+        self.assertEqual(agent.k_epochs, 4)
+        self.assertEqual(agent.minibatch_size, 128)
 
         gat_agent = GATGRUSmartATPGPPOAgent({"test": self.graph}, rnd_beta=0)
         self.assertEqual(gat_agent.lr_actor, 0.0003)
         self.assertEqual(gat_agent.lr_critic, 0.001)
         self.assertEqual(gat_agent.k_epochs, 4)
+        self.assertEqual(gat_agent.minibatch_size, 128)
 
-    def test_deferred_trainer_collects_eight_faults_for_one_update(self):
+    def test_deferred_trainer_collects_four_faults_for_one_update(self):
         from rl_podem.cpp_bridge import CppPodemBacktraceV2Trainer
 
         agent = SmartATPGPPOAgent(
@@ -577,7 +580,7 @@ class SmartATPGTests(unittest.TestCase):
         trainer = CppPodemBacktraceV2Trainer(
             self.graph, agent=agent, auto_update=False,
         )
-        for index in range(8):
+        for index in range(4):
             trainer.event_callback({"event": "episode_start"})
             trainer.decision_callback({
                 "mode": "backtrace",
@@ -593,11 +596,12 @@ class SmartATPGTests(unittest.TestCase):
                 "backtrace_steps": 1, "pi_visits": 1,
             })
             self.assertEqual(agent.update_count, 0)
-        self.assertEqual(len(agent.buffer.steps), 8)
-        metrics = agent.update()
+        self.assertEqual(len(agent.buffer.steps), 4)
+        metrics = agent.update(rollout_faults=4)
         self.assertEqual(agent.update_count, 1)
         self.assertEqual(metrics["epochs"], 1)
-        self.assertEqual(metrics["steps"], 8)
+        self.assertEqual(metrics["steps"], 4)
+        self.assertEqual(metrics["rollout_faults"], 4)
         self.assertEqual(len(agent.buffer.steps), 0)
 
     def test_deferred_empty_fault_does_not_reward_previous_trajectory(self):
@@ -1093,11 +1097,13 @@ class SmartATPGTests(unittest.TestCase):
         export_descriptors(state, self.graph, embedding_path)
         model = load_portable_model(model_path)
         self.assertEqual(
-            model.model_format, "SMARTATPG_MODEL_V13_BATCH8_EPOCH1"
+            model.model_format,
+            "SMARTATPG_MODEL_V16_MEAN_GAE_BATCH4_MINIBATCH128_EPOCH4",
         )
         self.assertEqual(model.normal_rounds, 2)
-        self.assertEqual(model.faults_per_update, 8)
-        self.assertEqual(model.k_epochs, 1)
+        self.assertEqual(model.faults_per_update, 4)
+        self.assertEqual(model.minibatch_size, 128)
+        self.assertEqual(model.k_epochs, 4)
         cpp_podem.validate_actor_artifacts(
             str(embedding_path), str(model_path), self.graph.circuit_hash,
             list(self.graph.names), "smartatpg",
@@ -1116,8 +1122,10 @@ class SmartATPGTests(unittest.TestCase):
         gat_model = load_portable_model(gat_path)
         self.assertEqual(
             gat_model.model_format,
-            "SMARTATPG_MODEL_V15_GAT_DEPTHNORM_GAE_BATCH8_EPOCH4",
+            "SMARTATPG_MODEL_V17_GAT_DEPTHNORM_GAE_BATCH4_MINIBATCH128_EPOCH4",
         )
+        self.assertEqual(gat_model.faults_per_update, 4)
+        self.assertEqual(gat_model.minibatch_size, 128)
         self.assertEqual(gat_model.k_epochs, 4)
         cpp_podem.validate_actor_artifacts(
             str(gat_embeddings), str(gat_path), self.graph.circuit_hash,
@@ -1126,8 +1134,8 @@ class SmartATPGTests(unittest.TestCase):
         old_gat_path = Path(self.temp.name) / "old_gat_v13.txt"
         old_gat_path.write_text(
             gat_path.read_text(encoding="utf-8").replace(
-                "SMARTATPG_MODEL_V15_GAT_DEPTHNORM_GAE_BATCH8_EPOCH4",
-                "SMARTATPG_MODEL_V13_BATCH8_EPOCH1",
+                "SMARTATPG_MODEL_V17_GAT_DEPTHNORM_GAE_BATCH4_MINIBATCH128_EPOCH4",
+                "SMARTATPG_MODEL_V16_MEAN_GAE_BATCH4_MINIBATCH128_EPOCH4",
                 1,
             ),
             encoding="utf-8",
@@ -1142,7 +1150,7 @@ class SmartATPGTests(unittest.TestCase):
         stale_gat_path = Path(self.temp.name) / "old_gat_v14.txt"
         stale_gat_path.write_text(
             gat_path.read_text(encoding="utf-8").replace(
-                "SMARTATPG_MODEL_V15_GAT_DEPTHNORM_GAE_BATCH8_EPOCH4",
+                "SMARTATPG_MODEL_V17_GAT_DEPTHNORM_GAE_BATCH4_MINIBATCH128_EPOCH4",
                 "SMARTATPG_MODEL_V14_GAT_BATCH8_EPOCH4",
                 1,
             ),
@@ -1153,6 +1161,36 @@ class SmartATPGTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Unsupported actor format"):
             cpp_podem.validate_actor_artifacts(
                 str(gat_embeddings), str(stale_gat_path),
+                self.graph.circuit_hash, list(self.graph.names), "smartatpg",
+            )
+        old_batch8_path = Path(self.temp.name) / "old_gat_v15.txt"
+        old_batch8_path.write_text(
+            gat_path.read_text(encoding="utf-8").replace(
+                "SMARTATPG_MODEL_V17_GAT_DEPTHNORM_GAE_BATCH4_MINIBATCH128_EPOCH4",
+                "SMARTATPG_MODEL_V15_GAT_DEPTHNORM_GAE_BATCH8_EPOCH4",
+                1,
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "Unsupported SmartATPG model"):
+            load_portable_model(old_batch8_path)
+        with self.assertRaisesRegex(RuntimeError, "Unsupported actor format"):
+            cpp_podem.validate_actor_artifacts(
+                str(gat_embeddings), str(old_batch8_path),
+                self.graph.circuit_hash, list(self.graph.names), "smartatpg",
+            )
+        wrong_minibatch_path = Path(self.temp.name) / "wrong_minibatch.txt"
+        wrong_minibatch_path.write_text(
+            gat_path.read_text(encoding="utf-8").replace(
+                "minibatch_size 128", "minibatch_size 64", 1,
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "training protocol"):
+            load_portable_model(wrong_minibatch_path)
+        with self.assertRaisesRegex(RuntimeError, "minibatch"):
+            cpp_podem.validate_actor_artifacts(
+                str(gat_embeddings), str(wrong_minibatch_path),
                 self.graph.circuit_hash, list(self.graph.names), "smartatpg",
             )
         wrong_scheme_path = Path(self.temp.name) / "wrong_gat_scheme.txt"
@@ -1220,7 +1258,7 @@ class SmartATPGTests(unittest.TestCase):
         self.assertEqual(model.encoder_variant, "level_gat_gru")
         self.assertEqual(
             model.model_format,
-            "SMARTATPG_MODEL_V15_GAT_DEPTHNORM_GAE_BATCH8_EPOCH4",
+            "SMARTATPG_MODEL_V17_GAT_DEPTHNORM_GAE_BATCH4_MINIBATCH128_EPOCH4",
         )
         self.assertEqual(model.actor_input_dim, 12)
         self.assertFalse(any(

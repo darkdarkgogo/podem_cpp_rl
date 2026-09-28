@@ -18,7 +18,9 @@ DECISION_STATE_DIM = GATE_EMBEDDING_DIM + ACTION_MASK_DIM
 POLICY_STATE_DIM = DECISION_STATE_DIM
 ENCODER_VARIANT = "fanin_mean"
 RND_SCHEMA = "SMARTATPG_RAW_OBJECTIVE_V3_11D_CO_NO_BUF"
-TRAINING_FORMAT = "RL_PODEM_SMARTATPG_PPO_V6_11D_CO_NO_BUF"
+TRAINING_FORMAT = (
+    "RL_PODEM_SMARTATPG_PPO_V7_BATCH4_MINIBATCH128_EPOCH4_11D_CO_NO_BUF"
+)
 
 
 @dataclass(frozen=True)
@@ -115,6 +117,8 @@ class SmartATPGPPOAgent(BacktracePPOAgentV2):
     def __init__(self, graphs, hidden_dim=32, **kwargs):
         kwargs.setdefault("lr_actor", 0.001)
         kwargs.setdefault("lr_critic", 0.01)
+        kwargs.setdefault("k_epochs", 4)
+        kwargs.setdefault("minibatch_size", 128)
         super().__init__(ACTOR_INPUT_DIM, hidden_dim=hidden_dim, **kwargs)
         self.gate_embedding_dim = GATE_EMBEDDING_DIM
         self.action_mask_dim = ACTION_MASK_DIM

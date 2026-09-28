@@ -12,8 +12,10 @@ from typing import Optional
 
 
 LEGACY_MODEL_FORMAT = "SMARTATPG_MODEL_V12"
-MEAN_MODEL_FORMAT = "SMARTATPG_MODEL_V13_BATCH8_EPOCH1"
-GAT_MODEL_FORMAT = "SMARTATPG_MODEL_V15_GAT_DEPTHNORM_GAE_BATCH8_EPOCH4"
+MEAN_MODEL_FORMAT = "SMARTATPG_MODEL_V16_MEAN_GAE_BATCH4_MINIBATCH128_EPOCH4"
+GAT_MODEL_FORMAT = (
+    "SMARTATPG_MODEL_V17_GAT_DEPTHNORM_GAE_BATCH4_MINIBATCH128_EPOCH4"
+)
 MODEL_FORMAT = GAT_MODEL_FORMAT
 EMBEDDING_FORMAT = "SMARTATPG_EMBEDDINGS_V7"
 FEATURE_SCHEMA = "SMARTATPG_FEATURES_V4_11D_CO_NO_BUF"
@@ -75,6 +77,7 @@ class PortableModel:
     reward_scheme: str
     normal_rounds: int
     faults_per_update: Optional[int]
+    minibatch_size: Optional[int]
     k_epochs: Optional[int]
     training_circuit_count: int
     validation_circuit_count: int
@@ -192,9 +195,11 @@ def load_model(path):
     normal_rounds = int(_field(tokens, "normal_rounds"))
     if model_format != LEGACY_MODEL_FORMAT:
         faults_per_update = int(_field(tokens, "faults_per_update"))
+        minibatch_size = int(_field(tokens, "minibatch_size"))
         k_epochs = int(_field(tokens, "k_epochs"))
     else:
         faults_per_update = None
+        minibatch_size = None
         k_epochs = None
     training_circuit_count = int(_field(tokens, "training_circuit_count"))
     validation_circuit_count = int(_field(tokens, "validation_circuit_count"))
@@ -210,10 +215,9 @@ def load_model(path):
         or (
             model_format != LEGACY_MODEL_FORMAT
             and (
-                faults_per_update != 8
-                or k_epochs != (
-                    4 if encoder_variant == "level_gat_gru" else 1
-                )
+                faults_per_update != 4
+                or minibatch_size != 128
+                or k_epochs != 4
             )
         )
         or training_circuit_count <= 0
@@ -292,8 +296,8 @@ def load_model(path):
         model_format, encoder_variant, graph_config, snapshot, best_round,
         best_score, hidden_dim, actor_input_dim, decision_state_dim,
         manifest_hash, backtrack_limit, reward_scheme, normal_rounds,
-        faults_per_update,
-        k_epochs, training_circuit_count, validation_circuit_count, tensors,
+        faults_per_update, minibatch_size, k_epochs,
+        training_circuit_count, validation_circuit_count, tensors,
     )
 
 

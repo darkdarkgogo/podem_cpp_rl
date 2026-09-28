@@ -19,8 +19,10 @@ from .smartatpg_rewards import (
 from .smartatpg_features import FEATURE_DIM, FEATURE_SCHEMA, GRAPH_CONFIG_ID
 
 
-MEAN_MODEL_FORMAT = "SMARTATPG_MODEL_V13_BATCH8_EPOCH1"
-GAT_MODEL_FORMAT = "SMARTATPG_MODEL_V15_GAT_DEPTHNORM_GAE_BATCH8_EPOCH4"
+MEAN_MODEL_FORMAT = "SMARTATPG_MODEL_V16_MEAN_GAE_BATCH4_MINIBATCH128_EPOCH4"
+GAT_MODEL_FORMAT = (
+    "SMARTATPG_MODEL_V17_GAT_DEPTHNORM_GAE_BATCH4_MINIBATCH128_EPOCH4"
+)
 
 
 def _load_cpp_embedding_artifact(
@@ -222,7 +224,7 @@ def export_actor_v2_state_dict(
     output_path = Path(path).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     temporary = output_path.with_suffix(output_path.suffix + ".tmp")
-    batch_keys = ("faults_per_update", "k_epochs")
+    batch_keys = ("faults_per_update", "minibatch_size", "k_epochs")
     has_batch_protocol = all(key in metadata for key in batch_keys)
     if any(key in metadata for key in batch_keys) and not has_batch_protocol:
         raise ValueError("SmartATPG batching metadata is incomplete")
@@ -234,7 +236,6 @@ def export_actor_v2_state_dict(
     if not all(key in metadata for key in protocol_keys):
         raise ValueError("SmartATPG training protocol metadata is incomplete")
     manifest_hash = str(metadata["manifest_hash"])
-    expected_k_epochs = 4 if variant == "level_gat_gru" else 1
     if (
         len(manifest_hash) != 64
         or any(char not in "0123456789abcdef" for char in manifest_hash)
@@ -249,8 +250,9 @@ def export_actor_v2_state_dict(
         or (
             has_batch_protocol
             and (
-                int(metadata["faults_per_update"]) != 8
-                or int(metadata["k_epochs"]) != expected_k_epochs
+                int(metadata["faults_per_update"]) != 4
+                or int(metadata["minibatch_size"]) != 128
+                or int(metadata["k_epochs"]) != 4
             )
         )
     ):

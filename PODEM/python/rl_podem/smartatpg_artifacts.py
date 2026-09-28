@@ -78,6 +78,9 @@ def export_actor(
         protocol_metadata["faults_per_update"] = int(
             training_protocol["faults_per_update"]
         )
+        protocol_metadata["minibatch_size"] = int(
+            training_protocol["minibatch_size"]
+        )
         protocol_metadata["k_epochs"] = int(training_protocol["k_epochs"])
     export_actor_v2_state_dict(state, path, metadata={
         **metadata,
