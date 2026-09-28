@@ -129,6 +129,7 @@ def _training_protocol(config):
     }
     if "faults_per_update" in config:
         protocol["faults_per_update"] = config["faults_per_update"]
+        protocol["minibatch_size"] = config["minibatch_size"]
         protocol["k_epochs"] = config["k_epochs"]
     return protocol
 
@@ -329,6 +330,7 @@ def main(argv=None):
         normalize_returns=hyperparameters["normalize_returns"],
         normalize_advantages=hyperparameters["normalize_advantages"],
         return_scale=hyperparameters["return_scale"],
+        minibatch_size=hyperparameters["minibatch_size"],
     )
     reward_scheme = reward_scheme_for_encoder(args.encoder)
     trainers = {
@@ -345,6 +347,7 @@ def main(argv=None):
         "seed": args.seed,
         "rnd_beta": args.rnd_beta,
         "k_epochs": args.k_epochs,
+        "minibatch_size": hyperparameters["minibatch_size"],
         "backtrack_limit": BACKTRACK_LIMIT,
         "actor_lr": hyperparameters["actor_lr"],
         "critic_lr": hyperparameters["critic_lr"],
@@ -453,10 +456,10 @@ def main(argv=None):
                         FAULTS_PER_UPDATE if batched_training else 1,
                     )
                     if batched_training and update_boundary:
-                        update_metrics = agent.update()
                         batch_faults = (index + 1) % FAULTS_PER_UPDATE
                         if batch_faults == 0:
                             batch_faults = FAULTS_PER_UPDATE
+                        update_metrics = agent.update(rollout_faults=batch_faults)
                         update_step = (
                             int(agent.update_count)
                             if update_metrics is not None
@@ -466,7 +469,16 @@ def main(argv=None):
                         if update_metrics is not None:
                             for key in (
                                 "total_loss", "policy_loss", "value_loss",
-                                "entropy", "rnd_loss", "steps",
+                                "entropy", "ratio_mean", "approx_kl",
+                                "clip_fraction", "rnd_loss", "steps",
+                                "rollout_faults", "rollout_transitions",
+                                "minibatches_per_epoch", "optimizer_steps",
+                                "epochs", "total_loss_last_epoch",
+                                "policy_loss_last_epoch",
+                                "value_loss_last_epoch",
+                                "entropy_last_epoch", "ratio_mean_last_epoch",
+                                "approx_kl_last_epoch",
+                                "clip_fraction_last_epoch",
                             ):
                                 writer.add_scalar(
                                     f"update/{key}", update_metrics[key],
@@ -476,8 +488,13 @@ def main(argv=None):
                         print(
                             f"UPDATE round={round_number}/{args.rounds} "
                             f"faults={batch_faults} completed={index + 1}/"
-                            f"{len(order)} optimizer_step="
-                            f"{int(update_metrics is not None)}",
+                            f"{len(order)} transitions="
+                            f"{update_metrics['rollout_transitions'] if update_metrics else 0} "
+                            f"minibatches="
+                            f"{update_metrics['minibatches_per_epoch'] if update_metrics else 0} "
+                            f"epochs={update_metrics['epochs'] if update_metrics else 0} "
+                            f"optimizer_steps="
+                            f"{update_metrics['optimizer_steps'] if update_metrics else 0}",
                             flush=True,
                         )
                     if not batched_training or update_boundary:
