@@ -144,6 +144,7 @@ class BacktracePPOAgentV2:
         lr_critic=1e-3,
         gamma=0.99,
         k_epochs=8,
+        minibatch_size=128,
         eps_clip=0.2,
         rnd_beta=0.05,
         rnd_lr=1e-4,
@@ -160,6 +161,7 @@ class BacktracePPOAgentV2:
         self.lr_critic = float(lr_critic)
         self.gamma = float(gamma)
         self.k_epochs = int(k_epochs)
+        self.minibatch_size = int(minibatch_size)
         self.eps_clip = float(eps_clip)
         self.gate_embedding_dim = int(gate_embedding_dim)
         self.hidden_dim = int(hidden_dim)
@@ -182,6 +184,10 @@ class BacktracePPOAgentV2:
             raise ValueError("gae_lambda must be finite and in [0, 1].")
         if self.advantage_method not in ("mc", "gae"):
             raise ValueError("advantage_method must be 'mc' or 'gae'.")
+        if self.k_epochs <= 0:
+            raise ValueError("k_epochs must be positive.")
+        if self.minibatch_size <= 0:
+            raise ValueError("minibatch_size must be positive.")
         if self.advantage_method == "gae" and self.normalize_returns:
             raise ValueError("GAE requires normalize_returns=False.")
         self.buffer = RolloutBuffer()
@@ -247,13 +253,36 @@ class BacktracePPOAgentV2:
             self.buffer.steps[-1].reward += final_reward
             self.buffer.steps[-1].is_terminal = True
 
-    def _evaluate_rollout(self):
-        return [self.policy.evaluate_step(step) for step in self.buffer.steps]
+    def _validate_rollout_indices(self, indices):
+        indices = tuple(indices)
+        if any(
+            isinstance(index, bool)
+            or not isinstance(index, int)
+            or index < 0
+            or index >= len(self.buffer.steps)
+            for index in indices
+        ):
+            raise IndexError("Rollout indices must reference buffered transitions")
+        return indices
 
-    def update(self):
+    def _evaluate_rollout(self, indices):
+        indices = self._validate_rollout_indices(indices)
+        return [
+            self.policy.evaluate_step(self.buffer.steps[index])
+            for index in indices
+        ]
+
+    def update(self, rollout_faults=None):
         if not self.buffer.steps:
             return None
 
+        step_count = len(self.buffer.steps)
+        if rollout_faults is None:
+            rollout_faults = sum(step.is_terminal for step in self.buffer.steps)
+        if isinstance(rollout_faults, bool) or not isinstance(rollout_faults, int):
+            raise ValueError("rollout_faults must be a positive integer.")
+        if rollout_faults <= 0:
+            raise ValueError("rollout_faults must be a positive integer.")
         step_rewards = [step.reward for step in self.buffer.steps]
         old_logprobs = torch.stack(
             [step.logprob for step in self.buffer.steps]
@@ -278,46 +307,67 @@ class BacktracePPOAgentV2:
             [step.rnd_observation for step in self.buffer.steps]
         ).to(device)
 
-        final_metrics = None
-        for _ in range(self.k_epochs):
-            losses = []
-            policy_losses = []
-            value_losses = []
-            entropies = []
-            ratios = []
-            for index, (logprob, state_value, entropy) in enumerate(self._evaluate_rollout()):
-                ratio = torch.exp(logprob - old_logprobs[index].detach())
-                surrogate1 = ratio * advantages[index]
-                surrogate2 = torch.clamp(
-                    ratio, 1 - self.eps_clip, 1 + self.eps_clip
-                ) * advantages[index]
-                policy_loss = -torch.min(surrogate1, surrogate2)
-                value_loss = self.mse_loss(state_value.squeeze(), returns[index])
-                loss = policy_loss + 0.5 * value_loss - self.entropy_coef * entropy
-                losses.append(loss)
-                policy_losses.append(policy_loss)
-                value_losses.append(value_loss)
-                entropies.append(entropy)
-                ratios.append(ratio)
-            total_loss = torch.stack(losses).mean()
-            self.optimizer.zero_grad()
-            total_loss.backward()
-            if self.max_grad_norm > 0.0:
-                torch.nn.utils.clip_grad_norm_(
-                    self.policy.parameters(), self.max_grad_norm
+        metric_names = (
+            "total_loss", "policy_loss", "value_loss", "entropy",
+            "ratio_mean", "approx_kl", "clip_fraction",
+        )
+        weighted_metrics = {name: 0.0 for name in metric_names}
+        last_epoch_metrics = {name: 0.0 for name in metric_names}
+        optimizer_steps = 0
+        for epoch in range(self.k_epochs):
+            permutation = torch.randperm(step_count).tolist()
+            for start in range(0, step_count, self.minibatch_size):
+                indices = permutation[start:start + self.minibatch_size]
+                batch_indices = torch.as_tensor(
+                    indices, dtype=torch.long, device=device,
                 )
-            self.optimizer.step()
-            final_metrics = {
-                "total_loss": float(total_loss.detach().item()),
-                "policy_loss": float(
-                    torch.stack(policy_losses).mean().detach().item()
-                ),
-                "value_loss": float(
-                    torch.stack(value_losses).mean().detach().item()
-                ),
-                "entropy": float(torch.stack(entropies).mean().detach().item()),
-                "ratio_mean": float(torch.stack(ratios).mean().detach().item()),
-            }
+                evaluated = self._evaluate_rollout(indices)
+                logprobs = torch.stack([item[0] for item in evaluated])
+                state_values = torch.stack([item[1] for item in evaluated]).reshape(-1)
+                entropies = torch.stack([item[2] for item in evaluated])
+                selected_old_logprobs = old_logprobs.index_select(
+                    0, batch_indices,
+                ).detach()
+                selected_advantages = advantages.index_select(0, batch_indices)
+                selected_returns = returns.index_select(0, batch_indices)
+                log_ratios = logprobs - selected_old_logprobs
+                ratios = torch.exp(log_ratios)
+                surrogate1 = ratios * selected_advantages
+                surrogate2 = torch.clamp(
+                    ratios, 1 - self.eps_clip, 1 + self.eps_clip
+                ) * selected_advantages
+                policy_losses = -torch.min(surrogate1, surrogate2)
+                value_losses = (state_values - selected_returns).pow(2)
+                losses = (
+                    policy_losses + 0.5 * value_losses
+                    - self.entropy_coef * entropies
+                )
+                total_loss = losses.mean()
+                self.optimizer.zero_grad()
+                total_loss.backward()
+                if self.max_grad_norm > 0.0:
+                    torch.nn.utils.clip_grad_norm_(
+                        self.policy.parameters(), self.max_grad_norm
+                    )
+                self.optimizer.step()
+                optimizer_steps += 1
+
+                batch_metrics = {
+                    "total_loss": total_loss.detach(),
+                    "policy_loss": policy_losses.mean().detach(),
+                    "value_loss": value_losses.mean().detach(),
+                    "entropy": entropies.mean().detach(),
+                    "ratio_mean": ratios.mean().detach(),
+                    "approx_kl": ((ratios - 1.0) - log_ratios).mean().detach(),
+                    "clip_fraction": (
+                        (ratios - 1.0).abs() > self.eps_clip
+                    ).float().mean().detach(),
+                }
+                batch_size = len(indices)
+                for name, value in batch_metrics.items():
+                    weighted_metrics[name] += float(value.item()) * batch_size
+                    if epoch == self.k_epochs - 1:
+                        last_epoch_metrics[name] += float(value.item()) * batch_size
 
         if self.rnd_beta > 0.0:
             rnd_loss = self.rnd.prediction_error(rnd_observations).mean()
@@ -330,7 +380,13 @@ class BacktracePPOAgentV2:
         self.update_count += 1
         metrics = {
             "update": self.update_count,
-            "steps": len(self.buffer.steps),
+            "steps": step_count,
+            "rollout_faults": rollout_faults,
+            "rollout_transitions": step_count,
+            "minibatches_per_epoch": math.ceil(
+                step_count / self.minibatch_size
+            ),
+            "optimizer_steps": optimizer_steps,
             "reward_sum": float(sum(step_rewards)),
             "intrinsic_reward_sum": float(
                 sum(step.intrinsic_reward for step in self.buffer.steps)
@@ -357,8 +413,12 @@ class BacktracePPOAgentV2:
             else 0.0,
             "epochs": self.k_epochs,
         }
-        if final_metrics is not None:
-            metrics.update(final_metrics)
+        metric_denominator = self.k_epochs * step_count
+        for name in metric_names:
+            metrics[name] = weighted_metrics[name] / metric_denominator
+            metrics[f"{name}_last_epoch"] = (
+                last_epoch_metrics[name] / step_count
+            )
         self.buffer.clear()
         return metrics
 
@@ -383,6 +443,7 @@ class BacktracePPOAgentV2:
             "lr_critic": self.lr_critic,
             "gamma": self.gamma,
             "k_epochs": self.k_epochs,
+            "minibatch_size": self.minibatch_size,
             "eps_clip": self.eps_clip,
             "rnd_beta": self.rnd_beta,
             "rnd_lr": self.rnd_lr,

@@ -179,6 +179,102 @@ class SmartATPGTests(unittest.TestCase):
             torch.tensor([0.99 * 0.97, 1.0, 0.99 * 0.97, 1.0]),
         )
 
+    def test_ppo_reshuffles_and_uses_transition_minibatches(self):
+        agent = SmartATPGPPOAgent(
+            {"test": self.graph}, advantage_method="gae",
+            normalize_returns=False, normalize_advantages=True,
+            return_scale=100, rnd_beta=0, k_epochs=4,
+            minibatch_size=128,
+        )
+        gates = self.gates()
+        terminal_indices = {89, 179, 269, 349}
+        for index in range(350):
+            agent.select_backtrace_action(
+                gates["y"], index % 2, [gates["n"], gates["b"]],
+            )
+            agent.add_reward(float(index % 3) - 1.0)
+            if index in terminal_indices:
+                agent.finish_episode(100.0)
+
+        evaluated_batches = []
+        original_evaluate = agent._evaluate_rollout
+
+        def record_evaluate(indices):
+            evaluated_batches.append(tuple(indices))
+            return original_evaluate(indices)
+
+        agent._evaluate_rollout = record_evaluate
+        with (
+            patch("rl_podem.ppo.full_fault_targets", wraps=full_fault_targets) as targets,
+            patch("rl_podem.ppo.torch.randperm", wraps=torch.randperm) as shuffle,
+        ):
+            metrics = agent.update(rollout_faults=4)
+
+        self.assertEqual(targets.call_count, 1)
+        self.assertEqual(shuffle.call_count, 4)
+        self.assertEqual(
+            [len(batch) for batch in evaluated_batches],
+            [128, 128, 94] * 4,
+        )
+        for epoch in range(4):
+            epoch_indices = evaluated_batches[epoch * 3:(epoch + 1) * 3]
+            self.assertEqual(
+                Counter(index for batch in epoch_indices for index in batch),
+                Counter(range(350)),
+            )
+        self.assertEqual(metrics["rollout_faults"], 4)
+        self.assertEqual(metrics["rollout_transitions"], 350)
+        self.assertEqual(metrics["minibatches_per_epoch"], 3)
+        self.assertEqual(metrics["optimizer_steps"], 12)
+        for name in (
+            "total_loss", "policy_loss", "value_loss", "entropy",
+            "ratio_mean", "approx_kl", "clip_fraction",
+        ):
+            self.assertIn(name, metrics)
+            self.assertIn(f"{name}_last_epoch", metrics)
+
+    def test_minibatch_size_must_be_positive(self):
+        with self.assertRaisesRegex(ValueError, "minibatch_size"):
+            SmartATPGPPOAgent(
+                {"test": self.graph}, rnd_beta=0, minibatch_size=0,
+            )
+
+    def test_update_metrics_weight_short_minibatches_by_transition_count(self):
+        agent = SmartATPGPPOAgent(
+            {"test": self.graph}, advantage_method="gae",
+            normalize_returns=False, normalize_advantages=False,
+            return_scale=100, rnd_beta=0, k_epochs=2,
+            minibatch_size=2,
+        )
+        gates = self.gates()
+        for index in range(3):
+            agent.select_backtrace_action(
+                gates["y"], index % 2, [gates["n"], gates["b"]],
+            )
+            agent.add_reward(0.0)
+        agent.finish_episode(100.0)
+        for group in agent.optimizer.param_groups:
+            group["lr"] = 0.0
+
+        entropy_by_index = (1.0, 3.0, 9.0)
+
+        def evaluate(indices):
+            anchor = next(agent.policy.parameters()).sum() * 0.0
+            return [
+                (
+                    agent.buffer.steps[index].logprob.detach() + anchor,
+                    anchor,
+                    anchor + entropy_by_index[index],
+                )
+                for index in indices
+            ]
+
+        agent._evaluate_rollout = evaluate
+        metrics = agent.update(rollout_faults=1)
+        expected = sum(entropy_by_index) / len(entropy_by_index)
+        self.assertAlmostEqual(metrics["entropy"], expected)
+        self.assertAlmostEqual(metrics["entropy_last_epoch"], expected)
+
     def test_training_checkpoint_rejects_old_advantage_protocol(self):
         old = self.agent(method="mc").training_state_dict()
         with self.assertRaisesRegex(ValueError, "hyperparameters changed"):

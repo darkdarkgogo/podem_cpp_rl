@@ -176,10 +176,12 @@ class SmartATPGPPOAgent(BacktracePPOAgentV2):
     def select_backtrace_action_deterministic(self, objective_gate, objective_value, candidate_gates, action_mask=None):
         return self._select(objective_gate, objective_value, candidate_gates, action_mask, True)
 
-    def _evaluate_rollout(self):
+    def _evaluate_rollout(self, indices):
+        indices = self._validate_rollout_indices(indices)
         embeddings_by_graph = {}
         evaluated = []
-        for step in self.buffer.steps:
+        for index in indices:
+            step = self.buffer.steps[index]
             graph = self.graphs[step.circuit_hash]
             if graph.circuit_hash not in embeddings_by_graph:
                 embeddings_by_graph[graph.circuit_hash] = (
