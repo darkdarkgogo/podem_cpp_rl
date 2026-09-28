@@ -101,6 +101,7 @@ class SmartATPGPreparationTests(unittest.TestCase):
             "normalize_advantages": True,
             "return_scale": 100.0,
             "k_epochs": 4,
+            "minibatch_size": 128,
             "actor_lr": 0.0003,
             "critic_lr": 0.001,
         })
@@ -111,7 +112,8 @@ class SmartATPGPreparationTests(unittest.TestCase):
             "normalize_returns": False,
             "normalize_advantages": True,
             "return_scale": 100.0,
-            "k_epochs": 1,
+            "k_epochs": 4,
+            "minibatch_size": 128,
             "actor_lr": 0.001,
             "critic_lr": 0.01,
         })
@@ -121,7 +123,7 @@ class SmartATPGPreparationTests(unittest.TestCase):
     def test_fixed_training_contract(self):
         self.assertEqual(BACKTRACK_LIMIT, 100)
         self.assertEqual(NORMAL_TRAINING_ROUNDS, 2)
-        self.assertEqual(FAULTS_PER_UPDATE, 8)
+        self.assertEqual(FAULTS_PER_UPDATE, 4)
         self.assertEqual(TRAIN_FAULTS_PER_CIRCUIT, 30)
         self.assertEqual(MEAN_TRAIN_FAULTS_PER_CIRCUIT, 100)
         self.assertEqual(
@@ -397,8 +399,9 @@ class SmartATPGPreparationTests(unittest.TestCase):
                 self.assertEqual(profiled_splits, ["train"])
                 self.assertNotIn("validation_circuits", manifest)
                 self.assertEqual(manifest["normal_rounds"], 2)
-                self.assertEqual(manifest["faults_per_update"], 8)
+                self.assertEqual(manifest["faults_per_update"], 4)
                 self.assertEqual(manifest["k_epochs"], 4)
+                self.assertEqual(manifest["minibatch_size"], 128)
                 old_gat_manifest = json.loads(json.dumps(manifest))
                 old_gat_manifest["k_epochs"] = 1
                 with self.assertRaisesRegex(
@@ -465,12 +468,12 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
         self.assertIn("graph_encoder.weight", payload["policy_old"])
         self.assertEqual(payload["policy_old"]["graph_encoder.weight"].device.type, "cpu")
 
-    def test_fault_update_boundary_batches_eight_and_flushes_remainder(self):
+    def test_fault_update_boundary_batches_four_and_flushes_remainder(self):
         boundaries = [
             index for index in range(1, 11)
-            if _fault_update_boundary(index, 10, 8)
+            if _fault_update_boundary(index, 10, 4)
         ]
-        self.assertEqual(boundaries, [8, 10])
+        self.assertEqual(boundaries, [4, 8, 10])
 
     def test_new_manifest_loads_validation_fault_catalog_at_runtime(self):
         circuits = [{"name": "v", "circuit": "v.bench"}]
@@ -653,7 +656,7 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
         config = {
             "rounds": 2, "manifest_hash": "a" * 64,
             "backtrack_limit": 100, "training_episode_count": 10,
-            "faults_per_update": 8,
+            "faults_per_update": 4,
         }
         state = _initial_state("a" * 64, config)
         state.update(episode_index=8, completed_episodes=8)
@@ -729,7 +732,8 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
             "validation_circuit_count": 6,
         })
         batched = {
-            **config, "rounds": 2, "faults_per_update": 8, "k_epochs": 1,
+            **config, "rounds": 2, "faults_per_update": 4,
+            "minibatch_size": 128, "k_epochs": 4,
         }
         self.assertEqual(_training_protocol(batched), {
             "manifest_hash": "a" * 64,
@@ -738,8 +742,9 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
             "normal_rounds": 2,
             "training_circuit_count": 1024,
             "validation_circuit_count": 6,
-            "faults_per_update": 8,
-            "k_epochs": 1,
+            "faults_per_update": 4,
+            "minibatch_size": 128,
+            "k_epochs": 4,
         })
 
 if __name__ == "__main__":

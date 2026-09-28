@@ -30,7 +30,7 @@ MEAN_FAULT_FILTER = "train_top100_hard_detected_validation_full_catalog"
 BACKTRACK_LIMIT = 100
 LEGACY_TRAINING_ROUNDS = 5
 NORMAL_TRAINING_ROUNDS = 2
-FAULTS_PER_UPDATE = 8
+FAULTS_PER_UPDATE = 4
 ADVANTAGE_HYPERPARAMETERS = {
     "gamma": 0.99,
     "advantage_method": "gae",
@@ -43,12 +43,14 @@ TRAINING_HYPERPARAMETERS = {
     "level_gat_gru": {
         **ADVANTAGE_HYPERPARAMETERS,
         "k_epochs": 4,
+        "minibatch_size": 128,
         "actor_lr": 0.0003,
         "critic_lr": 0.001,
     },
     "fanin_mean": {
         **ADVANTAGE_HYPERPARAMETERS,
-        "k_epochs": 1,
+        "k_epochs": 4,
+        "minibatch_size": 128,
         "actor_lr": 0.001,
         "critic_lr": 0.01,
     },
@@ -566,9 +568,13 @@ def _validate_manifest(manifest, manifest_path):
         if (
             manifest.get("faults_per_update") != FAULTS_PER_UPDATE
             or manifest.get("k_epochs") != hyperparameters["k_epochs"]
+            or manifest.get("minibatch_size") != hyperparameters["minibatch_size"]
         ):
             raise ValueError("Current SmartATPG batching configuration changed")
-    elif "faults_per_update" in manifest or "k_epochs" in manifest:
+    elif any(
+        key in manifest
+        for key in ("faults_per_update", "minibatch_size", "k_epochs")
+    ):
         raise ValueError("Legacy SmartATPG manifests must not define batching")
     return manifest
 
@@ -734,6 +740,7 @@ def prepare(
         "heuristic": HEURISTIC,
         "normal_rounds": NORMAL_TRAINING_ROUNDS,
         "faults_per_update": FAULTS_PER_UPDATE,
+        "minibatch_size": hyperparameters["minibatch_size"],
         "k_epochs": hyperparameters["k_epochs"],
         "train_circuit_count": len(records["train"]),
         "validation_circuit_count": len(VALIDATION_NAMES),

@@ -75,8 +75,9 @@ TRAINING_PROTOCOL = {
 MEAN_BATCHED_TRAINING_PROTOCOL = {
     **TRAINING_PROTOCOL,
     "normal_rounds": 2,
-    "faults_per_update": 8,
-    "k_epochs": 1,
+    "faults_per_update": 4,
+    "minibatch_size": 128,
+    "k_epochs": 4,
 }
 GAT_BATCHED_TRAINING_PROTOCOL = {
     **MEAN_BATCHED_TRAINING_PROTOCOL,
