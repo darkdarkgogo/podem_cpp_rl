@@ -28,6 +28,7 @@ from .cpp_bridge import (
     CppPodemBacktraceV2Trainer,
 )
 from .smartatpg_rewards import (
+    GAT_STEP_PENALTY_BUDGET,
     PAPER_REWARD,
     reward_scheme_for_encoder,
 )
@@ -322,6 +323,12 @@ def main(argv=None):
         lr_critic=hyperparameters["critic_lr"],
         rnd_beta=args.rnd_beta,
         k_epochs=args.k_epochs,
+        gamma=hyperparameters["gamma"],
+        advantage_method=hyperparameters["advantage_method"],
+        gae_lambda=hyperparameters["gae_lambda"],
+        normalize_returns=hyperparameters["normalize_returns"],
+        normalize_advantages=hyperparameters["normalize_advantages"],
+        return_scale=hyperparameters["return_scale"],
     )
     reward_scheme = reward_scheme_for_encoder(args.encoder)
     trainers = {
@@ -341,6 +348,12 @@ def main(argv=None):
         "backtrack_limit": BACKTRACK_LIMIT,
         "actor_lr": hyperparameters["actor_lr"],
         "critic_lr": hyperparameters["critic_lr"],
+        "gamma": hyperparameters["gamma"],
+        "advantage_method": hyperparameters["advantage_method"],
+        "gae_lambda": hyperparameters["gae_lambda"],
+        "normalize_returns": hyperparameters["normalize_returns"],
+        "normalize_advantages": hyperparameters["normalize_advantages"],
+        "return_scale": hyperparameters["return_scale"],
         "training_episode_count": sum(
             len(item["episode_fault_ids"]) for item in train_circuits
         ),
@@ -348,6 +361,7 @@ def main(argv=None):
         "validation_circuit_count": int(manifest["validation_circuit_count"]),
         "device": str(device),
         "paper_reward": PAPER_REWARD,
+        "gat_step_penalty_budget": GAT_STEP_PENALTY_BUDGET,
         "reward_scheme": reward_scheme,
         "encoder_variant": args.encoder,
         "heuristic": HEURISTIC,
@@ -417,6 +431,8 @@ def main(argv=None):
                     step = int(state["completed_episodes"])
                     episode_keys = [
                         "backtracks", "backtrace_steps", "detected",
+                        "circuit_depth", "backtrace_step_reward",
+                        "backtrace_penalty_sum",
                         "extrinsic_reward_sum", "scaled_intrinsic_reward_sum",
                         "combined_reward_sum",
                     ]

@@ -11,14 +11,16 @@ from .smartatpg_rewards import (
     GAT_REWARD_SCHEME,
     MEAN_REWARD_SCHEME,
     reward_scheme_for_encoder,
+    smartatpg_backtrace_step_reward,
     smartatpg_backtrack_reward,
+    smartatpg_circuit_depth,
     smartatpg_pi_reward,
 )
 from .smartatpg_features import FEATURE_DIM, FEATURE_SCHEMA, GRAPH_CONFIG_ID
 
 
 MEAN_MODEL_FORMAT = "SMARTATPG_MODEL_V13_BATCH8_EPOCH1"
-GAT_MODEL_FORMAT = "SMARTATPG_MODEL_V14_GAT_BATCH8_EPOCH4"
+GAT_MODEL_FORMAT = "SMARTATPG_MODEL_V15_GAT_DEPTHNORM_GAE_BATCH8_EPOCH4"
 
 
 def _load_cpp_embedding_artifact(
@@ -384,7 +386,10 @@ class CppPodemBacktraceV2Trainer(_CppPodemTrainerBase):
         self.auto_update = bool(auto_update)
         self.reward_alpha = 7.5
         self.reward_beta = 0.07
-        self.non_pi_reward = -0.1
+        self.circuit_depth = smartatpg_circuit_depth(graph.levels)
+        self.non_pi_reward = smartatpg_backtrace_step_reward(
+            self.reward_scheme, self.circuit_depth,
+        )
         self.detected_reward = 100.0
         self.undetected_reward = -100.0
         self.episode_metrics: list[dict[str, Any]] = []
@@ -495,6 +500,8 @@ class CppPodemBacktraceV2Trainer(_CppPodemTrainerBase):
             "legacy_pi_reward_sum": self._legacy_pi_reward_sum,
             "terminal_reward": self._terminal_reward,
             "reward_scheme": self.reward_scheme,
+            "circuit_depth": self.circuit_depth,
+            "backtrace_step_reward": self.non_pi_reward,
         }
         self.last_metrics = self.agent.update() if self.auto_update else None
         metrics = dict(base_metrics)

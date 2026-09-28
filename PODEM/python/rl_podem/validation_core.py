@@ -16,6 +16,7 @@ from .smartatpg_rewards import (
     MEAN_REWARD_SCHEME,
     PAPER_REWARD,
     reward_scheme_for_encoder,
+    smartatpg_backtrace_step_reward,
     smartatpg_backtrack_reward,
     smartatpg_pi_reward,
 )
@@ -23,7 +24,7 @@ from .smartatpg_rewards import (
 
 def _native_validation_batch(
     item, fault_ids, embedding_path, actor_path, records_path, seed,
-    reward_scheme,
+    reward_scheme, backtrace_step_reward,
 ):
     try:
         import cpp_podem
@@ -40,6 +41,7 @@ def _native_validation_batch(
         _native_circuit_path(embedding_path),
         _native_circuit_path(actor_path),
         BACKTRACK_LIMIT, seed, fault_ids, reward_scheme,
+        backtrace_step_reward,
         _native_circuit_path(records_path), item["name"],
     )
     if len(native_records) != len(fault_ids):
@@ -121,6 +123,7 @@ def _validation_order(circuits):
 
 def _evaluate_fault(
     evaluator, item, fault_id, backtrack_limit, seed, reward_scheme,
+    backtrace_step_reward=None,
 ):
     if backtrack_limit != BACKTRACK_MAX:
         raise ValueError(
@@ -128,6 +131,22 @@ def _evaluate_fault(
         )
     if reward_scheme not in (GAT_REWARD_SCHEME, MEAN_REWARD_SCHEME):
         raise ValueError(f"Unknown SmartATPG reward scheme: {reward_scheme}")
+    if backtrace_step_reward is None:
+        if reward_scheme == GAT_REWARD_SCHEME:
+            raise ValueError(
+                "GAT validation requires a circuit-specific backtrace step reward"
+            )
+        backtrace_step_reward = smartatpg_backtrace_step_reward(
+            reward_scheme, 1,
+        )
+    backtrace_step_reward = float(backtrace_step_reward)
+    if not math.isfinite(backtrace_step_reward) or backtrace_step_reward >= 0.0:
+        raise ValueError("Validation backtrace step reward must be finite and negative")
+    if (
+        reward_scheme == MEAN_REWARD_SCHEME
+        and backtrace_step_reward != PAPER_REWARD["non_pi"]
+    ):
+        raise ValueError("Mean validation backtrace step reward must remain -0.1")
     agent = getattr(evaluator, "agent", None)
     if agent is not None:
         expected_scheme = reward_scheme_for_encoder(agent.encoder_variant)
@@ -147,7 +166,7 @@ def _evaluate_fault(
                 decision_sequences is None
                 or int(event["decision_sequence"]) in decision_sequences
             ):
-                extrinsic_return += PAPER_REWARD["non_pi"]
+                extrinsic_return += backtrace_step_reward
         elif event["event"] == "backtrack":
             decision_sequences = getattr(evaluator, "decision_sequences", None)
             if (

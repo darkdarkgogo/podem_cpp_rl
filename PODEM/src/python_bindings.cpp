@@ -186,17 +186,30 @@ public:
   explicit NativeValidationPolicy(
       std::shared_ptr<smartatpg::DecisionPolicy> actor, std::size_t total_faults,
       int seed, const std::string &reward_scheme,
+      double backtrace_step_reward,
       const std::string &journal_path,
       const std::string &circuit_name,
       const std::string &progress_label = "NATIVE_VALIDATE",
       bool record_all_reward_events = false)
       : actor_(std::move(actor)), total_faults_(total_faults), seed_(seed),
-        reward_scheme_(reward_scheme), circuit_name_(circuit_name),
+        reward_scheme_(reward_scheme),
+        backtrace_step_reward_(backtrace_step_reward),
+        circuit_name_(circuit_name),
         progress_label_(progress_label),
         record_all_reward_events_(record_all_reward_events) {
-    if (reward_scheme_ != "cubic_backtrack_v1" &&
+    if (reward_scheme_ != "cubic_backtrack_depthnorm_v2" &&
         reward_scheme_ != "legacy_pi_exponential") {
       throw std::invalid_argument("Unknown SmartATPG reward scheme");
+    }
+    if (!std::isfinite(backtrace_step_reward_) ||
+        backtrace_step_reward_ >= 0.0) {
+      throw std::invalid_argument(
+          "Native validation backtrace step reward must be finite and negative");
+    }
+    if (reward_scheme_ == "legacy_pi_exponential" &&
+        backtrace_step_reward_ != -0.1) {
+      throw std::invalid_argument(
+          "Mean validation backtrace step reward must remain -0.1");
     }
     if (!journal_path.empty()) {
       if (circuit_name_.empty()) {
@@ -237,7 +250,7 @@ public:
     reward_ = 0.0;
   }
   void on_backtrack(unsigned long sequence) override {
-    if (reward_scheme_ != "cubic_backtrack_v1" ||
+    if (reward_scheme_ != "cubic_backtrack_depthnorm_v2" ||
         !records_reward_event(sequence)) {
       return;
     }
@@ -249,7 +262,7 @@ public:
     reward_ -= 0.5 + 9.802960494 * x * x * x;
   }
   void on_backtrace_step(unsigned long sequence) override {
-    if (records_reward_event(sequence)) reward_ -= 0.1;
+    if (records_reward_event(sequence)) reward_ += backtrace_step_reward_;
   }
   void on_pi_not_done(unsigned long sequence, int backtracks,
                       unsigned long pi_visits) override {
@@ -362,6 +375,7 @@ private:
   std::size_t total_faults_;
   int seed_;
   std::string reward_scheme_;
+  double backtrace_step_reward_;
   int backtrack_count_ = 0;
   std::unordered_set<unsigned long> decision_sequences_;
   std::string current_fault_id_;
@@ -380,6 +394,7 @@ py::list run_native_validation(
     const std::string &actor_path, int backtrack_limit, int seed,
     const std::vector<std::string> &fault_ids,
     const std::string &reward_scheme,
+    double backtrace_step_reward,
     const std::string &journal_path, const std::string &circuit_name) {
   if (fault_ids.empty()) {
     throw std::invalid_argument("Native validation requires fault IDs");
@@ -409,7 +424,7 @@ py::list run_native_validation(
     }
     const std::string expected_reward_scheme =
         actor->encoder_variant() == "level_gat_gru"
-            ? "cubic_backtrack_v1"
+            ? "cubic_backtrack_depthnorm_v2"
             : "legacy_pi_exponential";
     if (reward_scheme != expected_reward_scheme) {
       throw std::invalid_argument(
@@ -417,7 +432,7 @@ py::list run_native_validation(
     }
     policy = std::make_shared<NativeValidationPolicy>(
         actor, fault_ids.size(), seed,
-        reward_scheme, journal_path, circuit_name);
+        reward_scheme, backtrace_step_reward, journal_path, circuit_name);
     atpg.set_decision_policy(policy);
     atpg.level_circuit();
     atpg.rearrange_gate_inputs();
@@ -453,7 +468,8 @@ py::list run_native_validation(
 py::list run_native_scoap_validation(
     const std::string &circuit_path, int backtrack_limit, int seed,
     const std::vector<std::string> &fault_ids,
-    const std::string &reward_scheme, const std::string &circuit_name) {
+    const std::string &reward_scheme, double backtrace_step_reward,
+    const std::string &circuit_name) {
   if (fault_ids.empty()) {
     throw std::invalid_argument("Native validation requires fault IDs");
   }
@@ -461,14 +477,15 @@ py::list run_native_scoap_validation(
     throw std::invalid_argument(
         "Native validation requires backtrack_limit=100");
   }
-  if (reward_scheme != "cubic_backtrack_v1" &&
+  if (reward_scheme != "cubic_backtrack_depthnorm_v2" &&
       reward_scheme != "legacy_pi_exponential") {
     throw std::invalid_argument("Unknown SmartATPG reward scheme");
   }
 
   const auto actor = std::make_shared<NativeHeuristicPolicy>();
   const auto policy = std::make_shared<NativeValidationPolicy>(
-      actor, fault_ids.size(), seed, reward_scheme, "", circuit_name,
+      actor, fault_ids.size(), seed, reward_scheme, backtrace_step_reward,
+      "", circuit_name,
       "SCOAP_VALIDATE", true);
   ATPG atpg;
   atpg.detected_num = 1;
@@ -672,11 +689,13 @@ PYBIND11_MODULE(cpp_podem, module) {
              py::arg("actor_path"), py::arg("backtrack_limit"),
              py::arg("seed"), py::arg("fault_ids"),
              py::arg("reward_scheme"),
+             py::arg("backtrace_step_reward"),
              py::arg("journal_path") = "", py::arg("circuit_name") = "");
   module.def("run_native_scoap_validation", &run_native_scoap_validation,
              py::arg("circuit_path"), py::arg("backtrack_limit"),
              py::arg("seed"), py::arg("fault_ids"),
-             py::arg("reward_scheme"), py::arg("circuit_name") = "");
+             py::arg("reward_scheme"), py::arg("backtrace_step_reward"),
+             py::arg("circuit_name") = "");
   module.def("profile_stuck_at", &profile_stuck_at,
              py::arg("circuit_path"), py::arg("backtrack_limit") = 97,
              py::arg("seed") = 14, py::arg("fault_map_path") = "",

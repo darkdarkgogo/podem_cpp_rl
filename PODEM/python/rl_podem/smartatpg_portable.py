@@ -13,7 +13,7 @@ from typing import Optional
 
 LEGACY_MODEL_FORMAT = "SMARTATPG_MODEL_V12"
 MEAN_MODEL_FORMAT = "SMARTATPG_MODEL_V13_BATCH8_EPOCH1"
-GAT_MODEL_FORMAT = "SMARTATPG_MODEL_V14_GAT_BATCH8_EPOCH4"
+GAT_MODEL_FORMAT = "SMARTATPG_MODEL_V15_GAT_DEPTHNORM_GAE_BATCH8_EPOCH4"
 MODEL_FORMAT = GAT_MODEL_FORMAT
 EMBEDDING_FORMAT = "SMARTATPG_EMBEDDINGS_V7"
 FEATURE_SCHEMA = "SMARTATPG_FEATURES_V4_11D_CO_NO_BUF"
@@ -203,7 +203,7 @@ def load_model(path):
         or any(value not in "0123456789abcdef" for value in manifest_hash)
         or backtrack_limit != 100
         or reward_scheme != {
-            "level_gat_gru": "cubic_backtrack_v1",
+            "level_gat_gru": "cubic_backtrack_depthnorm_v2",
             "fanin_mean": "legacy_pi_exponential",
         }[encoder_variant]
         or normal_rounds != (2 if model_format != LEGACY_MODEL_FORMAT else 5)

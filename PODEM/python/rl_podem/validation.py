@@ -16,7 +16,11 @@ from .artifact_io import (
 )
 from .smartatpg_artifacts import export_descriptors, policy_from_state
 from .smartatpg_features import load_circuit_graph
-from .smartatpg_rewards import reward_scheme_for_encoder
+from .smartatpg_rewards import (
+    reward_scheme_for_encoder,
+    smartatpg_backtrace_step_reward,
+    smartatpg_circuit_depth,
+)
 from .data_split import discover_validation_dataset
 from .validation_core import (
     _load_validation_catalogs,
@@ -142,9 +146,13 @@ def _evaluate_scoap_batch(item, fault_ids, seed):
             "cpp_podem is stale; rebuild it with: python -m pip install -e ."
         )
     reward_scheme = reward_scheme_for_encoder("level_gat_gru")
+    graph = load_circuit_graph(item["circuit"])
+    backtrace_step_reward = smartatpg_backtrace_step_reward(
+        reward_scheme, smartatpg_circuit_depth(graph.levels),
+    )
     native_records = cpp_podem.run_native_scoap_validation(
         str(Path(item["circuit"]).resolve()), BACKTRACK_LIMIT, seed, fault_ids,
-        reward_scheme, item["name"],
+        reward_scheme, backtrace_step_reward, item["name"],
     )
     if len(native_records) != len(fault_ids):
         raise RuntimeError("Native SCOAP validation returned the wrong fault count")
@@ -201,6 +209,7 @@ def _evaluate_model_round(
         raise FileNotFoundError(f"Missing native actor for round {round_number}: {actor_path}")
     policy = policy_from_state(state)
     embeddings = {}
+    backtrace_step_rewards = {}
     for item in circuits:
         graph = load_circuit_graph(item["circuit"])
         embedding_path = (
@@ -209,6 +218,12 @@ def _evaluate_model_round(
         )
         export_descriptors(state, graph, embedding_path, policy)
         embeddings[item["name"]] = embedding_path
+        backtrace_step_rewards[item["name"]] = (
+            smartatpg_backtrace_step_reward(
+                payload["reward_scheme"],
+                smartatpg_circuit_depth(graph.levels),
+            )
+        )
 
     journal = Path(output_dir) / "native_journals" / name / f"round_{round_number:02d}.jsonl"
     journal.parent.mkdir(parents=True, exist_ok=True)
@@ -219,6 +234,7 @@ def _evaluate_model_round(
         records.extend(_native_validation_batch(
             item, item["episode_fault_ids"], embeddings[item["name"]], actor_path,
             journal, seed, payload["reward_scheme"],
+            backtrace_step_rewards[item["name"]],
         ))
     _validate_records(records, name)
     summary = _summarize_validation(records, circuits, round_number)

@@ -31,13 +31,23 @@ BACKTRACK_LIMIT = 100
 LEGACY_TRAINING_ROUNDS = 5
 NORMAL_TRAINING_ROUNDS = 2
 FAULTS_PER_UPDATE = 8
+ADVANTAGE_HYPERPARAMETERS = {
+    "gamma": 0.99,
+    "advantage_method": "gae",
+    "gae_lambda": 0.97,
+    "normalize_returns": False,
+    "normalize_advantages": True,
+    "return_scale": 100.0,
+}
 TRAINING_HYPERPARAMETERS = {
     "level_gat_gru": {
+        **ADVANTAGE_HYPERPARAMETERS,
         "k_epochs": 4,
         "actor_lr": 0.0003,
         "critic_lr": 0.001,
     },
     "fanin_mean": {
+        **ADVANTAGE_HYPERPARAMETERS,
         "k_epochs": 1,
         "actor_lr": 0.001,
         "critic_lr": 0.01,

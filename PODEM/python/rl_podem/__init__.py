@@ -16,7 +16,11 @@ _EXPORTS = {
     "GAT_REWARD_SCHEME": (".smartatpg_rewards", "GAT_REWARD_SCHEME"),
     "MEAN_REWARD_SCHEME": (".smartatpg_rewards", "MEAN_REWARD_SCHEME"),
     "reward_scheme_for_encoder": (".smartatpg_rewards", "reward_scheme_for_encoder"),
+    "smartatpg_backtrace_step_reward": (
+        ".smartatpg_rewards", "smartatpg_backtrace_step_reward",
+    ),
     "smartatpg_backtrack_reward": (".smartatpg_rewards", "smartatpg_backtrack_reward"),
+    "smartatpg_circuit_depth": (".smartatpg_rewards", "smartatpg_circuit_depth"),
     "smartatpg_pi_reward": (".smartatpg_rewards", "smartatpg_pi_reward"),
     "GATGRUSmartATPGPPOAgent": (".gat_gru", "GATGRUSmartATPGPPOAgent"),
     "GATGRUSmartATPGPolicy": (".gat_gru", "GATGRUSmartATPGPolicy"),

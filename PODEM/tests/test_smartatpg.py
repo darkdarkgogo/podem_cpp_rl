@@ -25,6 +25,7 @@ from rl_podem.gat_gru import (
     GATGRUSmartATPGPPOAgent, GATGRUSmartATPGPolicy,
 )
 from rl_podem.curriculum import CppPodemCurriculumEvaluator
+from rl_podem.advantages import full_fault_targets
 from rl_podem.cpp_bridge import (
     CppPodemBacktraceV2Trainer, _load_cpp_embedding_artifact,
     catalog_cpp_podem, export_actor_v2_state_dict,
@@ -33,7 +34,9 @@ from rl_podem.smartatpg_rewards import (
     GAT_REWARD_SCHEME,
     MEAN_REWARD_SCHEME,
     reward_scheme_for_encoder,
+    smartatpg_backtrace_step_reward,
     smartatpg_backtrack_reward,
+    smartatpg_circuit_depth,
     smartatpg_pi_reward,
 )
 from rl_podem.smartatpg_artifacts import (
@@ -135,6 +138,51 @@ class SmartATPGTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 smartatpg_backtrack_reward(invalid)
 
+    def test_depth_normalized_backtrace_step_reward_protocol(self):
+        self.assertEqual(smartatpg_circuit_depth((0,)), 1)
+        self.assertEqual(smartatpg_circuit_depth((0, 50)), 50)
+        self.assertEqual(
+            smartatpg_backtrace_step_reward(GAT_REWARD_SCHEME, 50), -0.2,
+        )
+        self.assertEqual(
+            smartatpg_backtrace_step_reward(GAT_REWARD_SCHEME, 100), -0.1,
+        )
+        self.assertEqual(
+            smartatpg_backtrace_step_reward(GAT_REWARD_SCHEME, 200), -0.05,
+        )
+        self.assertEqual(
+            smartatpg_backtrace_step_reward(MEAN_REWARD_SCHEME, 50), -0.1,
+        )
+        with self.assertRaisesRegex(ValueError, "levels must not be empty"):
+            smartatpg_circuit_depth(())
+        for invalid in (0, -1, True, 1.5):
+            with self.subTest(circuit_depth=invalid), self.assertRaisesRegex(
+                ValueError, "positive integer",
+            ):
+                smartatpg_backtrace_step_reward(GAT_REWARD_SCHEME, invalid)
+
+    def test_batched_gae_resets_at_each_fault_terminal(self):
+        targets = full_fault_targets(
+            [0.0, 100.0, 0.0, 100.0],
+            [0.0, 0.0, 0.0, 0.0],
+            [False, True, False, True],
+            gamma=0.99,
+            advantage_method="gae",
+            gae_lambda=0.97,
+            return_scale=100.0,
+            normalize_advantages=False,
+            normalize_returns=False,
+        )
+        torch.testing.assert_close(
+            targets.raw_advantages,
+            torch.tensor([0.99 * 0.97, 1.0, 0.99 * 0.97, 1.0]),
+        )
+
+    def test_training_checkpoint_rejects_old_advantage_protocol(self):
+        old = self.agent(method="mc").training_state_dict()
+        with self.assertRaisesRegex(ValueError, "hyperparameters changed"):
+            self.agent(method="gae").load_training_state_dict(old)
+
     def test_native_reward_diagnostic_contract(self):
         source = (
             Path(__file__).resolve().parents[1] / "src/python_bindings.cpp"
@@ -227,7 +275,7 @@ class SmartATPGTests(unittest.TestCase):
             (
                 GATGRUSmartATPGPPOAgent,
                 GAT_REWARD_SCHEME,
-                100.0 - 0.1
+                100.0 - 10.0 / smartatpg_circuit_depth(self.graph.levels)
                 + smartatpg_backtrack_reward(1)
                 + smartatpg_backtrack_reward(2),
             ),
@@ -265,6 +313,16 @@ class SmartATPGTests(unittest.TestCase):
             })
             self.assertAlmostEqual(
                 trainer.episode_metrics[-1]["extrinsic_reward_sum"], expected,
+            )
+            self.assertEqual(
+                trainer.episode_metrics[-1]["circuit_depth"],
+                smartatpg_circuit_depth(self.graph.levels),
+            )
+            self.assertEqual(
+                trainer.episode_metrics[-1]["backtrace_step_reward"],
+                smartatpg_backtrace_step_reward(
+                    scheme, smartatpg_circuit_depth(self.graph.levels),
+                ),
             )
 
     def test_features_and_controllability(self):
@@ -700,6 +758,9 @@ class SmartATPGTests(unittest.TestCase):
         )
         for scheme, agent in cases:
             with self.subTest(reward_scheme=scheme):
+                step_reward = smartatpg_backtrace_step_reward(
+                    scheme, smartatpg_circuit_depth(self.graph.levels),
+                )
                 state = agent.policy_old.state_dict()
                 actor = Path(self.temp.name) / f"{scheme}.actor.txt"
                 embeddings = Path(self.temp.name) / f"{scheme}.emb"
@@ -722,12 +783,13 @@ class SmartATPGTests(unittest.TestCase):
                         100,
                         14,
                         scheme,
+                        step_reward,
                     )
                     for fault_id in fault_ids
                 ]
                 native = cpp_podem.run_native_validation(
                     str(self.path), str(embeddings), str(actor), 100, 14,
-                    fault_ids, scheme, str(journal), "test",
+                    fault_ids, scheme, step_reward, str(journal), "test",
                 )
 
                 self.assertEqual(
@@ -757,7 +819,7 @@ class SmartATPGTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "reward scheme"):
                     cpp_podem.run_native_validation(
                         str(self.path), str(embeddings), str(actor), 100, 14,
-                        fault_ids, "unknown", "", "",
+                        fault_ids, "unknown", -0.1, "", "",
                     )
                 mismatched_scheme = (
                     GAT_REWARD_SCHEME
@@ -767,12 +829,17 @@ class SmartATPGTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "actor encoder"):
                     cpp_podem.run_native_validation(
                         str(self.path), str(embeddings), str(actor), 100, 14,
-                        fault_ids, mismatched_scheme, "", "",
+                        fault_ids, mismatched_scheme, -0.1, "", "",
                     )
                 with self.assertRaisesRegex(ValueError, "backtrack_limit=100"):
                     cpp_podem.run_native_validation(
                         str(self.path), str(embeddings), str(actor), 200, 14,
-                        fault_ids, scheme, "", "",
+                        fault_ids, scheme, step_reward, "", "",
+                    )
+                with self.assertRaisesRegex(ValueError, "step reward"):
+                    cpp_podem.run_native_validation(
+                        str(self.path), str(embeddings), str(actor), 100, 14,
+                        fault_ids, scheme, 0.0, "", "",
                     )
 
     def test_native_scoap_validation_matches_python_policy(self):
@@ -786,6 +853,9 @@ class SmartATPGTests(unittest.TestCase):
         ]
         for scheme in (MEAN_REWARD_SCHEME, GAT_REWARD_SCHEME):
             with self.subTest(reward_scheme=scheme):
+                step_reward = smartatpg_backtrace_step_reward(
+                    scheme, smartatpg_circuit_depth(self.graph.levels),
+                )
                 evaluator = ScoapValidationEvaluator()
                 expected = [
                     _evaluate_fault(
@@ -795,11 +865,13 @@ class SmartATPGTests(unittest.TestCase):
                         100,
                         14,
                         scheme,
+                        step_reward,
                     )
                     for fault_id in fault_ids
                 ]
                 native = cpp_podem.run_native_scoap_validation(
-                    str(self.path), 100, 14, fault_ids, scheme, "test",
+                    str(self.path), 100, 14, fault_ids, scheme,
+                    step_reward, "test",
                 )
 
                 self.assertEqual(
@@ -821,15 +893,18 @@ class SmartATPGTests(unittest.TestCase):
 
                 with self.assertRaisesRegex(ValueError, "fault IDs"):
                     cpp_podem.run_native_scoap_validation(
-                        str(self.path), 100, 14, [], scheme, "test",
+                        str(self.path), 100, 14, [], scheme,
+                        step_reward, "test",
                     )
                 with self.assertRaisesRegex(ValueError, "reward scheme"):
                     cpp_podem.run_native_scoap_validation(
-                        str(self.path), 100, 14, fault_ids, "unknown", "test",
+                        str(self.path), 100, 14, fault_ids, "unknown",
+                        -0.1, "test",
                     )
                 with self.assertRaisesRegex(ValueError, "backtrack_limit=100"):
                     cpp_podem.run_native_scoap_validation(
-                        str(self.path), 200, 14, fault_ids, scheme, "test",
+                        str(self.path), 200, 14, fault_ids, scheme,
+                        step_reward, "test",
                     )
 
     def test_native_scoap_validation_counts_sequence_zero_reward_events(self):
@@ -843,9 +918,13 @@ class SmartATPGTests(unittest.TestCase):
         )
         path = Path(self.temp.name) / fixture.name
         shutil.copy2(fixture, path)
+        graph = load_circuit_graph(path)
         fault_id = "y:GO:sa0"
         for scheme in (MEAN_REWARD_SCHEME, GAT_REWARD_SCHEME):
             with self.subTest(reward_scheme=scheme):
+                step_reward = smartatpg_backtrace_step_reward(
+                    scheme, smartatpg_circuit_depth(graph.levels),
+                )
                 reference = _evaluate_fault(
                     ScoapValidationEvaluator(),
                     {"name": "sequence-zero", "circuit": str(path)},
@@ -853,9 +932,11 @@ class SmartATPGTests(unittest.TestCase):
                     100,
                     14,
                     scheme,
+                    step_reward,
                 )
                 native = cpp_podem.run_native_scoap_validation(
-                    str(path), 100, 14, [fault_id], scheme, "sequence-zero",
+                    str(path), 100, 14, [fault_id], scheme,
+                    step_reward, "sequence-zero",
                 )
 
                 self.assertEqual(native[0]["fault_id"], fault_id)
@@ -870,7 +951,9 @@ class SmartATPGTests(unittest.TestCase):
                 self.assertAlmostEqual(
                     native[0]["return"], reference["return"], places=9,
                 )
-                self.assertAlmostEqual(native[0]["return"], 99.8, places=9)
+                self.assertAlmostEqual(
+                    native[0]["return"], 100.0 + 2.0 * step_reward, places=9,
+                )
 
     def test_v12_contains_fanin_mean_encoder_and_portable_inference_matches_torch(self):
         state = self.agent().policy_old.state_dict()
@@ -936,7 +1019,7 @@ class SmartATPGTests(unittest.TestCase):
         gat_model = load_portable_model(gat_path)
         self.assertEqual(
             gat_model.model_format,
-            "SMARTATPG_MODEL_V14_GAT_BATCH8_EPOCH4",
+            "SMARTATPG_MODEL_V15_GAT_DEPTHNORM_GAE_BATCH8_EPOCH4",
         )
         self.assertEqual(gat_model.k_epochs, 4)
         cpp_podem.validate_actor_artifacts(
@@ -946,7 +1029,7 @@ class SmartATPGTests(unittest.TestCase):
         old_gat_path = Path(self.temp.name) / "old_gat_v13.txt"
         old_gat_path.write_text(
             gat_path.read_text(encoding="utf-8").replace(
-                "SMARTATPG_MODEL_V14_GAT_BATCH8_EPOCH4",
+                "SMARTATPG_MODEL_V15_GAT_DEPTHNORM_GAE_BATCH8_EPOCH4",
                 "SMARTATPG_MODEL_V13_BATCH8_EPOCH1",
                 1,
             ),
@@ -957,6 +1040,36 @@ class SmartATPGTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "does not match"):
             cpp_podem.validate_actor_artifacts(
                 str(gat_embeddings), str(old_gat_path),
+                self.graph.circuit_hash, list(self.graph.names), "smartatpg",
+            )
+        stale_gat_path = Path(self.temp.name) / "old_gat_v14.txt"
+        stale_gat_path.write_text(
+            gat_path.read_text(encoding="utf-8").replace(
+                "SMARTATPG_MODEL_V15_GAT_DEPTHNORM_GAE_BATCH8_EPOCH4",
+                "SMARTATPG_MODEL_V14_GAT_BATCH8_EPOCH4",
+                1,
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "Unsupported SmartATPG model"):
+            load_portable_model(stale_gat_path)
+        with self.assertRaisesRegex(RuntimeError, "Unsupported actor format"):
+            cpp_podem.validate_actor_artifacts(
+                str(gat_embeddings), str(stale_gat_path),
+                self.graph.circuit_hash, list(self.graph.names), "smartatpg",
+            )
+        wrong_scheme_path = Path(self.temp.name) / "wrong_gat_scheme.txt"
+        wrong_scheme_path.write_text(
+            gat_path.read_text(encoding="utf-8").replace(
+                GAT_REWARD_SCHEME, "cubic_backtrack_v1", 1,
+            ),
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(ValueError, "training protocol"):
+            load_portable_model(wrong_scheme_path)
+        with self.assertRaisesRegex(RuntimeError, "reward-scheme"):
+            cpp_podem.validate_actor_artifacts(
+                str(gat_embeddings), str(wrong_scheme_path),
                 self.graph.circuit_hash, list(self.graph.names), "smartatpg",
             )
         with self.assertRaisesRegex(ValueError, "protocol metadata is invalid"):
@@ -1009,7 +1122,8 @@ class SmartATPGTests(unittest.TestCase):
         model = load_portable_model(model_path)
         self.assertEqual(model.encoder_variant, "level_gat_gru")
         self.assertEqual(
-            model.model_format, "SMARTATPG_MODEL_V14_GAT_BATCH8_EPOCH4"
+            model.model_format,
+            "SMARTATPG_MODEL_V15_GAT_DEPTHNORM_GAE_BATCH8_EPOCH4",
         )
         self.assertEqual(model.actor_input_dim, 12)
         self.assertFalse(any(

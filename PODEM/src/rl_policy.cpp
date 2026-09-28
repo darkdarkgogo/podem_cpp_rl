@@ -238,7 +238,7 @@ void ActorModel::load(const std::string &path) {
   const bool mean_batched_protocol =
       header == "SMARTATPG_MODEL_V13_BATCH8_EPOCH1";
   const bool gat_batched_protocol =
-      header == "SMARTATPG_MODEL_V14_GAT_BATCH8_EPOCH4";
+      header == "SMARTATPG_MODEL_V15_GAT_DEPTHNORM_GAE_BATCH8_EPOCH4";
   const bool batched_protocol =
       mean_batched_protocol || gat_batched_protocol;
   require(header == "SMARTATPG_MODEL_V12" || batched_protocol,
@@ -287,7 +287,7 @@ void ActorModel::load(const std::string &path) {
   require(static_cast<bool>(input >> key >> reward_scheme) &&
               key == "reward_scheme" &&
               reward_scheme == (encoder_variant_ == "level_gat_gru"
-                                    ? "cubic_backtrack_v1"
+                                    ? "cubic_backtrack_depthnorm_v2"
                                     : "legacy_pi_exponential"),
           "Invalid SmartATPG reward-scheme metadata in: " + path);
   require(static_cast<bool>(input >> key >> normal_rounds) &&

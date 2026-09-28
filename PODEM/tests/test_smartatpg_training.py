@@ -16,6 +16,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from rl_podem import data_split as preparation
+from rl_podem.smartatpg_rewards import GAT_REWARD_SCHEME, MEAN_REWARD_SCHEME
 from rl_podem.data_split import (
     BACKTRACK_LIMIT,
     FAULTS_PER_UPDATE,
@@ -60,7 +61,6 @@ if torch is not None:
         validation_score,
     )
     from rl_podem.gat_gru import GATGRUSmartATPGPPOAgent
-    from rl_podem.smartatpg_rewards import MEAN_REWARD_SCHEME
     from rl_podem.smartatpg import SmartATPGPPOAgent
 
 
@@ -94,11 +94,23 @@ class _FakeAgent:
 class SmartATPGPreparationTests(unittest.TestCase):
     def test_training_hyperparameters_are_encoder_specific(self):
         self.assertEqual(training_hyperparameters("level_gat_gru"), {
+            "gamma": 0.99,
+            "advantage_method": "gae",
+            "gae_lambda": 0.97,
+            "normalize_returns": False,
+            "normalize_advantages": True,
+            "return_scale": 100.0,
             "k_epochs": 4,
             "actor_lr": 0.0003,
             "critic_lr": 0.001,
         })
         self.assertEqual(training_hyperparameters("fanin_mean"), {
+            "gamma": 0.99,
+            "advantage_method": "gae",
+            "gae_lambda": 0.97,
+            "normalize_returns": False,
+            "normalize_advantages": True,
+            "return_scale": 100.0,
             "k_epochs": 1,
             "actor_lr": 0.001,
             "critic_lr": 0.01,
@@ -443,7 +455,7 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
         config = {
             "manifest_hash": "a" * 64,
             "encoder_variant": "level_gat_gru",
-            "reward_scheme": "cubic_backtrack_v1",
+            "reward_scheme": GAT_REWARD_SCHEME,
             "backtrack_limit": 100,
             "seed": 2026,
         }
@@ -530,7 +542,7 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
             )
         with self.assertRaisesRegex(ValueError, "backtrack_limit=100"):
             _evaluate_fault(
-                evaluator, item, "f0", 200, 14, "cubic_backtrack_v1",
+                evaluator, item, "f0", 200, 14, GAT_REWARD_SCHEME, -0.1,
             )
 
     def test_validation_summary_rejects_nonfinite_record_values(self):
