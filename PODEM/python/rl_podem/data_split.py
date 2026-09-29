@@ -43,14 +43,14 @@ TRAINING_HYPERPARAMETERS = {
     "level_gat_gru": {
         **ADVANTAGE_HYPERPARAMETERS,
         "k_epochs": 4,
-        "minibatch_size": 128,
+        "minibatch_size": 512,
         "actor_lr": 0.0003,
         "critic_lr": 0.001,
     },
     "fanin_mean": {
         **ADVANTAGE_HYPERPARAMETERS,
         "k_epochs": 4,
-        "minibatch_size": 128,
+        "minibatch_size": 512,
         "actor_lr": 0.001,
         "critic_lr": 0.01,
     },

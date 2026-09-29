@@ -236,10 +236,10 @@ void ActorModel::load(const std::string &path) {
   std::string key;
   std::getline(input, header);
   const bool mean_batched_protocol =
-      header == "SMARTATPG_MODEL_V16_MEAN_GAE_BATCH4_MINIBATCH128_EPOCH4";
+      header == "SMARTATPG_MODEL_V18_MEAN_GAE_BATCH4_MINIBATCH512_EPOCH4";
   const bool gat_batched_protocol =
       header ==
-      "SMARTATPG_MODEL_V17_GAT_DEPTHNORM_GAE_BATCH4_MINIBATCH128_EPOCH4";
+      "SMARTATPG_MODEL_V19_GAT_DEPTHNORM_GAE_BATCH4_MINIBATCH512_EPOCH4";
   const bool batched_protocol =
       mean_batched_protocol || gat_batched_protocol;
   require(header == "SMARTATPG_MODEL_V12" || batched_protocol,
@@ -301,7 +301,7 @@ void ActorModel::load(const std::string &path) {
                 key == "faults_per_update" && faults_per_update == 4,
             "Invalid SmartATPG fault-batch metadata in: " + path);
     require(static_cast<bool>(input >> key >> minibatch_size) &&
-                key == "minibatch_size" && minibatch_size == 128,
+                key == "minibatch_size" && minibatch_size == 512,
             "Invalid SmartATPG minibatch metadata in: " + path);
     require(static_cast<bool>(input >> key >> k_epochs) &&
                 key == "k_epochs" && k_epochs == 4,

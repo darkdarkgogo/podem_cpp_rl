@@ -12,9 +12,9 @@ from typing import Optional
 
 
 LEGACY_MODEL_FORMAT = "SMARTATPG_MODEL_V12"
-MEAN_MODEL_FORMAT = "SMARTATPG_MODEL_V16_MEAN_GAE_BATCH4_MINIBATCH128_EPOCH4"
+MEAN_MODEL_FORMAT = "SMARTATPG_MODEL_V18_MEAN_GAE_BATCH4_MINIBATCH512_EPOCH4"
 GAT_MODEL_FORMAT = (
-    "SMARTATPG_MODEL_V17_GAT_DEPTHNORM_GAE_BATCH4_MINIBATCH128_EPOCH4"
+    "SMARTATPG_MODEL_V19_GAT_DEPTHNORM_GAE_BATCH4_MINIBATCH512_EPOCH4"
 )
 MODEL_FORMAT = GAT_MODEL_FORMAT
 EMBEDDING_FORMAT = "SMARTATPG_EMBEDDINGS_V7"
@@ -216,7 +216,7 @@ def load_model(path):
             model_format != LEGACY_MODEL_FORMAT
             and (
                 faults_per_update != 4
-                or minibatch_size != 128
+                or minibatch_size != 512
                 or k_epochs != 4
             )
         )

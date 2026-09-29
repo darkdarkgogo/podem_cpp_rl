@@ -144,7 +144,7 @@ class BacktracePPOAgentV2:
         lr_critic=1e-3,
         gamma=0.99,
         k_epochs=8,
-        minibatch_size=128,
+        minibatch_size=512,
         eps_clip=0.2,
         rnd_beta=0.05,
         rnd_lr=1e-4,

@@ -101,7 +101,7 @@ class SmartATPGPreparationTests(unittest.TestCase):
             "normalize_advantages": True,
             "return_scale": 100.0,
             "k_epochs": 4,
-            "minibatch_size": 128,
+            "minibatch_size": 512,
             "actor_lr": 0.0003,
             "critic_lr": 0.001,
         })
@@ -113,7 +113,7 @@ class SmartATPGPreparationTests(unittest.TestCase):
             "normalize_advantages": True,
             "return_scale": 100.0,
             "k_epochs": 4,
-            "minibatch_size": 128,
+            "minibatch_size": 512,
             "actor_lr": 0.001,
             "critic_lr": 0.01,
         })
@@ -401,7 +401,7 @@ class SmartATPGPreparationTests(unittest.TestCase):
                 self.assertEqual(manifest["normal_rounds"], 2)
                 self.assertEqual(manifest["faults_per_update"], 4)
                 self.assertEqual(manifest["k_epochs"], 4)
-                self.assertEqual(manifest["minibatch_size"], 128)
+                self.assertEqual(manifest["minibatch_size"], 512)
                 old_gat_manifest = json.loads(json.dumps(manifest))
                 old_gat_manifest["k_epochs"] = 1
                 with self.assertRaisesRegex(
@@ -733,7 +733,7 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
         })
         batched = {
             **config, "rounds": 2, "faults_per_update": 4,
-            "minibatch_size": 128, "k_epochs": 4,
+            "minibatch_size": 512, "k_epochs": 4,
         }
         self.assertEqual(_training_protocol(batched), {
             "manifest_hash": "a" * 64,
@@ -743,7 +743,7 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
             "training_circuit_count": 1024,
             "validation_circuit_count": 6,
             "faults_per_update": 4,
-            "minibatch_size": 128,
+            "minibatch_size": 512,
             "k_epochs": 4,
         })
 

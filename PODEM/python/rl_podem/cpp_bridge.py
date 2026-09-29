@@ -19,9 +19,9 @@ from .smartatpg_rewards import (
 from .smartatpg_features import FEATURE_DIM, FEATURE_SCHEMA, GRAPH_CONFIG_ID
 
 
-MEAN_MODEL_FORMAT = "SMARTATPG_MODEL_V16_MEAN_GAE_BATCH4_MINIBATCH128_EPOCH4"
+MEAN_MODEL_FORMAT = "SMARTATPG_MODEL_V18_MEAN_GAE_BATCH4_MINIBATCH512_EPOCH4"
 GAT_MODEL_FORMAT = (
-    "SMARTATPG_MODEL_V17_GAT_DEPTHNORM_GAE_BATCH4_MINIBATCH128_EPOCH4"
+    "SMARTATPG_MODEL_V19_GAT_DEPTHNORM_GAE_BATCH4_MINIBATCH512_EPOCH4"
 )
 
 
@@ -251,7 +251,7 @@ def export_actor_v2_state_dict(
             has_batch_protocol
             and (
                 int(metadata["faults_per_update"]) != 4
-                or int(metadata["minibatch_size"]) != 128
+                or int(metadata["minibatch_size"]) != 512
                 or int(metadata["k_epochs"]) != 4
             )
         )

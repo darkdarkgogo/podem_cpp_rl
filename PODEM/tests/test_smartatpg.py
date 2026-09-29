@@ -76,7 +76,7 @@ MEAN_BATCHED_TRAINING_PROTOCOL = {
     **TRAINING_PROTOCOL,
     "normal_rounds": 2,
     "faults_per_update": 4,
-    "minibatch_size": 128,
+    "minibatch_size": 512,
     "k_epochs": 4,
 }
 GAT_BATCHED_TRAINING_PROTOCOL = {
@@ -184,11 +184,11 @@ class SmartATPGTests(unittest.TestCase):
             {"test": self.graph}, advantage_method="gae",
             normalize_returns=False, normalize_advantages=True,
             return_scale=100, rnd_beta=0, k_epochs=4,
-            minibatch_size=128,
+            minibatch_size=512,
         )
         gates = self.gates()
-        terminal_indices = {89, 179, 269, 349}
-        for index in range(350):
+        terminal_indices = {299, 599, 899, 1199}
+        for index in range(1200):
             agent.select_backtrace_action(
                 gates["y"], index % 2, [gates["n"], gates["b"]],
             )
@@ -214,16 +214,16 @@ class SmartATPGTests(unittest.TestCase):
         self.assertEqual(shuffle.call_count, 4)
         self.assertEqual(
             [len(batch) for batch in evaluated_batches],
-            [128, 128, 94] * 4,
+            [512, 512, 176] * 4,
         )
         for epoch in range(4):
             epoch_indices = evaluated_batches[epoch * 3:(epoch + 1) * 3]
             self.assertEqual(
                 Counter(index for batch in epoch_indices for index in batch),
-                Counter(range(350)),
+                Counter(range(1200)),
             )
         self.assertEqual(metrics["rollout_faults"], 4)
-        self.assertEqual(metrics["rollout_transitions"], 350)
+        self.assertEqual(metrics["rollout_transitions"], 1200)
         self.assertEqual(metrics["minibatches_per_epoch"], 3)
         self.assertEqual(metrics["optimizer_steps"], 12)
         for name in (
@@ -563,13 +563,13 @@ class SmartATPGTests(unittest.TestCase):
         self.assertEqual(agent.lr_actor, 0.001)
         self.assertEqual(agent.lr_critic, 0.01)
         self.assertEqual(agent.k_epochs, 4)
-        self.assertEqual(agent.minibatch_size, 128)
+        self.assertEqual(agent.minibatch_size, 512)
 
         gat_agent = GATGRUSmartATPGPPOAgent({"test": self.graph}, rnd_beta=0)
         self.assertEqual(gat_agent.lr_actor, 0.0003)
         self.assertEqual(gat_agent.lr_critic, 0.001)
         self.assertEqual(gat_agent.k_epochs, 4)
-        self.assertEqual(gat_agent.minibatch_size, 128)
+        self.assertEqual(gat_agent.minibatch_size, 512)
 
     def test_deferred_trainer_collects_four_faults_for_one_update(self):
         from rl_podem.cpp_bridge import CppPodemBacktraceV2Trainer
@@ -1098,11 +1098,11 @@ class SmartATPGTests(unittest.TestCase):
         model = load_portable_model(model_path)
         self.assertEqual(
             model.model_format,
-            "SMARTATPG_MODEL_V16_MEAN_GAE_BATCH4_MINIBATCH128_EPOCH4",
+            "SMARTATPG_MODEL_V18_MEAN_GAE_BATCH4_MINIBATCH512_EPOCH4",
         )
         self.assertEqual(model.normal_rounds, 2)
         self.assertEqual(model.faults_per_update, 4)
-        self.assertEqual(model.minibatch_size, 128)
+        self.assertEqual(model.minibatch_size, 512)
         self.assertEqual(model.k_epochs, 4)
         cpp_podem.validate_actor_artifacts(
             str(embedding_path), str(model_path), self.graph.circuit_hash,
@@ -1122,10 +1122,10 @@ class SmartATPGTests(unittest.TestCase):
         gat_model = load_portable_model(gat_path)
         self.assertEqual(
             gat_model.model_format,
-            "SMARTATPG_MODEL_V17_GAT_DEPTHNORM_GAE_BATCH4_MINIBATCH128_EPOCH4",
+            "SMARTATPG_MODEL_V19_GAT_DEPTHNORM_GAE_BATCH4_MINIBATCH512_EPOCH4",
         )
         self.assertEqual(gat_model.faults_per_update, 4)
-        self.assertEqual(gat_model.minibatch_size, 128)
+        self.assertEqual(gat_model.minibatch_size, 512)
         self.assertEqual(gat_model.k_epochs, 4)
         cpp_podem.validate_actor_artifacts(
             str(gat_embeddings), str(gat_path), self.graph.circuit_hash,
@@ -1134,8 +1134,8 @@ class SmartATPGTests(unittest.TestCase):
         old_gat_path = Path(self.temp.name) / "old_gat_v13.txt"
         old_gat_path.write_text(
             gat_path.read_text(encoding="utf-8").replace(
-                "SMARTATPG_MODEL_V17_GAT_DEPTHNORM_GAE_BATCH4_MINIBATCH128_EPOCH4",
-                "SMARTATPG_MODEL_V16_MEAN_GAE_BATCH4_MINIBATCH128_EPOCH4",
+                "SMARTATPG_MODEL_V19_GAT_DEPTHNORM_GAE_BATCH4_MINIBATCH512_EPOCH4",
+                "SMARTATPG_MODEL_V18_MEAN_GAE_BATCH4_MINIBATCH512_EPOCH4",
                 1,
             ),
             encoding="utf-8",
@@ -1150,7 +1150,7 @@ class SmartATPGTests(unittest.TestCase):
         stale_gat_path = Path(self.temp.name) / "old_gat_v14.txt"
         stale_gat_path.write_text(
             gat_path.read_text(encoding="utf-8").replace(
-                "SMARTATPG_MODEL_V17_GAT_DEPTHNORM_GAE_BATCH4_MINIBATCH128_EPOCH4",
+                "SMARTATPG_MODEL_V19_GAT_DEPTHNORM_GAE_BATCH4_MINIBATCH512_EPOCH4",
                 "SMARTATPG_MODEL_V14_GAT_BATCH8_EPOCH4",
                 1,
             ),
@@ -1163,26 +1163,26 @@ class SmartATPGTests(unittest.TestCase):
                 str(gat_embeddings), str(stale_gat_path),
                 self.graph.circuit_hash, list(self.graph.names), "smartatpg",
             )
-        old_batch8_path = Path(self.temp.name) / "old_gat_v15.txt"
-        old_batch8_path.write_text(
+        old_minibatch128_path = Path(self.temp.name) / "old_gat_v17.txt"
+        old_minibatch128_path.write_text(
             gat_path.read_text(encoding="utf-8").replace(
+                "SMARTATPG_MODEL_V19_GAT_DEPTHNORM_GAE_BATCH4_MINIBATCH512_EPOCH4",
                 "SMARTATPG_MODEL_V17_GAT_DEPTHNORM_GAE_BATCH4_MINIBATCH128_EPOCH4",
-                "SMARTATPG_MODEL_V15_GAT_DEPTHNORM_GAE_BATCH8_EPOCH4",
                 1,
             ),
             encoding="utf-8",
         )
         with self.assertRaisesRegex(ValueError, "Unsupported SmartATPG model"):
-            load_portable_model(old_batch8_path)
+            load_portable_model(old_minibatch128_path)
         with self.assertRaisesRegex(RuntimeError, "Unsupported actor format"):
             cpp_podem.validate_actor_artifacts(
-                str(gat_embeddings), str(old_batch8_path),
+                str(gat_embeddings), str(old_minibatch128_path),
                 self.graph.circuit_hash, list(self.graph.names), "smartatpg",
             )
         wrong_minibatch_path = Path(self.temp.name) / "wrong_minibatch.txt"
         wrong_minibatch_path.write_text(
             gat_path.read_text(encoding="utf-8").replace(
-                "minibatch_size 128", "minibatch_size 64", 1,
+                "minibatch_size 512", "minibatch_size 64", 1,
             ),
             encoding="utf-8",
         )
@@ -1258,7 +1258,7 @@ class SmartATPGTests(unittest.TestCase):
         self.assertEqual(model.encoder_variant, "level_gat_gru")
         self.assertEqual(
             model.model_format,
-            "SMARTATPG_MODEL_V17_GAT_DEPTHNORM_GAE_BATCH4_MINIBATCH128_EPOCH4",
+            "SMARTATPG_MODEL_V19_GAT_DEPTHNORM_GAE_BATCH4_MINIBATCH512_EPOCH4",
         )
         self.assertEqual(model.actor_input_dim, 12)
         self.assertFalse(any(
