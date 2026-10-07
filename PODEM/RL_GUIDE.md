@@ -32,6 +32,8 @@ python3 scripts/validate_smartatpg.py \
 
 验证运行时才独立发现 `data/validation` 中的全部 `.bench` 电路，并按文件名顺序评估 GAT-GRU 各轮、Mean 各轮和 fresh SCOAP baseline，分别选择两个模型的 best round，并生成：
 
+目录中的电路必须是 SmartATPG 支持的 normal BENCH：`AND`、`NAND`、`OR`、`NOR` 均为二输入，`NOT` 为单输入，并且不包含 `BUF`。多输入 BENCH 可先用 `tools/convert_binary_bench.py` 转换。
+
 - `validation_three_way_comparison.csv`
 - `validation_three_way_comparison.json`
 - `model_selection.json`
