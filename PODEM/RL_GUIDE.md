@@ -23,12 +23,10 @@ GAT-GRU 与 Mean 分别在两张 GPU 上训练。训练 manifest 仅包含 train
 ## 验证
 
 ```bash
-python3 scripts/validate_smartatpg.py \
-  --run-dir artifacts/smartatpg_dual \
-  --dataset-root data \
-  --output-dir artifacts/smartatpg_dual/validation \
-  --seed 2026
+python3 scripts/validate_smartatpg.py
 ```
+
+默认读取项目内的 `artifacts/smartatpg_dual`，并将结果写入其 `validation` 子目录。需要验证其他训练运行时，可用 `--run-dir PATH` 覆盖默认目录；`--dataset-root`、`--output-dir` 和 `--seed` 仍可按需指定。
 
 验证运行时才独立发现 `data/validation` 中的全部 `.bench` 电路，并按文件名顺序评估 GAT-GRU 各轮、Mean 各轮和 fresh SCOAP baseline，分别选择两个模型的 best round，并生成：
 

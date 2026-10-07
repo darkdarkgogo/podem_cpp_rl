@@ -8,6 +8,10 @@ from pathlib import Path
 
 import torch
 
+
+ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_RUN_DIR = ROOT / "artifacts" / "smartatpg_dual"
+
 from .artifact_io import (
     INFERENCE_CHECKPOINT_FORMAT,
     atomic_json as _atomic_json,
@@ -324,7 +328,7 @@ def run_fresh_validation(run_dir, dataset_root=None, output_dir=None, seed=2026)
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--run-dir", type=Path, required=True)
+    parser.add_argument("--run-dir", type=Path, default=DEFAULT_RUN_DIR)
     parser.add_argument("--dataset-root", type=Path)
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--seed", type=int, default=2026)
