@@ -30,7 +30,7 @@ python3 scripts/validate_smartatpg.py \
   --seed 2026
 ```
 
-验证运行时才独立发现六个 validation circuits，再按顺序评估 GAT-GRU 各轮、Mean 各轮和 fresh SCOAP baseline，分别选择两个模型的 best round，并生成：
+验证运行时才独立发现 `data/validation` 中的全部 `.bench` 电路，并按文件名顺序评估 GAT-GRU 各轮、Mean 各轮和 fresh SCOAP baseline，分别选择两个模型的 best round，并生成：
 
 - `validation_three_way_comparison.csv`
 - `validation_three_way_comparison.json`

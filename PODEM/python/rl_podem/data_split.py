@@ -199,9 +199,7 @@ def discover_mean_training_dataset(dataset_root):
     }
 
 
-def discover_validation_dataset(
-    dataset_root, *, expected_validation_names=VALIDATION_NAMES,
-):
+def discover_validation_dataset(dataset_root):
     validation_dir = Path(dataset_root).resolve() / "validation"
     if not validation_dir.is_dir():
         raise FileNotFoundError(
@@ -212,11 +210,6 @@ def discover_validation_dataset(
         (path for path in entries if path.is_file() and path.suffix == ".bench"),
         key=lambda path: path.name,
     ))
-    if tuple(path.stem for path in validation_paths) != tuple(expected_validation_names):
-        raise ValueError(
-            "SmartATPG validation split must contain exactly: "
-            + ", ".join(expected_validation_names)
-        )
     unexpected = sorted(
         path.name for path in entries
         if not path.is_file() or path.suffix != ".bench"
@@ -226,33 +219,30 @@ def discover_validation_dataset(
             "SmartATPG validation directory contains non-BENCH files: "
             + ", ".join(unexpected)
         )
+    if not validation_paths:
+        raise ValueError(
+            "SmartATPG validation split must contain at least one BENCH circuit"
+        )
     return validation_paths
 
 
 def discover_dataset(
     dataset_root, *, expected_train_count=TRAIN_CIRCUIT_COUNT,
-    expected_validation_names=VALIDATION_NAMES,
 ):
     """Compatibility helper for callers that intentionally need both splits."""
     return {
         "train": discover_training_dataset(
             dataset_root, expected_train_count=expected_train_count,
         ),
-        "validation": discover_validation_dataset(
-            dataset_root, expected_validation_names=expected_validation_names,
-        ),
+        "validation": discover_validation_dataset(dataset_root),
     }
 
 
-def discover_mean_dataset(
-    dataset_root, *, expected_validation_names=VALIDATION_NAMES,
-):
+def discover_mean_dataset(dataset_root):
     """Compatibility helper for callers that intentionally need both splits."""
     return {
         **discover_mean_training_dataset(dataset_root),
-        "validation": discover_validation_dataset(
-            dataset_root, expected_validation_names=expected_validation_names,
-        ),
+        "validation": discover_validation_dataset(dataset_root),
     }
 
 

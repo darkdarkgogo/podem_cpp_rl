@@ -31,6 +31,7 @@ from rl_podem.data_split import (
     discover_mean_dataset,
     discover_mean_training_dataset,
     discover_training_dataset,
+    discover_validation_dataset,
     prepare,
     select_training_faults,
     select_validation_faults,
@@ -155,16 +156,37 @@ class SmartATPGPreparationTests(unittest.TestCase):
                 (root / "validation" / f"{name}.bench").write_text(
                     "INPUT(a)\nOUTPUT(a)\n", encoding="utf-8"
                 )
-            result = discover_dataset(
-                root, expected_train_count=3,
-                expected_validation_names=("v1", "v2"),
-            )
+            result = discover_dataset(root, expected_train_count=3)
             self.assertEqual(
                 [path.stem for path in result["train"]], ["a", "m", "z"]
             )
             self.assertEqual(
                 [path.stem for path in result["validation"]], ["v1", "v2"]
             )
+
+    def test_validation_discovery_rejects_an_empty_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "validation").mkdir()
+            with self.assertRaisesRegex(ValueError, "at least one BENCH"):
+                discover_validation_dataset(root)
+
+    def test_validation_discovery_rejects_unexpected_entries(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            validation = root / "validation"
+            validation.mkdir()
+            (validation / "valid.bench").write_text(
+                "INPUT(a)\nOUTPUT(a)\n", encoding="utf-8"
+            )
+            (validation / "notes.txt").write_text("notes\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "notes.txt"):
+                discover_validation_dataset(root)
+
+    def test_validation_discovery_requires_the_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(FileNotFoundError, "validation directory"):
+                discover_validation_dataset(Path(directory))
 
     def test_mean_dataset_uses_binary_s38417_with_scan_fault_map(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -180,9 +202,7 @@ class SmartATPGPreparationTests(unittest.TestCase):
                 (root / "validation" / f"{name}.bench").write_text(
                     "INPUT(a)\nOUTPUT(a)\n", encoding="utf-8"
                 )
-            result = discover_mean_dataset(
-                root, expected_validation_names=("v1", "v2")
-            )
+            result = discover_mean_dataset(root)
             self.assertEqual(
                 [item["name"] for item in result["train"]],
                 ["c6288", "s38417"],
