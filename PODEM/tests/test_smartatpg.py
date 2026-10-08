@@ -128,8 +128,9 @@ class SmartATPGTests(unittest.TestCase):
             self.assertFalse(resolve_backtrace_lock("off", encoder))
         with self.assertRaisesRegex(ValueError, "backtrace lock mode"):
             resolve_backtrace_lock("invalid", "level_gat_gru")
-        with self.assertRaisesRegex(ValueError, "encoder variant"):
-            resolve_backtrace_lock("auto", "invalid")
+        for mode in ("auto", "on", "off"):
+            with self.assertRaisesRegex(ValueError, "encoder variant"):
+                resolve_backtrace_lock(mode, "invalid")
         self.assertFalse(CppPodemBacktraceV2Trainer(
             self.graph, agent=self.agent(), auto_update=False,
         ).backtrace_lock)
@@ -139,6 +140,32 @@ class SmartATPGTests(unittest.TestCase):
         self.assertTrue(CppPodemBacktraceV2Trainer(
             self.graph, agent=gat_agent, auto_update=False,
         ).backtrace_lock)
+
+    def test_backtrace_lock_reaches_cpp_training_bridge(self):
+        import cpp_podem
+        cases = (
+            (self.agent(), None, False),
+            (self.agent(), True, True),
+            (GATGRUSmartATPGPPOAgent(
+                {"test": self.graph}, rnd_beta=0, k_epochs=1,
+            ), None, True),
+            (GATGRUSmartATPGPPOAgent(
+                {"test": self.graph}, rnd_beta=0, k_epochs=1,
+            ), False, False),
+        )
+        for agent, override, expected in cases:
+            with self.subTest(
+                encoder=agent.encoder_variant, override=override,
+            ):
+                trainer = CppPodemBacktraceV2Trainer(
+                    self.graph, agent=agent, auto_update=False,
+                    backtrace_lock=override,
+                )
+                with patch.object(
+                    cpp_podem, "run_stuck_at", return_value={"episodes": 0},
+                ) as run:
+                    trainer.run(self.path, backtrack_limit=20)
+                self.assertIs(run.call_args.args[-1], expected)
 
     def test_backtrack_reward_protocol(self):
         self.assertEqual(
@@ -1389,6 +1416,11 @@ class SmartATPGTests(unittest.TestCase):
             "backtrace_rl", "", True, False,
         )
         self.assertGreater(len(decisions), locked_decision_count)
+        self.assertEqual(max(Counter(backtrace_steps).values()), 1)
+        revisited = Counter(
+            (request["objective"], request["mask"]) for request in decisions
+        )
+        self.assertTrue(any(count > 1 for count in revisited.values()))
 
     def test_native_summary_reports_nonnegative_atpg_seconds(self):
         import cpp_podem

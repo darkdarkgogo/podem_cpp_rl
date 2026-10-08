@@ -55,6 +55,7 @@ if torch is not None:
         _catalog_fault_ids,
         _evaluate_fault,
         _load_validation_catalogs,
+        _native_validation_batch,
         _summarize_fault_records,
         _summarize_validation,
         _validation_catalog_hash,
@@ -460,6 +461,28 @@ class SmartATPGPreparationTests(unittest.TestCase):
 
 @unittest.skipIf(torch is None, "PyTorch is not installed")
 class SmartATPGTrainingStateTests(unittest.TestCase):
+
+    def test_backtrace_lock_reaches_native_validation_bridge(self):
+        calls = []
+
+        class FakeCppPodem:
+            @staticmethod
+            def run_native_validation(*args):
+                calls.append(args)
+                return [{
+                    "fault_id": "f0", "outcome": 1, "backtracks": 0,
+                    "backtrace_steps": 1, "return": 99.9,
+                    "atpg_seconds": 0.01,
+                }]
+
+        with patch.dict(sys.modules, {"cpp_podem": FakeCppPodem}):
+            records = _native_validation_batch(
+                {"name": "c", "circuit": "c.bench"}, ["f0"],
+                "c.emb", "actor.txt", "records.jsonl", 2026,
+                GAT_REWARD_SCHEME, -0.1, False,
+            )
+        self.assertEqual(records[0]["fault_id"], "f0")
+        self.assertIs(calls[0][-1], False)
 
     def test_trainer_exposes_both_encoder_agents(self):
         self.assertEqual(set(AGENT_TYPES), {"fanin_mean", "level_gat_gru"})

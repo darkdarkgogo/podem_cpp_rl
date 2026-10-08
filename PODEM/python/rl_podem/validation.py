@@ -203,7 +203,7 @@ def _load_inference_checkpoint(path, encoder, manifest_path, round_number):
 
 def _evaluate_model_round(
     name, encoder, manifest_path, model_dir, circuits, output_dir,
-    round_number, seed, backtrace_lock_mode,
+    round_number, seed, backtrace_lock,
 ):
     checkpoint = Path(model_dir) / f"inference_round_{round_number:02d}.pth"
     actor_path = Path(model_dir) / f"model_round_{round_number:02d}.txt"
@@ -240,7 +240,7 @@ def _evaluate_model_round(
             item, item["episode_fault_ids"], embeddings[item["name"]], actor_path,
             journal, seed, payload["reward_scheme"],
             backtrace_step_rewards[item["name"]],
-            resolve_backtrace_lock(backtrace_lock_mode, encoder),
+            backtrace_lock,
         ))
     _validate_records(records, name)
     summary = _summarize_validation(records, circuits, round_number)
@@ -269,6 +269,10 @@ def run_fresh_validation(
     manifests = {key: Path(value) for key, value in run_summary["manifests"].items()}
     model_dirs = {key: Path(value) for key, value in run_summary["training_dirs"].items()}
     model_specs = {"gat": "level_gat_gru", "mean": "fanin_mean"}
+    model_backtrace_locks = {
+        name: resolve_backtrace_lock(backtrace_lock, encoder)
+        for name, encoder in model_specs.items()
+    }
     validation_paths = discover_validation_dataset(training_dataset_root)
     circuits = [
         {"name": path.stem, "circuit": str(path)} for path in validation_paths
@@ -285,7 +289,7 @@ def run_fresh_validation(
         round_results = [
             _evaluate_model_round(
                 name, encoder, manifests[name], model_dirs[name], circuits,
-                output_dir, round_number, seed, backtrace_lock,
+                output_dir, round_number, seed, model_backtrace_locks[name],
             )
             for round_number in range(1, rounds + 1)
         ]

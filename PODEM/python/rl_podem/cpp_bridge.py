@@ -26,17 +26,15 @@ GAT_MODEL_FORMAT = (
 
 
 def resolve_backtrace_lock(mode: str, encoder_variant: str) -> bool:
+    if encoder_variant not in ("level_gat_gru", "fanin_mean"):
+        raise ValueError(f"Unknown encoder variant: {encoder_variant}")
     if mode == "on":
         return True
     if mode == "off":
         return False
     if mode != "auto":
         raise ValueError(f"Unknown backtrace lock mode: {mode}")
-    if encoder_variant == "level_gat_gru":
-        return True
-    if encoder_variant == "fanin_mean":
-        return False
-    raise ValueError(f"Unknown encoder variant: {encoder_variant}")
+    return encoder_variant == "level_gat_gru"
 
 
 def _load_cpp_embedding_artifact(

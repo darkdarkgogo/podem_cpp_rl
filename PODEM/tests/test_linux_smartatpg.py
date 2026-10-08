@@ -256,8 +256,10 @@ class FreshValidationTests(unittest.TestCase):
             evaluated = []
 
             def evaluate(name, _encoder, _manifest, _model_dir, circuits,
-                         _output_dir, round_number, _seed):
-                evaluated.append((name, round_number, id(circuits)))
+                         _output_dir, round_number, _seed, backtrace_lock):
+                evaluated.append((
+                    name, round_number, id(circuits), backtrace_lock,
+                ))
                 detected = round_number == 2 if name == "gat" else True
                 backtracks = round_number if name == "gat" else round_number * 10
                 records = [self._record(
@@ -284,10 +286,16 @@ class FreshValidationTests(unittest.TestCase):
             ):
                 result = validation.run_fresh_validation(run_dir)
 
-            self.assertEqual([(name, round_) for name, round_, _ in evaluated], [
+            self.assertEqual([(name, round_) for name, round_, _, _ in evaluated], [
                 ("gat", 1), ("gat", 2), ("mean", 1), ("mean", 2),
             ])
-            self.assertEqual(len({identity for _, _, identity in evaluated}), 1)
+            self.assertEqual(
+                [lock for _, _, _, lock in evaluated],
+                [True, True, False, False],
+            )
+            self.assertEqual(
+                len({identity for _, _, identity, _ in evaluated}), 1,
+            )
             self.assertEqual(scoap_calls, [path.stem for path in paths])
             self.assertEqual(result["model_selection"]["gat"]["best_round"], 2)
             self.assertEqual(result["model_selection"]["mean"]["best_round"], 1)
