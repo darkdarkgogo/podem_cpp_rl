@@ -28,7 +28,7 @@ from rl_podem.curriculum import CppPodemCurriculumEvaluator
 from rl_podem.advantages import full_fault_targets
 from rl_podem.cpp_bridge import (
     CppPodemBacktraceV2Trainer, _load_cpp_embedding_artifact,
-    catalog_cpp_podem, export_actor_v2_state_dict,
+    catalog_cpp_podem, export_actor_v2_state_dict, resolve_backtrace_lock,
 )
 from rl_podem.smartatpg_rewards import (
     GAT_REWARD_SCHEME,
@@ -119,6 +119,26 @@ class SmartATPGTests(unittest.TestCase):
     def gates(self):
         return {name: GraphGate(name, self.graph.circuit_hash, index)
                 for index, name in enumerate(self.graph.names)}
+
+    def test_resolve_backtrace_lock_is_encoder_specific_and_overridable(self):
+        self.assertTrue(resolve_backtrace_lock("auto", "level_gat_gru"))
+        self.assertFalse(resolve_backtrace_lock("auto", "fanin_mean"))
+        for encoder in ("level_gat_gru", "fanin_mean"):
+            self.assertTrue(resolve_backtrace_lock("on", encoder))
+            self.assertFalse(resolve_backtrace_lock("off", encoder))
+        with self.assertRaisesRegex(ValueError, "backtrace lock mode"):
+            resolve_backtrace_lock("invalid", "level_gat_gru")
+        with self.assertRaisesRegex(ValueError, "encoder variant"):
+            resolve_backtrace_lock("auto", "invalid")
+        self.assertFalse(CppPodemBacktraceV2Trainer(
+            self.graph, agent=self.agent(), auto_update=False,
+        ).backtrace_lock)
+        gat_agent = GATGRUSmartATPGPPOAgent(
+            {"test": self.graph}, rnd_beta=0, k_epochs=1,
+        )
+        self.assertTrue(CppPodemBacktraceV2Trainer(
+            self.graph, agent=gat_agent, auto_update=False,
+        ).backtrace_lock)
 
     def test_backtrack_reward_protocol(self):
         self.assertEqual(
@@ -1327,14 +1347,10 @@ class SmartATPGTests(unittest.TestCase):
 
     def test_native_backtrace_lock_reuses_an_unfinished_rl_choice(self):
         import cpp_podem
-        fixture = Path(__file__).resolve().parents[1] / "sample_circuits/c432_binary.bench"
-        if not fixture.is_file() or not fixture.with_suffix(".faultmap").is_file():
-            self.skipTest("c432 binary fixture is not present in this checkout")
-        circuit = Path(self.temp.name) / fixture.name
-        fault_map = circuit.with_suffix(".faultmap")
-        shutil.copy2(fixture, circuit)
-        shutil.copy2(fixture.with_suffix(".faultmap"), fault_map)
-        fault_id = catalog_cpp_podem(circuit, fault_map)["faults"][0]["fault_id"]
+        source = Path(__file__).resolve().parents[1] / "data/train_mean/c6288.bench"
+        circuit = Path(self.temp.name) / "c6288.bench"
+        shutil.copyfile(source, circuit)
+        fault_id = "G548:GI0:sa1"
         decisions = []
         backtrace_steps = []
 
@@ -1354,7 +1370,7 @@ class SmartATPGTests(unittest.TestCase):
 
         cpp_podem.run_stuck_at(
             str(circuit), choose, event, 20, 14, [fault_id], True,
-            "backtrace_rl", str(fault_map),
+            "backtrace_rl", "", True, True,
         )
         sequences = [request["sequence"] for request in decisions]
         self.assertEqual(len(sequences), len(set(sequences)))
@@ -1364,6 +1380,15 @@ class SmartATPGTests(unittest.TestCase):
             request["mask"][request["action"]] for request in decisions
         ))
         self.assertGreater(max(Counter(backtrace_steps).values()), 1)
+
+        locked_decision_count = len(decisions)
+        decisions.clear()
+        backtrace_steps.clear()
+        cpp_podem.run_stuck_at(
+            str(circuit), choose, event, 20, 14, [fault_id], True,
+            "backtrace_rl", "", True, False,
+        )
+        self.assertGreater(len(decisions), locked_decision_count)
 
     def test_native_summary_reports_nonnegative_atpg_seconds(self):
         import cpp_podem

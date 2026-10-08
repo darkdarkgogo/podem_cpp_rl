@@ -395,7 +395,8 @@ py::list run_native_validation(
     const std::vector<std::string> &fault_ids,
     const std::string &reward_scheme,
     double backtrace_step_reward,
-    const std::string &journal_path, const std::string &circuit_name) {
+    const std::string &journal_path, const std::string &circuit_name,
+    py::object backtrace_lock) {
   if (fault_ids.empty()) {
     throw std::invalid_argument("Native validation requires fault IDs");
   }
@@ -403,6 +404,9 @@ py::list run_native_validation(
     throw std::invalid_argument(
         "Native validation requires backtrack_limit=100");
   }
+  const bool has_backtrace_lock_override = !backtrace_lock.is_none();
+  const bool backtrace_lock_override =
+      has_backtrace_lock_override ? backtrace_lock.cast<bool>() : false;
   ATPG atpg;
   atpg.detected_num = 1;
   atpg.set_backtrack_limit(backtrack_limit);
@@ -422,6 +426,10 @@ py::list run_native_validation(
     if (!actor) {
       throw std::runtime_error("Native validation actor type is unavailable");
     }
+    atpg.set_backtrace_lock(
+        has_backtrace_lock_override
+            ? backtrace_lock_override
+            : actor->encoder_variant() == "level_gat_gru");
     const std::string expected_reward_scheme =
         actor->encoder_variant() == "level_gat_gru"
             ? "cubic_backtrack_depthnorm_v2"
@@ -538,7 +546,8 @@ py::dict run_stuck_at(const std::string &circuit_path,
                       py::object event_callback, int backtrack_limit,
                       int seed, py::object fault_ids, bool quiet,
                       const std::string &rl_mode,
-                      const std::string &fault_map_path, bool use_scoap) {
+                      const std::string &fault_map_path, bool use_scoap,
+                      bool backtrace_lock) {
   const bool has_fault_filter = !fault_ids.is_none();
   const std::vector<std::string> selected_faults = has_fault_filter
       ? fault_ids.cast<std::vector<std::string> >()
@@ -548,6 +557,7 @@ py::dict run_stuck_at(const std::string &circuit_path,
   ATPG atpg;
   atpg.detected_num = 1;
   atpg.set_backtrack_limit(backtrack_limit);
+  atpg.set_backtrace_lock(backtrace_lock);
   atpg.set_seed(seed);
   atpg.set_total_attempt_num(1);
   atpg.set_SAF_atpg(true);
@@ -683,14 +693,16 @@ PYBIND11_MODULE(cpp_podem, module) {
              py::arg("backtrack_limit") = 97, py::arg("seed") = 14,
              py::arg("fault_ids") = py::none(), py::arg("quiet") = false,
              py::arg("rl_mode") = "backtrace_rl",
-             py::arg("fault_map_path") = "", py::arg("use_scoap") = false);
+             py::arg("fault_map_path") = "", py::arg("use_scoap") = false,
+             py::arg("backtrace_lock") = true);
   module.def("run_native_validation", &run_native_validation,
              py::arg("circuit_path"), py::arg("embedding_path"),
              py::arg("actor_path"), py::arg("backtrack_limit"),
              py::arg("seed"), py::arg("fault_ids"),
              py::arg("reward_scheme"),
              py::arg("backtrace_step_reward"),
-             py::arg("journal_path") = "", py::arg("circuit_name") = "");
+             py::arg("journal_path") = "", py::arg("circuit_name") = "",
+             py::arg("backtrace_lock") = py::none());
   module.def("run_native_scoap_validation", &run_native_scoap_validation,
              py::arg("circuit_path"), py::arg("backtrack_limit"),
              py::arg("seed"), py::arg("fault_ids"),

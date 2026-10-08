@@ -501,25 +501,28 @@ ATPG::wptr ATPG::find_pi_assignment(const wptr object_wire, const int &object_le
 				unresolved_count += input_wire->value == U ? 1 : 0;
 			}
 
-			BacktraceLock &locked = rl_backtrace_locks[object_wire->rl_gate_id];
-			if (locked.generation == rl_path_lock_generation)
+			if (rl_backtrace_lock_enabled)
 			{
-				const bool same_objective =
+				BacktraceLock &locked = rl_backtrace_locks[object_wire->rl_gate_id];
+				if (locked.generation == rl_path_lock_generation)
+				{
+					const bool same_objective =
 						locked.objective_level == object_level;
-				const int required_input_value =
+					const int required_input_value =
 						(objective_gate->type == NAND || objective_gate->type == NOR)
 								? (object_level ^ 1)
 								: object_level;
-				if (!same_objective)
-					locked.generation = 0;
-				else if (locked.selected_wire->value == U)
-					new_object_wire = locked.selected_wire;
-				else if (locked.selected_wire->value == required_input_value)
-					locked.generation = 0;
-				else
-				{
-					locked.generation = 0;
-					return nullptr;
+					if (!same_objective)
+						locked.generation = 0;
+					else if (locked.selected_wire->value == U)
+						new_object_wire = locked.selected_wire;
+					else if (locked.selected_wire->value == required_input_value)
+						locked.generation = 0;
+					else
+					{
+						locked.generation = 0;
+						return nullptr;
+					}
 				}
 			}
 
@@ -533,8 +536,9 @@ ATPG::wptr ATPG::find_pi_assignment(const wptr object_wire, const int &object_le
 			else if (!new_object_wire)
 				return nullptr;
 
-			if (new_object_wire)
+			if (new_object_wire && rl_backtrace_lock_enabled)
 			{
+				BacktraceLock &locked = rl_backtrace_locks[object_wire->rl_gate_id];
 				locked.objective_level = object_level;
 				locked.selected_wire = new_object_wire;
 				locked.generation = rl_path_lock_generation;

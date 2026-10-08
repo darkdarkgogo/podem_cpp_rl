@@ -18,6 +18,7 @@ from .artifact_io import (
     atomic_json_lines as _atomic_json_lines,
     manifest_hash as _manifest_hash,
 )
+from .cpp_bridge import resolve_backtrace_lock
 from .smartatpg_artifacts import export_descriptors, policy_from_state
 from .smartatpg_features import load_circuit_graph
 from .smartatpg_rewards import (
@@ -202,7 +203,7 @@ def _load_inference_checkpoint(path, encoder, manifest_path, round_number):
 
 def _evaluate_model_round(
     name, encoder, manifest_path, model_dir, circuits, output_dir,
-    round_number, seed,
+    round_number, seed, backtrace_lock_mode,
 ):
     checkpoint = Path(model_dir) / f"inference_round_{round_number:02d}.pth"
     actor_path = Path(model_dir) / f"model_round_{round_number:02d}.txt"
@@ -239,6 +240,7 @@ def _evaluate_model_round(
             item, item["episode_fault_ids"], embeddings[item["name"]], actor_path,
             journal, seed, payload["reward_scheme"],
             backtrace_step_rewards[item["name"]],
+            resolve_backtrace_lock(backtrace_lock_mode, encoder),
         ))
     _validate_records(records, name)
     summary = _summarize_validation(records, circuits, round_number)
@@ -246,7 +248,10 @@ def _evaluate_model_round(
     return records, summary
 
 
-def run_fresh_validation(run_dir, dataset_root=None, output_dir=None, seed=2026):
+def run_fresh_validation(
+    run_dir, dataset_root=None, output_dir=None, seed=2026,
+    backtrace_lock="auto",
+):
     run_dir = Path(run_dir).resolve()
     output_dir = (
         run_dir / "validation" if output_dir is None else Path(output_dir).resolve()
@@ -280,7 +285,7 @@ def run_fresh_validation(run_dir, dataset_root=None, output_dir=None, seed=2026)
         round_results = [
             _evaluate_model_round(
                 name, encoder, manifests[name], model_dirs[name], circuits,
-                output_dir, round_number, seed,
+                output_dir, round_number, seed, backtrace_lock,
             )
             for round_number in range(1, rounds + 1)
         ]
@@ -316,6 +321,7 @@ def run_fresh_validation(run_dir, dataset_root=None, output_dir=None, seed=2026)
         "format": "SMARTATPG_THREE_WAY_VALIDATION_V1",
         "seed": seed,
         "backtrack_limit": BACKTRACK_LIMIT,
+        "backtrace_lock": backtrace_lock,
         "runtime_definition": "sum(per_fault.atpg_seconds)",
         "model_selection": selection,
         "rows": rows,
@@ -332,9 +338,13 @@ def main(argv=None):
     parser.add_argument("--dataset-root", type=Path)
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--seed", type=int, default=2026)
+    parser.add_argument(
+        "--backtrace-lock", choices=("auto", "on", "off"), default="auto",
+    )
     args = parser.parse_args(argv)
     run_fresh_validation(
         args.run_dir, args.dataset_root, args.output_dir, args.seed,
+        args.backtrace_lock,
     )
 
 

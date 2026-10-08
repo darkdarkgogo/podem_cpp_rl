@@ -92,6 +92,7 @@ public:
 	void read_vectors(const string &);
 	void set_total_attempt_num(const int &);
 	void set_backtrack_limit(const int &);
+	void set_backtrace_lock(const bool &);
 	void set_SCOAP(const bool &);
 	void set_DTC(const bool &);
 	void set_STC(const bool &);
@@ -323,6 +324,7 @@ private:
 	unsigned long last_policy_decision_sequence{};
 	unsigned long rl_path_lock_generation{};
 	bool rl_podem_episode_active{};
+	bool rl_backtrace_lock_enabled{true};
 	vector<BacktraceLock> rl_backtrace_locks;
 	nptr rl_propagation_lock{};
 

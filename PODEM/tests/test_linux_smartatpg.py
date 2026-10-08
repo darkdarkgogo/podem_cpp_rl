@@ -183,13 +183,23 @@ class FreshValidationTests(unittest.TestCase):
             validation.main([])
         run.assert_called_once_with(
             validation.ROOT / "artifacts" / "smartatpg_dual",
-            None, None, 2026,
+            None, None, 2026, "auto",
         )
 
     def test_main_allows_run_dir_override(self):
         with patch.object(validation, "run_fresh_validation") as run:
             validation.main(["--run-dir", "chosen-run"])
-        run.assert_called_once_with(Path("chosen-run"), None, None, 2026)
+        run.assert_called_once_with(
+            Path("chosen-run"), None, None, 2026, "auto",
+        )
+
+    def test_main_allows_backtrace_lock_override(self):
+        with patch.object(validation, "run_fresh_validation") as run:
+            validation.main(["--backtrace-lock", "off"])
+        run.assert_called_once_with(
+            validation.ROOT / "artifacts" / "smartatpg_dual",
+            None, None, 2026, "off",
+        )
 
     def test_checkpoint_rejects_training_manifest_mismatch(self):
         with tempfile.TemporaryDirectory() as directory:

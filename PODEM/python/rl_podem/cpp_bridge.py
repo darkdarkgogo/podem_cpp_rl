@@ -25,6 +25,20 @@ GAT_MODEL_FORMAT = (
 )
 
 
+def resolve_backtrace_lock(mode: str, encoder_variant: str) -> bool:
+    if mode == "on":
+        return True
+    if mode == "off":
+        return False
+    if mode != "auto":
+        raise ValueError(f"Unknown backtrace lock mode: {mode}")
+    if encoder_variant == "level_gat_gru":
+        return True
+    if encoder_variant == "fanin_mean":
+        return False
+    raise ValueError(f"Unknown encoder variant: {encoder_variant}")
+
+
 def _load_cpp_embedding_artifact(
     path: Union[str, Path], *, expected_backend="smartatpg", include_metadata=False,
 ) -> Tuple[str, dict[str, torch.Tensor]]:
@@ -342,6 +356,7 @@ class _CppPodemTrainerBase:
         rl_mode: str = "backtrace_rl",
         fault_map_path: Optional[Union[str, Path]] = None,
         use_scoap: bool = True,
+        backtrace_lock: bool = True,
     ) -> dict[str, Any]:
         resolved_circuit_path = Path(circuit_path).resolve()
         actual_hash = _fnv1a_file_hash(resolved_circuit_path)
@@ -368,6 +383,7 @@ class _CppPodemTrainerBase:
             rl_mode,
             _native_circuit_path(fault_map_path) if fault_map_path else "",
             use_scoap,
+            backtrace_lock,
         )
 
 class CppPodemBacktraceV2Trainer(_CppPodemTrainerBase):
@@ -377,6 +393,7 @@ class CppPodemBacktraceV2Trainer(_CppPodemTrainerBase):
         agent: BacktracePPOAgentV2,
         auto_update: bool = True,
         reward_scheme: Optional[str] = None,
+        backtrace_lock: Optional[bool] = None,
     ):
         super().__init__(graph, agent=agent)
         expected_scheme = reward_scheme_for_encoder(agent.encoder_variant)
@@ -385,6 +402,10 @@ class CppPodemBacktraceV2Trainer(_CppPodemTrainerBase):
                 "SmartATPG reward scheme does not match the encoder variant"
             )
         self.reward_scheme = expected_scheme
+        self.backtrace_lock = (
+            resolve_backtrace_lock("auto", agent.encoder_variant)
+            if backtrace_lock is None else bool(backtrace_lock)
+        )
         self.auto_update = bool(auto_update)
         self.reward_alpha = 7.5
         self.reward_beta = 0.07
@@ -530,6 +551,7 @@ class CppPodemBacktraceV2Trainer(_CppPodemTrainerBase):
         if rl_mode != "backtrace_rl":
             raise ValueError("V2 actor requires rl_mode='backtrace_rl'.")
         kwargs.setdefault("backtrack_limit", 500)
+        kwargs.setdefault("backtrace_lock", self.backtrace_lock)
         self.episode_metrics = []
         summary = super().run(*args, rl_mode=rl_mode, **kwargs)
         metric_keys = {
@@ -600,6 +622,7 @@ class CppPodemBacktraceV2Evaluator(CppPodemBacktraceV2Trainer):
         fault_map_path: Optional[Union[str, Path]] = None,
         event_callback: Optional[Callable[[dict[str, Any]], None]] = None,
         use_scoap: bool = True,
+        backtrace_lock: Optional[bool] = None,
     ) -> dict[str, Any]:
         if rl_mode != "backtrace_rl":
             raise ValueError("V2 actor requires rl_mode='backtrace_rl'.")
@@ -630,5 +653,6 @@ class CppPodemBacktraceV2Evaluator(CppPodemBacktraceV2Trainer):
                 rl_mode,
                 _native_circuit_path(fault_map_path) if fault_map_path else "",
                 use_scoap,
+                self.backtrace_lock if backtrace_lock is None else backtrace_lock,
             )
         )

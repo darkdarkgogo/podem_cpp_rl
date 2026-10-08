@@ -15,6 +15,11 @@ void ATPG::set_backtrack_limit(const int &limit)
 	this->backtrack_limit = limit;
 }
 
+void ATPG::set_backtrace_lock(const bool &enabled)
+{
+	this->rl_backtrace_lock_enabled = enabled;
+}
+
 void ATPG::set_seed(const int &value)
 {
 	this->seed = value;

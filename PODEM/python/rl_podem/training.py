@@ -25,7 +25,7 @@ from .data_split import (
     training_hyperparameters,
 )
 from .cpp_bridge import (
-    CppPodemBacktraceV2Trainer,
+    CppPodemBacktraceV2Trainer, resolve_backtrace_lock,
 )
 from .smartatpg_rewards import (
     GAT_STEP_PENALTY_BUDGET,
@@ -217,7 +217,9 @@ def _load_continuation(path, agent, expected_config):
     if not isinstance(saved.get("agent"), dict):
         raise ValueError("Continuation checkpoint has no complete agent state")
     saved_config = saved.get("config")
-    protocol_keys = ("encoder_variant", "reward_scheme", "backtrack_limit")
+    protocol_keys = (
+        "encoder_variant", "reward_scheme", "backtrack_limit", "backtrace_lock",
+    )
     if not isinstance(saved_config, dict) or any(
         saved_config.get(key) != expected_config.get(key)
         for key in protocol_keys
@@ -244,6 +246,9 @@ def main(argv=None):
     parser.add_argument("--rnd-beta", type=float, default=0.05)
     parser.add_argument("--k-epochs", type=int)
     parser.add_argument(
+        "--backtrace-lock", choices=("auto", "on", "off"), default="auto",
+    )
+    parser.add_argument(
         "--encoder", choices=tuple(AGENT_TYPES), default="level_gat_gru"
     )
     mode = parser.add_mutually_exclusive_group()
@@ -267,6 +272,7 @@ def main(argv=None):
         )
     batched_training = manifest.get("format") == MANIFEST_FORMAT
     hyperparameters = training_hyperparameters(args.encoder)
+    backtrace_lock = resolve_backtrace_lock(args.backtrace_lock, args.encoder)
     expected_rounds = (
         NORMAL_TRAINING_ROUNDS if batched_training else LEGACY_TRAINING_ROUNDS
     )
@@ -338,6 +344,7 @@ def main(argv=None):
             graphs[item["name"]], agent=agent,
             auto_update=not batched_training,
             reward_scheme=reward_scheme,
+            backtrace_lock=backtrace_lock,
         )
         for item in train_circuits
     }
@@ -349,6 +356,7 @@ def main(argv=None):
         "k_epochs": args.k_epochs,
         "minibatch_size": hyperparameters["minibatch_size"],
         "backtrack_limit": BACKTRACK_LIMIT,
+        "backtrace_lock": backtrace_lock,
         "actor_lr": hyperparameters["actor_lr"],
         "critic_lr": hyperparameters["critic_lr"],
         "gamma": hyperparameters["gamma"],

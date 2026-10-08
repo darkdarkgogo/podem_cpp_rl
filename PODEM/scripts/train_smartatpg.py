@@ -101,6 +101,9 @@ def main(argv=None):
     parser.add_argument("--profile-seed", type=int, default=14)
     parser.add_argument("--rounds", type=int, default=NORMAL_TRAINING_ROUNDS)
     parser.add_argument("--backtrack-limit", type=int, default=BACKTRACK_LIMIT)
+    parser.add_argument(
+        "--backtrace-lock", choices=("auto", "on", "off"), default="auto",
+    )
     parser.add_argument("--gat-continue-from", type=Path)
     parser.add_argument("--mean-continue-from", type=Path)
     args = parser.parse_args(argv)
@@ -149,6 +152,7 @@ def main(argv=None):
             str(manifests[name]), str(model_dir),
             "--encoder", encoder, "--rounds", str(args.rounds),
             "--seed", str(args.seed),
+            "--backtrace-lock", args.backtrace_lock,
         ]
         if continuation is None:
             command.append("--resume")
@@ -179,6 +183,7 @@ def main(argv=None):
         "profile_seed": args.profile_seed,
         "rounds": args.rounds,
         "backtrack_limit": args.backtrack_limit,
+        "backtrace_lock": args.backtrace_lock,
         "manifests": {key: str(value) for key, value in manifests.items()},
         "training_dirs": {key: str(training / key) for key in ("gat", "mean")},
         "elapsed_s": time.perf_counter() - started,
