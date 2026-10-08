@@ -107,6 +107,9 @@ public:
   void load(const std::string &path);
   std::vector<float> backtrace_action_logits(
       const std::vector<float> &objective, int objective_value) const;
+  float backtrace_candidate_score(
+      const std::vector<float> &objective,
+      const std::vector<float> &candidate, int objective_value) const;
   std::size_t embedding_dimension() const { return embedding_dim_; }
   std::size_t gate_embedding_dimension() const { return gate_embedding_dim_; }
   std::size_t hidden_dimension() const { return hidden_dim_; }
@@ -128,6 +131,10 @@ private:
   void backtrace_action_logits_into(const float *objective,
                                     int objective_value, float *state,
                                     float *hidden, float *logits) const;
+  float backtrace_candidate_score_into(const float *objective,
+                                       const float *candidate,
+                                       int objective_value,
+                                       float *hidden) const;
   const Tensor &tensor(const std::string &name) const;
 
   std::size_t embedding_dim_ = 0;
@@ -168,6 +175,7 @@ public:
 private:
   ActorModel actor_;
   std::size_t gate_count_ = 0;
+  std::vector<std::string> gate_names_by_id_;
   std::vector<float> state_buffer_;
   std::vector<float> hidden_buffer_;
   std::array<float, 12> fixed_policy_input_buffer_{};

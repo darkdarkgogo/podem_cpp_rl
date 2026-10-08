@@ -89,6 +89,8 @@ class BacktraceDecisionStepV2:
     is_terminal: bool = False
     circuit_hash: Optional[str] = None
     objective_name: Optional[str] = None
+    candidate_names: Optional[tuple[str, ...]] = None
+    candidate_embeddings: Optional[torch.Tensor] = None
 
 
 class BacktraceActorCriticV2(nn.Module):

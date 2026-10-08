@@ -7,7 +7,6 @@ import os
 from pathlib import Path
 
 from .smartatpg_portable import (
-    ACTION_MASK_DIM,
     FEATURE_SCHEMA,
     GATE_EMBEDDING_DIM,
     GRAPH_CONFIG,
@@ -84,7 +83,6 @@ def smartatpg_metadata(encoder_variant="level_gat_gru"):
     if encoder_variant not in ENCODER_VARIANTS:
         raise ValueError(f"Unsupported SmartATPG encoder: {encoder_variant}")
     if encoder_variant == "level_gat_gru":
-        actor_input_dim = GATE_EMBEDDING_DIM + 1
         graph_config = {
             "input_dim": GATE_EMBEDDING_DIM,
             "hidden_dim": GATE_EMBEDDING_DIM,
@@ -94,7 +92,6 @@ def smartatpg_metadata(encoder_variant="level_gat_gru"):
         }
         graph_config_id = GAT_GRU_GRAPH_CONFIG
     else:
-        actor_input_dim = GATE_EMBEDDING_DIM
         graph_config = {
             "layers": 1,
             "input_dim": GATE_EMBEDDING_DIM,
@@ -102,18 +99,15 @@ def smartatpg_metadata(encoder_variant="level_gat_gru"):
             "aggregation": "fanin_mean",
         }
         graph_config_id = GRAPH_CONFIG
-    return {
+    metadata = {
         "embedding_backend": "smartatpg",
         "encoder_variant": encoder_variant,
         "feature_schema": FEATURE_SCHEMA,
         "graph_config": graph_config,
         "graph_config_id": graph_config_id,
         "gate_embedding_dim": GATE_EMBEDDING_DIM,
-        "actor_input_dim": actor_input_dim,
-        "action_mask_dim": ACTION_MASK_DIM,
-        "decision_state_dim": actor_input_dim + ACTION_MASK_DIM,
-        "policy_state_dim": actor_input_dim + ACTION_MASK_DIM,
     }
+    return metadata
 
 
 def sha256_file(path):

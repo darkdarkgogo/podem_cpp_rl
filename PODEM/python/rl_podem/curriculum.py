@@ -279,9 +279,12 @@ def collect_teacher_samples(
                 "circuit": circuit_name,
                 "objective_name": key[0],
                 "objective_value": key[1],
+                "candidate_names": tuple(candidates),
                 "action_counts": [0, 0],
                 "difficulty_counts": {name: 0 for name in DIFFICULTIES},
             }
+        elif samples[key]["candidate_names"] != tuple(candidates):
+            raise ValueError("Teacher candidate order changed for a repeated objective")
         samples[key]["action_counts"][action] += 1
         samples[key]["difficulty_counts"][active_difficulty] += 1
         return action
@@ -313,7 +316,10 @@ def collect_teacher_samples(
 def _teacher_tensors(
     samples: Iterable[Mapping[str, Any]],
     embedding_tables: Mapping[str, Mapping[str, torch.Tensor]],
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, list[str]]:
+) -> tuple[
+    torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, list[str],
+    Optional[torch.Tensor],
+]:
     sample_list = list(samples)
     if not sample_list:
         raise ValueError("Teacher dataset is empty.")
@@ -324,6 +330,7 @@ def _teacher_tensors(
                 group_sizes[(str(sample["circuit"]), str(difficulty))] += 1
 
     embeddings = []
+    candidate_indices = []
     values = []
     targets = []
     weights = []
@@ -337,6 +344,15 @@ def _teacher_tensors(
             table = embedding_tables[circuit]
             if circuit in graph_indices:
                 embeddings.append(torch.tensor([graph_indices[circuit][gate_name]], dtype=torch.long))
+                candidate_names = tuple(sample.get("candidate_names", ()))
+                candidate_indices.append(
+                    torch.tensor(
+                        [graph_indices[circuit][name] for name in candidate_names],
+                        dtype=torch.long,
+                    )
+                    if len(candidate_names) == 2
+                    else torch.tensor([-1, -1], dtype=torch.long)
+                )
             else:
                 embeddings.append(table[gate_name].float())
         except KeyError as error:
@@ -356,6 +372,7 @@ def _teacher_tensors(
         torch.stack(targets),
         torch.tensor(weights, dtype=torch.float32),
         circuits,
+        torch.stack(candidate_indices) if candidate_indices else None,
     )
 
 
@@ -391,7 +408,7 @@ def filter_unseen_teacher_samples(
     return filtered
 
 
-def _teacher_logits(policy, embeddings, values, circuits, tables):
+def _teacher_logits(policy, embeddings, values, circuits, tables, candidate_indices=None):
     if not hasattr(policy, "graph_encoder"):
         states = policy.gate_encoder(embeddings)
         return policy.backtrace_actor(states + policy.objective_value_embedding(values))
@@ -404,7 +421,17 @@ def _teacher_logits(policy, embeddings, values, circuits, tables):
         graph = tables[circuit]
         context = policy.graph_embeddings(graph, cached=not torch.is_grad_enabled())
         descriptors = policy.descriptors(graph, embeddings[selected, 0].long(), embeddings=context)
-        logits.append(policy.batch_logits(descriptors, values[selected])[0])
+        if getattr(policy, "encoder_variant", None) == "level_gat_gru":
+            if candidate_indices is None or bool((candidate_indices[selected] < 0).any()):
+                raise ValueError("GAT teacher samples require candidate fanin identities")
+            candidates = policy.descriptors(
+                graph, candidate_indices[selected].reshape(-1).long(), embeddings=context
+            ).reshape(-1, 2, descriptors.shape[-1])
+            logits.append(policy.batch_candidate_logits(
+                descriptors, candidates, values[selected]
+            ))
+        else:
+            logits.append(policy.batch_logits(descriptors, values[selected])[0])
         positions.extend(indices)
     order = torch.tensor(positions, dtype=torch.long, device=embeddings.device).argsort()
     return torch.cat(logits)[order]
@@ -415,13 +442,14 @@ def teacher_accuracy(
     samples: Iterable[Mapping[str, Any]],
     embedding_tables: Mapping[str, Mapping[str, torch.Tensor]],
 ) -> dict[str, float]:
-    embeddings, values, targets, _, circuits = _teacher_tensors(
+    embeddings, values, targets, _, circuits, candidate_indices = _teacher_tensors(
         samples, embedding_tables
     )
     policy.eval()
     with torch.no_grad():
         logits = _teacher_logits(policy, embeddings.to(device), values.to(device),
-                                 circuits, embedding_tables)
+                                 circuits, embedding_tables,
+                                 candidate_indices.to(device) if candidate_indices is not None else None)
         predictions = torch.argmax(logits, dim=-1).cpu()
         labels = torch.argmax(targets, dim=-1)
     correct: dict[str, int] = defaultdict(int)
@@ -450,7 +478,7 @@ def pretrain_actor(
 ) -> dict[str, Any]:
     if epochs <= 0 or batch_size <= 0:
         raise ValueError("Pretraining epochs and batch size must be positive.")
-    embeddings, values, targets, weights, circuits = _teacher_tensors(
+    embeddings, values, targets, weights, circuits, candidate_indices = _teacher_tensors(
         training_samples, embedding_tables
     )
     actor_parameters = [
@@ -480,6 +508,9 @@ def pretrain_actor(
     values_device = values.to(device)
     targets_device = targets.to(device)
     weights_device = weights.to(device)
+    candidate_indices_device = (
+        candidate_indices.to(device) if candidate_indices is not None else None
+    )
     for epoch in range(start_epoch + 1, epochs + 1):
         permutation = torch.randperm(len(embeddings), generator=generator)
         loss_sum = 0.0
@@ -489,7 +520,9 @@ def pretrain_actor(
             indices = permutation[start : start + batch_size].to(device)
             batch_circuits = [circuits[index] for index in indices.cpu().tolist()]
             logits = _teacher_logits(agent.policy, embeddings_device[indices],
-                                     values_device[indices], batch_circuits, embedding_tables)
+                                     values_device[indices], batch_circuits, embedding_tables,
+                                     candidate_indices_device[indices]
+                                     if candidate_indices_device is not None else None)
             loss_tensor = -(
                 targets_device[indices] * F.log_softmax(logits, dim=-1)
             ).sum(dim=-1)

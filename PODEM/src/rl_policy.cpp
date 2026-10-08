@@ -132,8 +132,9 @@ void read_smartatpg_metadata(
           "SmartATPG gate embedding dimension does not match model version");
   require(static_cast<bool>(input >> key >> actor_input_dim) &&
               key == "actor_input_dim" &&
-              actor_input_dim == expected_gate_dim +
-                  (encoder_variant == "level_gat_gru" ? 1U : 0U),
+              actor_input_dim ==
+                  (encoder_variant == "level_gat_gru" ?
+                       2U * expected_gate_dim + 1U : expected_gate_dim),
           "Actor input dimension does not match its architecture");
   require(static_cast<bool>(input >> key >> action_mask_dim) &&
               key == "action_mask_dim" && action_mask_dim == 2,
@@ -141,6 +142,12 @@ void read_smartatpg_metadata(
   require(static_cast<bool>(input >> key >> decision_state_dim) &&
               key == "decision_state_dim" && decision_state_dim == actor_input_dim + 2,
           "Decision state dimension must match Actor input plus mask");
+  if (encoder_variant == "level_gat_gru") {
+    std::size_t critic_input_dim = 0;
+    require(static_cast<bool>(input >> key >> critic_input_dim) &&
+                key == "critic_input_dim" && critic_input_dim == expected_gate_dim + 1,
+            "GAT critic input dimension must be objective embedding plus objective value");
+  }
   require(static_cast<bool>(input >> key >> snapshot) && key == "snapshot" &&
               snapshot.size() == 64 &&
               snapshot.find_first_not_of("0123456789abcdef") ==
@@ -240,8 +247,13 @@ void ActorModel::load(const std::string &path) {
   const bool gat_batched_protocol =
       header ==
       "SMARTATPG_MODEL_V19_GAT_DEPTHNORM_GAE_BATCH4_MINIBATCH512_EPOCH4";
+  const bool gat_fanin_scorer_protocol =
+      header ==
+      "SMARTATPG_MODEL_V20_GAT_FANIN_SCORER_DEPTHNORM_GAE_BATCH4_MINIBATCH512_EPOCH4";
+  require(!gat_batched_protocol,
+          "GAT model uses the old two-output actor; retrain with the fanin scorer");
   const bool batched_protocol =
-      mean_batched_protocol || gat_batched_protocol;
+      mean_batched_protocol || gat_fanin_scorer_protocol;
   require(header == "SMARTATPG_MODEL_V12" || batched_protocol,
           "Unsupported actor format in: " + path);
   backend_ = "smartatpg";
@@ -259,7 +271,7 @@ void ActorModel::load(const std::string &path) {
   require((encoder_variant_ == "fanin_mean" &&
            (header == "SMARTATPG_MODEL_V12" || mean_batched_protocol)) ||
               (encoder_variant_ == "level_gat_gru" &&
-               gat_batched_protocol),
+               gat_fanin_scorer_protocol),
           "SmartATPG actor format does not match encoder protocol in: " + path);
   int best_round = 0;
   std::string best_score;
@@ -317,8 +329,9 @@ void ActorModel::load(const std::string &path) {
   require(static_cast<bool>(input >> key >> hidden_dim_) && key == "hidden_dim" &&
               hidden_dim_ > 0,
           "Invalid actor hidden dimension in: " + path);
-  require(embedding_dim_ == gate_embedding_dim_ +
-              (encoder_variant_ == "level_gat_gru" ? 1U : 0U),
+  require(embedding_dim_ ==
+              (encoder_variant_ == "level_gat_gru" ?
+                   2U * gate_embedding_dim_ + 1U : gate_embedding_dim_),
           "SmartATPG Actor input dimension does not match its model version");
 
   tensors_.clear();
@@ -385,13 +398,20 @@ void ActorModel::load(const std::string &path) {
           "V2 backtrace hidden weight dimensions are invalid");
   require(tensor("backtrace_actor.0.bias").values.size() == hidden_dim_,
           "V2 backtrace hidden bias dimensions are invalid");
-  require(tensor("backtrace_actor.2.weight").rows == 2 &&
-              tensor("backtrace_actor.2.weight").cols == hidden_dim_,
-          "V2 backtrace output weight dimensions must be [2, hidden_dim]");
-  require(tensor("backtrace_actor.2.bias").values.size() == 2,
-          "V2 backtrace output bias dimensions must be [2]");
+  if (encoder_variant_ == "level_gat_gru") {
+    require(tensor("backtrace_actor.2.weight").rows == 1 &&
+                tensor("backtrace_actor.2.weight").cols == hidden_dim_ &&
+                tensor("backtrace_actor.2.bias").values.size() == 1,
+            "GAT fanin scorer output dimensions must be [1, hidden_dim]");
+  } else {
+    require(tensor("backtrace_actor.2.weight").rows == 2 &&
+                tensor("backtrace_actor.2.weight").cols == hidden_dim_,
+            "Mean backtrace output weight dimensions must be [2, hidden_dim]");
+    require(tensor("backtrace_actor.2.bias").values.size() == 2,
+            "Mean backtrace output bias dimensions must be [2]");
+  }
 
-  fixed_direct_kernel_ = hidden_dim_ == 32 &&
+  fixed_direct_kernel_ = encoder_variant_ == "fanin_mean" && hidden_dim_ == 32 &&
                          (embedding_dim_ == 11 || embedding_dim_ == 12);
   if (fixed_direct_kernel_) {
     const Tensor &hidden_weight = tensor("backtrace_actor.0.weight");
@@ -423,6 +443,8 @@ const ActorModel::Tensor &ActorModel::tensor(const std::string &name) const {
 
 std::vector<float> ActorModel::backtrace_action_logits(
     const std::vector<float> &objective, int objective_value) const {
+  require(encoder_variant_ == "fanin_mean",
+          "GAT scorer requires an objective and candidate embedding");
   std::vector<float> state(hidden_dim_);
   std::vector<float> hidden(hidden_dim_);
   std::vector<float> logits(2);
@@ -436,11 +458,55 @@ std::vector<float> ActorModel::backtrace_action_logits(
   return logits;
 }
 
+float ActorModel::backtrace_candidate_score(
+    const std::vector<float> &objective,
+    const std::vector<float> &candidate, int objective_value) const {
+  require(encoder_variant_ == "level_gat_gru",
+          "Candidate scoring is available only for the GAT scorer");
+  require(objective.size() == gate_embedding_dim_ &&
+              candidate.size() == gate_embedding_dim_,
+          "GAT objective and candidate embeddings must match gate dimension");
+  std::vector<float> hidden(hidden_dim_);
+  return backtrace_candidate_score_into(objective.data(), candidate.data(),
+                                        objective_value, hidden.data());
+}
+
+float ActorModel::backtrace_candidate_score_into(
+    const float *objective, const float *candidate, int objective_value,
+    float *hidden) const {
+  require(encoder_variant_ == "level_gat_gru" && objective != nullptr &&
+              candidate != nullptr && hidden != nullptr &&
+              (objective_value == 0 || objective_value == 1),
+          "Invalid GAT candidate-scoring input");
+  const Tensor &hidden_weight = tensor("backtrace_actor.0.weight");
+  const Tensor &hidden_bias = tensor("backtrace_actor.0.bias");
+  for (std::size_t row = 0; row < hidden_dim_; ++row) {
+    float value = hidden_bias.values[row];
+    const std::size_t offset = row * embedding_dim_;
+    for (std::size_t col = 0; col < gate_embedding_dim_; ++col) {
+      value += hidden_weight.values[offset + col] * objective[col];
+      value += hidden_weight.values[offset + gate_embedding_dim_ + col] * candidate[col];
+    }
+    value += hidden_weight.values[offset + 2 * gate_embedding_dim_] *
+             static_cast<float>(objective_value);
+    hidden[row] = std::tanh(value);
+  }
+  const Tensor &output_weight = tensor("backtrace_actor.2.weight");
+  const Tensor &output_bias = tensor("backtrace_actor.2.bias");
+  float score = output_bias.values[0];
+  for (std::size_t col = 0; col < hidden_dim_; ++col)
+    score += output_weight.values[col] * hidden[col];
+  require_finite(score, "GAT candidate score");
+  return score;
+}
+
 void ActorModel::backtrace_action_logits_into(
     const float *objective, int objective_value, float *state, float *hidden,
     float *logits) const {
   require(objective_value == 0 || objective_value == 1,
           "Backtrace objective value must be 0 or 1");
+  require(encoder_variant_ == "fanin_mean",
+          "GAT scorer requires candidate-conditioned inference");
   require(objective != nullptr && state != nullptr && hidden != nullptr &&
               logits != nullptr,
           "V2 actor buffers must not be null");
@@ -516,6 +582,7 @@ NativeActorPolicy::NativeActorPolicy(
           "SmartATPG descriptor count does not match circuit wires");
 
   gate_count_ = gate_names_by_id.size();
+  gate_names_by_id_ = gate_names_by_id;
   const std::size_t gate_embedding_dim = actor_.gate_embedding_dimension();
   v2_mask_is_actor_input_ = false;
   use_logits_cache_ = actor_.encoder_variant() != "fanin_mean";
@@ -551,6 +618,16 @@ int NativeActorPolicy::select(const DecisionRequest &request) {
           "SmartATPG objective gate ID is out of range");
   require(request.objective_value == 0 || request.objective_value == 1,
           "SmartATPG objective value must be 0 or 1");
+  for (std::size_t index = 0; index < request.candidate_count; ++index) {
+    require(request.candidate_ids[index] < gate_count_,
+            "SmartATPG candidate gate ID is out of range");
+  }
+  std::array<std::size_t, 2> candidate_order = {0, 1};
+  if (actor_.encoder_variant() == "level_gat_gru" &&
+      gate_names_by_id_[request.candidate_ids[1]] <
+          gate_names_by_id_[request.candidate_ids[0]]) {
+    std::swap(candidate_order[0], candidate_order[1]);
+  }
   const std::size_t mask_code =
       (request.action_mask[0] ? 1U : 0U) |
       (request.action_mask[1] ? 2U : 0U);
@@ -571,36 +648,49 @@ int NativeActorPolicy::select(const DecisionRequest &request) {
     const std::size_t gate_embedding_dim = actor_.gate_embedding_dimension();
     const float *embedding =
         &v2_embedding_cache_[request.objective_id * gate_embedding_dim];
-    std::copy(embedding, embedding + gate_embedding_dim, policy_input);
-    if (v2_mask_is_actor_input_) {
-      policy_input[gate_embedding_dim] =
-          request.action_mask[0] ? 1.0f : 0.0f;
-      policy_input[gate_embedding_dim + 1] =
-          request.action_mask[1] ? 1.0f : 0.0f;
-    } else if (actor_.encoder_variant() == "level_gat_gru") {
-      policy_input[gate_embedding_dim] = static_cast<float>(request.objective_value);
-    }
     const auto actor_started = std::chrono::steady_clock::now();
-    actor_.backtrace_action_logits_into(
-        policy_input, request.objective_value, state, hidden,
-        &v2_logits_cache_[offset]);
+    if (actor_.encoder_variant() == "level_gat_gru") {
+      for (std::size_t index = 0; index < request.candidate_count; ++index) {
+        const std::size_t request_index = candidate_order[index];
+        const float *candidate = &v2_embedding_cache_[
+            request.candidate_ids[request_index] * gate_embedding_dim];
+        v2_logits_cache_[offset + index] =
+            actor_.backtrace_candidate_score_into(
+                embedding, candidate, request.objective_value, hidden);
+      }
+    } else {
+      std::copy(embedding, embedding + gate_embedding_dim, policy_input);
+      if (v2_mask_is_actor_input_) {
+        policy_input[gate_embedding_dim] =
+            request.action_mask[0] ? 1.0f : 0.0f;
+        policy_input[gate_embedding_dim + 1] =
+            request.action_mask[1] ? 1.0f : 0.0f;
+      }
+      actor_.backtrace_action_logits_into(
+          policy_input, request.objective_value, state, hidden,
+          &v2_logits_cache_[offset]);
+    }
     timing_stats_.actor_forward_nanoseconds +=
         static_cast<unsigned long long>(
             std::chrono::duration_cast<std::chrono::nanoseconds>(
                 std::chrono::steady_clock::now() - actor_started)
                 .count());
-    ++timing_stats_.actor_forward_calls;
+    timing_stats_.actor_forward_calls +=
+        actor_.encoder_variant() == "level_gat_gru" ?
+            static_cast<unsigned long long>(request.candidate_count) : 1ULL;
     if (use_logits_cache_)
       v2_cache_valid_[cache_key] = 1;
   }
-  int selected = 0;
-  if (!request.action_mask[0]) {
-    selected = 1;
-  } else if (!request.action_mask[1]) {
-    selected = 0;
-  } else {
-    selected = v2_logits_cache_[offset + 1] > v2_logits_cache_[offset] ? 1 : 0;
+  int selected_slot = 0;
+  if (!request.action_mask[candidate_order[0]]) {
+    selected_slot = 1;
+  } else if (!request.action_mask[candidate_order[1]]) {
+    selected_slot = 0;
+  } else if (v2_logits_cache_[offset + 1] >
+             v2_logits_cache_[offset]) {
+    selected_slot = 1;
   }
+  const int selected = static_cast<int>(candidate_order[selected_slot]);
   timing_stats_.select_nanoseconds +=
       static_cast<unsigned long long>(
           std::chrono::duration_cast<std::chrono::nanoseconds>(

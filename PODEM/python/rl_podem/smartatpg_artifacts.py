@@ -25,7 +25,7 @@ def encoder_variant(state):
 def inference_metadata(state):
     variant = encoder_variant(state)
     values = smartatpg_metadata(variant)
-    return {
+    metadata = {
         "backend": values["embedding_backend"],
         "feature_schema": values["feature_schema"],
         "encoder_variant": variant,
@@ -35,6 +35,9 @@ def inference_metadata(state):
         "action_mask_dim": ACTION_MASK_DIM,
         "decision_state_dim": values["decision_state_dim"],
     }
+    if variant == "level_gat_gru":
+        metadata["critic_input_dim"] = values["critic_input_dim"]
+    return metadata
 
 
 def snapshot_id(state):
@@ -127,8 +130,10 @@ def export_descriptors(state, graph, path, policy=None):
             f"actor_input_dim {metadata['actor_input_dim']}\n"
             f"action_mask_dim {ACTION_MASK_DIM}\n"
             f"decision_state_dim {metadata['decision_state_dim']}\n"
-            f"snapshot {identity}\n"
         )
+        if metadata["encoder_variant"] == "level_gat_gru":
+            out.write(f"critic_input_dim {metadata['critic_input_dim']}\n")
+        out.write(f"snapshot {identity}\n")
         out.write(f"circuit_hash {graph.circuit_hash}\ndimension {GATE_EMBEDDING_DIM}\ncount {len(graph.names)}\n")
         for name, row in zip(graph.names, values.tolist()):
             out.write(name + " " + " ".join(format(v, ".9g") for v in row) + "\n")

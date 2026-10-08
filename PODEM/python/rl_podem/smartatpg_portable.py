@@ -14,6 +14,9 @@ from typing import Optional
 LEGACY_MODEL_FORMAT = "SMARTATPG_MODEL_V12"
 MEAN_MODEL_FORMAT = "SMARTATPG_MODEL_V18_MEAN_GAE_BATCH4_MINIBATCH512_EPOCH4"
 GAT_MODEL_FORMAT = (
+    "SMARTATPG_MODEL_V20_GAT_FANIN_SCORER_DEPTHNORM_GAE_BATCH4_MINIBATCH512_EPOCH4"
+)
+LEGACY_GAT_MODEL_FORMAT = (
     "SMARTATPG_MODEL_V19_GAT_DEPTHNORM_GAE_BATCH4_MINIBATCH512_EPOCH4"
 )
 MODEL_FORMAT = GAT_MODEL_FORMAT
@@ -135,6 +138,10 @@ def load_model(path):
     path = Path(path)
     tokens = iter(path.read_text(encoding="utf-8").split())
     model_format = _next(tokens, "header")
+    if model_format == LEGACY_GAT_MODEL_FORMAT:
+        raise ValueError(
+            "GAT model uses the old two-output actor; retrain with the fanin scorer"
+        )
     if model_format not in (
         LEGACY_MODEL_FORMAT, MEAN_MODEL_FORMAT, GAT_MODEL_FORMAT,
     ):
@@ -165,7 +172,8 @@ def load_model(path):
     if int(_field(tokens, "gate_embedding_dim")) != gate_dim:
         raise ValueError(f"SmartATPG gate embedding dimension must be {gate_dim}")
     actor_input_dim = int(_field(tokens, "actor_input_dim"))
-    expected_actor_dim = gate_dim + int(encoder_variant == "level_gat_gru")
+    is_gat = encoder_variant == "level_gat_gru"
+    expected_actor_dim = 2 * gate_dim + 1 if is_gat else gate_dim
     if actor_input_dim != expected_actor_dim:
         raise ValueError("Actor input dimension does not match encoder")
     if int(_field(tokens, "action_mask_dim")) != ACTION_MASK_DIM:
@@ -173,6 +181,8 @@ def load_model(path):
     decision_state_dim = int(_field(tokens, "decision_state_dim"))
     if decision_state_dim != actor_input_dim + ACTION_MASK_DIM:
         raise ValueError("Decision state dimension must match Actor input plus mask")
+    if is_gat and int(_field(tokens, "critic_input_dim")) != gate_dim + 1:
+        raise ValueError("GAT critic input dimension must be objective embedding plus objective value")
     snapshot = _field(tokens, "snapshot")
     if len(snapshot) != 64 or any(value not in "0123456789abcdef" for value in snapshot):
         raise ValueError("Invalid SmartATPG model snapshot")
@@ -283,11 +293,12 @@ def load_model(path):
     if (tensors["backtrace_actor.0.weight"].rows,
             tensors["backtrace_actor.0.weight"].cols) != (hidden_dim, actor_input_dim):
         raise ValueError("Actor gate encoder input shape does not match metadata")
+    actor_output_dim = 1 if is_gat else 2
     actor_shapes = {
         "backtrace_actor.0.weight": (hidden_dim, actor_input_dim),
         "backtrace_actor.0.bias": (1, hidden_dim),
-        "backtrace_actor.2.weight": (2, hidden_dim),
-        "backtrace_actor.2.bias": (1, 2),
+        "backtrace_actor.2.weight": (actor_output_dim, hidden_dim),
+        "backtrace_actor.2.bias": (1, actor_output_dim),
     }
     for name, shape in actor_shapes.items():
         if (tensors[name].rows, tensors[name].cols) != shape:
@@ -568,6 +579,8 @@ def export_embeddings(model, graph, path):
             f"action_mask_dim {ACTION_MASK_DIM}\n"
             f"decision_state_dim {model.decision_state_dim}\n"
         )
+        if model.encoder_variant == "level_gat_gru":
+            output.write(f"critic_input_dim {GATE_EMBEDDING_DIM + 1}\n")
         output.write(
             f"snapshot {model.snapshot}\n"
             f"circuit_hash {graph.circuit_hash}\n"

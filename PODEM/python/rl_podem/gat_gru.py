@@ -17,9 +17,10 @@ GRAPH_CONFIG = {
     "directions": "independent",
 }
 GRAPH_CONFIG_ID = "level_gat_gru_fwd_rev_11d_v3_nobuf"
-ACTOR_INPUT_DIM = FEATURE_DIM + 1
+ACTOR_INPUT_DIM = 2 * FEATURE_DIM + 1
+CRITIC_INPUT_DIM = FEATURE_DIM + 1
 TRAINING_FORMAT = (
-    "RL_PODEM_SMARTATPG_GAT_GRU_PPO_V8_BATCH4_MINIBATCH512_EPOCH4_11D_CO_NO_BUF"
+    "RL_PODEM_SMARTATPG_GAT_GRU_FANIN_SCORER_PPO_V9_BATCH4_MINIBATCH512_EPOCH4_11D_CO_NO_BUF"
 )
 
 
@@ -88,29 +89,86 @@ class LevelWiseGATGRUEncoder(nn.Module):
 
 class GATGRUSmartATPGPolicy(SmartATPGPolicy):
     def __init__(self, hidden_dim=32):
-        super().__init__(hidden_dim, graph_encoder=LevelWiseGATGRUEncoder(), actor_input_dim=ACTOR_INPUT_DIM)
+        super().__init__(
+            hidden_dim,
+            graph_encoder=LevelWiseGATGRUEncoder(),
+            actor_input_dim=ACTOR_INPUT_DIM,
+            critic_input_dim=CRITIC_INPUT_DIM,
+            actor_output_dim=1,
+        )
 
-    def batch_logits(self, descriptors, values):
+    def batch_candidate_logits(self, objective_embeddings, candidate_embeddings, values):
         model_device = self.backtrace_actor[0].weight.device
-        descriptors = descriptors.to(device=model_device, dtype=torch.float32)
-        if descriptors.ndim != 2 or descriptors.shape[1] != FEATURE_DIM:
-            raise ValueError(
-                f"agentATPG requires {FEATURE_DIM}D graph embeddings before "
-                "objective concatenation"
-            )
+        objective_embeddings = objective_embeddings.to(
+            device=model_device, dtype=torch.float32
+        )
+        candidate_embeddings = candidate_embeddings.to(
+            device=model_device, dtype=torch.float32
+        )
         values = torch.as_tensor(values, device=model_device).reshape(-1, 1)
-        if values.shape[0] != descriptors.shape[0] or not bool(((values == 0) | (values == 1)).all()):
-            raise ValueError("agentATPG requires one binary objective value per embedding")
-        state = torch.cat((descriptors, values.to(descriptors.dtype)), dim=-1)
-        return self.backtrace_actor(state), self.critic(state).squeeze(-1)
+        if objective_embeddings.ndim != 2 or objective_embeddings.shape[1] != FEATURE_DIM:
+            raise ValueError(f"GAT objective embeddings must have shape [N, {FEATURE_DIM}]")
+        if (candidate_embeddings.ndim != 3 or
+                candidate_embeddings.shape[0] != objective_embeddings.shape[0] or
+                candidate_embeddings.shape[1] != 2 or
+                candidate_embeddings.shape[2] != FEATURE_DIM):
+            raise ValueError(f"GAT candidate embeddings must have shape [N, 2, {FEATURE_DIM}]")
+        if values.shape[0] != objective_embeddings.shape[0] or not bool(
+            ((values == 0) | (values == 1)).all()
+        ):
+            raise ValueError("GAT scorer requires one binary objective value per state")
+        objective_pairs = objective_embeddings.unsqueeze(1).expand(-1, 2, -1)
+        value_pairs = values.to(objective_embeddings.dtype).unsqueeze(1).expand(-1, 2, -1)
+        scorer_inputs = torch.cat(
+            (objective_pairs, candidate_embeddings, value_pairs), dim=-1
+        )
+        return self.backtrace_actor(scorer_inputs.reshape(-1, ACTOR_INPUT_DIM)).reshape(-1, 2)
 
-    def backtrace_logits(self, objective_embedding, objective_value):
-        logits, values = self.batch_logits(objective_embedding.unsqueeze(0), [objective_value])
-        return logits[0], values[0]
+    def backtrace_logits(self, objective_embedding, candidate_embeddings, objective_value):
+        model_device = self.backtrace_actor[0].weight.device
+        objective_embedding = objective_embedding.to(device=model_device, dtype=torch.float32)
+        candidate_embeddings = candidate_embeddings.to(device=model_device, dtype=torch.float32)
+        if objective_embedding.shape != (FEATURE_DIM,):
+            raise ValueError(
+                f"GAT objective embedding must have shape [{FEATURE_DIM}]"
+            )
+        if candidate_embeddings.ndim != 2 or candidate_embeddings.shape[1] != FEATURE_DIM:
+            raise ValueError(
+                f"GAT candidate embeddings must have shape [N, {FEATURE_DIM}]"
+            )
+        if candidate_embeddings.shape[0] < 2:
+            raise ValueError("GAT scorer requires at least two fanin candidates")
+        if objective_value not in (0, 1):
+            raise ValueError("GAT objective value must be binary")
+        logits = self.batch_candidate_logits(
+            objective_embedding.unsqueeze(0), candidate_embeddings.unsqueeze(0),
+            [objective_value],
+        )[0]
+        critic_state = torch.cat((
+            objective_embedding,
+            objective_embedding.new_tensor([float(objective_value)]),
+        )).unsqueeze(0)
+        state_value = self.critic(critic_state).squeeze(-1)[0]
+        return logits, state_value
+
+    def evaluate_step(self, step):
+        if step.candidate_embeddings is None:
+            raise ValueError("GAT rollout is missing fanin embeddings")
+        logits, state_value = self.backtrace_logits(
+            step.objective_embedding, step.candidate_embeddings,
+            step.objective_value,
+        )
+        mask = step.action_mask.to(device=logits.device, dtype=torch.bool)
+        distribution = torch.distributions.Categorical(
+            logits=logits.masked_fill(~mask, -1e9)
+        )
+        action = torch.tensor(step.action, dtype=torch.long, device=logits.device)
+        return distribution.log_prob(action), state_value, distribution.entropy()
 
 
 class GATGRUSmartATPGPPOAgent(SmartATPGPPOAgent):
     actor_input_dim = ACTOR_INPUT_DIM
+    critic_input_dim = CRITIC_INPUT_DIM
     decision_state_dim = ACTOR_INPUT_DIM + 2
     encoder_variant = ENCODER_VARIANT
     graph_config = GRAPH_CONFIG

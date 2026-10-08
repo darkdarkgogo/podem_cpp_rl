@@ -15,7 +15,12 @@ def resolve_backend(metadata, requested=None):
     if requested is not None and requested != backend:
         raise ValueError(f"Requested backend {requested} conflicts with artifact backend {backend}")
     variant = metadata.get("encoder_variant", ENCODER_VARIANT)
-    actor_dim = ACTOR_INPUT_DIM + int(variant == "level_gat_gru")
+    actor_dim = (
+        2 * GATE_EMBEDDING_DIM + 1
+        if variant == "level_gat_gru"
+        else ACTOR_INPUT_DIM
+    )
+    critic_dim = GATE_EMBEDDING_DIM + int(variant == "level_gat_gru")
     state_dim = actor_dim + ACTION_MASK_DIM
     if variant == ENCODER_VARIANT:
         expected_graph_config = GRAPH_CONFIG
@@ -28,6 +33,10 @@ def resolve_backend(metadata, requested=None):
     if (
         int(metadata.get("gate_embedding_dim", -1)) != GATE_EMBEDDING_DIM
         or int(metadata.get("policy_state_dim", -1)) != state_dim
+        or (
+            variant == "level_gat_gru"
+            and int(metadata.get("critic_input_dim", -1)) != critic_dim
+        )
     ):
         raise ValueError("SmartATPG gate embedding or policy state dimension changed")
     optional_dimensions = {
@@ -44,14 +53,18 @@ def resolve_backend(metadata, requested=None):
 
 
 def smartatpg_metadata(encoder_variant=ENCODER_VARIANT):
-    actor_dim = ACTOR_INPUT_DIM + int(encoder_variant == "level_gat_gru")
+    actor_dim = (
+        2 * GATE_EMBEDDING_DIM + 1
+        if encoder_variant == "level_gat_gru"
+        else ACTOR_INPUT_DIM
+    )
     if encoder_variant == ENCODER_VARIANT:
         graph_config, graph_config_id = GRAPH_CONFIG, GRAPH_CONFIG_ID
     elif encoder_variant == "level_gat_gru":
         from .gat_gru import GRAPH_CONFIG as graph_config, GRAPH_CONFIG_ID as graph_config_id
     else:
         raise ValueError(f"Unsupported SmartATPG encoder variant: {encoder_variant}")
-    return {"embedding_backend": "smartatpg", "encoder_variant": encoder_variant,
+    metadata = {"embedding_backend": "smartatpg", "encoder_variant": encoder_variant,
             "feature_schema": FEATURE_SCHEMA,
             "graph_config": dict(graph_config), "graph_config_id": graph_config_id,
             "gate_embedding_dim": GATE_EMBEDDING_DIM,
@@ -59,3 +72,6 @@ def smartatpg_metadata(encoder_variant=ENCODER_VARIANT):
             "action_mask_dim": ACTION_MASK_DIM,
             "decision_state_dim": actor_dim + ACTION_MASK_DIM,
             "policy_state_dim": actor_dim + ACTION_MASK_DIM}
+    if encoder_variant == "level_gat_gru":
+        metadata["critic_input_dim"] = GATE_EMBEDDING_DIM + 1
+    return metadata
