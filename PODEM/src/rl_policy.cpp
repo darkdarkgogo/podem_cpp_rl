@@ -243,15 +243,21 @@ void ActorModel::load(const std::string &path) {
   std::string key;
   std::getline(input, header);
   const bool mean_batched_protocol =
-      header == "SMARTATPG_MODEL_V18_MEAN_GAE_BATCH4_MINIBATCH512_EPOCH4";
+      header ==
+      "SMARTATPG_MODEL_V19_MEAN_SINGLE_ROUND_GAE_BATCH4_MINIBATCH512_EPOCH4";
   const bool gat_batched_protocol =
       header ==
       "SMARTATPG_MODEL_V19_GAT_DEPTHNORM_GAE_BATCH4_MINIBATCH512_EPOCH4";
   const bool gat_fanin_scorer_protocol =
       header ==
+      "SMARTATPG_MODEL_V21_GAT_FANIN_SCORER_SINGLE_ROUND_DEPTHNORM_GAE_BATCH4_MINIBATCH512_EPOCH4";
+  const bool gat_two_round_fanin_scorer_protocol =
+      header ==
       "SMARTATPG_MODEL_V20_GAT_FANIN_SCORER_DEPTHNORM_GAE_BATCH4_MINIBATCH512_EPOCH4";
   require(!gat_batched_protocol,
           "GAT model uses the old two-output actor; retrain with the fanin scorer");
+  require(!gat_two_round_fanin_scorer_protocol,
+          "GAT model was trained for two rounds; retrain for one round");
   const bool batched_protocol =
       mean_batched_protocol || gat_fanin_scorer_protocol;
   require(header == "SMARTATPG_MODEL_V12" || batched_protocol,
@@ -306,7 +312,7 @@ void ActorModel::load(const std::string &path) {
           "Invalid SmartATPG reward-scheme metadata in: " + path);
   require(static_cast<bool>(input >> key >> normal_rounds) &&
               key == "normal_rounds" &&
-              normal_rounds == (batched_protocol ? 2 : 5),
+              normal_rounds == (batched_protocol ? 1 : 5),
           "Invalid SmartATPG normal-round metadata in: " + path);
   if (batched_protocol) {
     require(static_cast<bool>(input >> key >> faults_per_update) &&

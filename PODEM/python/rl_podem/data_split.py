@@ -20,6 +20,9 @@ LAZY_VALIDATION_MANIFEST_FORMAT = (
     "SMARTATPG_DATA_SPLIT_MANIFEST_V7_LAZY_VALIDATION_CATALOG_11D_CO_NO_BUF"
 )
 MANIFEST_FORMAT = (
+    "SMARTATPG_DATA_SPLIT_MANIFEST_V12_SINGLE_ROUND_TRAIN_ONLY_11D_CO_NO_BUF"
+)
+PREVIOUS_MANIFEST_FORMAT = (
     "SMARTATPG_DATA_SPLIT_MANIFEST_V11_TRAIN_ONLY_11D_CO_NO_BUF"
 )
 PREPARATION_STATE_FORMAT = "SMARTATPG_DATA_SPLIT_PREPARATION_V3"
@@ -28,7 +31,7 @@ FAULT_FILTER = "train_top30_hard_detected_validation_full_catalog"
 MEAN_FAULT_FILTER = "train_top100_hard_detected_validation_full_catalog"
 BACKTRACK_LIMIT = 100
 LEGACY_TRAINING_ROUNDS = 5
-NORMAL_TRAINING_ROUNDS = 2
+NORMAL_TRAINING_ROUNDS = 1
 FAULTS_PER_UPDATE = 4
 ADVANTAGE_HYPERPARAMETERS = {
     "gamma": 0.99,
@@ -435,22 +438,29 @@ def _record(manifest_path, profile_path, source, split, payload, *, name=None,
 
 def _validate_manifest(manifest, manifest_path):
     manifest_format = manifest.get("format")
-    supported_formats = (MANIFEST_FORMAT,)
+    supported_formats = (MANIFEST_FORMAT, PREVIOUS_MANIFEST_FORMAT)
     if manifest_format not in supported_formats:
         raise ValueError("Existing data-split SmartATPG manifest configuration changed")
     current_format = manifest_format == MANIFEST_FORMAT
+    batched_format = manifest_format in supported_formats
     encoder_variant = manifest.get("encoder_variant", "level_gat_gru")
-    if not current_format and encoder_variant != "level_gat_gru":
+    if not batched_format and encoder_variant != "level_gat_gru":
         raise ValueError("Legacy SmartATPG manifests require level_gat_gru")
     contract = _training_contract(
         resolve_manifest_path(manifest_path, manifest["dataset_root"]),
         encoder_variant,
     )
-    expected_rounds = NORMAL_TRAINING_ROUNDS if current_format else LEGACY_TRAINING_ROUNDS
-    expected_fault_limit = (
-        contract["fault_limit"] if current_format else TRAIN_FAULTS_PER_CIRCUIT
+    expected_rounds = (
+        NORMAL_TRAINING_ROUNDS if current_format
+        else 2 if manifest_format == PREVIOUS_MANIFEST_FORMAT
+        else LEGACY_TRAINING_ROUNDS
     )
-    expected_fault_filter = contract["fault_filter"] if current_format else FAULT_FILTER
+    expected_fault_limit = (
+        contract["fault_limit"] if batched_format else TRAIN_FAULTS_PER_CIRCUIT
+    )
+    expected_fault_filter = (
+        contract["fault_filter"] if batched_format else FAULT_FILTER
+    )
     expected = {
         "fault_filter": expected_fault_filter,
         "train_faults_per_circuit": expected_fault_limit,
@@ -459,7 +469,7 @@ def _validate_manifest(manifest, manifest_path):
         "heuristic": HEURISTIC,
         **smartatpg_metadata(encoder_variant),
     }
-    if current_format:
+    if batched_format:
         expected["training_split"] = contract["training_split"]
         expected["dataset_inventory"] = _inventory(
             resolve_manifest_path(manifest_path, manifest["dataset_root"]),
@@ -609,6 +619,11 @@ def prepare(
         if preparation_state.get("completed") != expected_completed:
             raise ValueError("Completed preparation profile hashes changed")
         manifest = _validate_manifest(stored_manifest, manifest_path)
+        if manifest["format"] == PREVIOUS_MANIFEST_FORMAT:
+            manifest["format"] = MANIFEST_FORMAT
+            manifest["normal_rounds"] = NORMAL_TRAINING_ROUNDS
+            manifest = _validate_manifest(manifest, manifest_path)
+            _atomic_json(manifest_path, manifest)
         if (
             manifest.get("profile_seed") != seed
             or manifest.get("encoder_variant") != encoder_variant

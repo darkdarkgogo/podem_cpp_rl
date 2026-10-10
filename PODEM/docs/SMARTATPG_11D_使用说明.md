@@ -2,7 +2,7 @@
 
 SmartATPG 使用 11 维 gate embedding：6 维 gate 类型 one-hot（不含 BUF），以及 level、fanout、静态 SCOAP CC0、CC1、CO。GAT-GRU Actor/Critic 额外拼接 1 维目标值，Mean 保持 11 维输入。
 
-正式实验固定使用 backtrack limit 100、训练 2 轮。每个 rollout 收集 4 个完整 fault，GAT-GRU 与 Mean 都执行 4 个 PPO epoch；每个 epoch 重新打乱 transitions，并按 512 个 transition 切分 minibatch。训练与验证是两个独立命令。
+正式实验固定使用 backtrack limit 100、训练 1 轮。每个 rollout 收集 4 个完整 fault，GAT-GRU 与 Mean 都执行 4 个 PPO epoch；每个 epoch 重新打乱 transitions，并按 512 个 transition 切分 minibatch。训练与验证是两个独立命令。
 
 ## 安装
 
@@ -28,7 +28,7 @@ python3 scripts/train_smartatpg.py \
 
 GAE 在 rollout 的原始 transition 顺序上计算一次，并在每个 fault terminal 重置；完成 GAE 和整段 Advantage normalization 后才允许 shuffle。最后不足 512 个 transition 的 minibatch 会正常执行 optimizer step，round 末不足 4 个 fault 的 rollout 也会更新。当前 checkpoint 与 native model 格式会拒绝旧的 MINIBATCH128、8-fault、Mean-K1 或缺少 minibatch 协议字段的工件；旧 Actor 只能按既有 weights-only 规则显式 warm start。
 
-每轮训练结束保存：
+训练轮结束后保存：
 
 - `training/{gat,mean}/training_state.pth`：训练断点恢复状态；
 - `training/{gat,mean}/inference_round_XX.pth`：完整 `policy_old`，包含稍后生成 embedding 所需的图编码器；
@@ -51,13 +51,13 @@ python3 scripts/validate_smartatpg.py \
 
 验证脚本在启动时独立发现并校验 `data/validation` 中的六个电路，然后按顺序执行：
 
-1. 对 GAT-GRU 每轮 checkpoint 生成 validation embedding，并按电路运行 native batch；
-2. 对 Mean 每轮执行相同流程；
-3. 使用现有 score 规则分别选择 best round；
+1. 对 GAT-GRU 的 round 1 checkpoint 生成 validation embedding，并按电路运行 native batch；
+2. 对 Mean 的 round 1 checkpoint 执行相同流程；
+3. 记录两个模型各自的 round 1 结果；
 4. fresh 运行一次共享 SCOAP baseline；
 5. 写出三方主表和逐 fault 明细。
 
-Best-round score 的字典序为：检出 fault 更多、总 backtracks 更少、总 backtrace steps 更少、总外在回报更高、轮次更早。
+由于每个模型只验证一轮，不再进行跨轮 best-round 比较。
 
 验证输出：
 

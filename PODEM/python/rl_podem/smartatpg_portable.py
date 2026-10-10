@@ -12,12 +12,15 @@ from typing import Optional
 
 
 LEGACY_MODEL_FORMAT = "SMARTATPG_MODEL_V12"
-MEAN_MODEL_FORMAT = "SMARTATPG_MODEL_V18_MEAN_GAE_BATCH4_MINIBATCH512_EPOCH4"
+MEAN_MODEL_FORMAT = "SMARTATPG_MODEL_V19_MEAN_SINGLE_ROUND_GAE_BATCH4_MINIBATCH512_EPOCH4"
 GAT_MODEL_FORMAT = (
-    "SMARTATPG_MODEL_V20_GAT_FANIN_SCORER_DEPTHNORM_GAE_BATCH4_MINIBATCH512_EPOCH4"
+    "SMARTATPG_MODEL_V21_GAT_FANIN_SCORER_SINGLE_ROUND_DEPTHNORM_GAE_BATCH4_MINIBATCH512_EPOCH4"
 )
 LEGACY_GAT_MODEL_FORMAT = (
     "SMARTATPG_MODEL_V19_GAT_DEPTHNORM_GAE_BATCH4_MINIBATCH512_EPOCH4"
+)
+PREVIOUS_GAT_MODEL_FORMAT = (
+    "SMARTATPG_MODEL_V20_GAT_FANIN_SCORER_DEPTHNORM_GAE_BATCH4_MINIBATCH512_EPOCH4"
 )
 MODEL_FORMAT = GAT_MODEL_FORMAT
 EMBEDDING_FORMAT = "SMARTATPG_EMBEDDINGS_V7"
@@ -142,6 +145,8 @@ def load_model(path):
         raise ValueError(
             "GAT model uses the old two-output actor; retrain with the fanin scorer"
         )
+    if model_format == PREVIOUS_GAT_MODEL_FORMAT:
+        raise ValueError("GAT model was trained for two rounds; retrain for one round")
     if model_format not in (
         LEGACY_MODEL_FORMAT, MEAN_MODEL_FORMAT, GAT_MODEL_FORMAT,
     ):
@@ -221,7 +226,7 @@ def load_model(path):
             "level_gat_gru": "cubic_backtrack_depthnorm_v2",
             "fanin_mean": "legacy_pi_exponential",
         }[encoder_variant]
-        or normal_rounds != (2 if model_format != LEGACY_MODEL_FORMAT else 5)
+        or normal_rounds != (1 if model_format != LEGACY_MODEL_FORMAT else 5)
         or (
             model_format != LEGACY_MODEL_FORMAT
             and (

@@ -19,9 +19,9 @@ from .smartatpg_rewards import (
 from .smartatpg_features import FEATURE_DIM, FEATURE_SCHEMA, GRAPH_CONFIG_ID
 
 
-MEAN_MODEL_FORMAT = "SMARTATPG_MODEL_V18_MEAN_GAE_BATCH4_MINIBATCH512_EPOCH4"
+MEAN_MODEL_FORMAT = "SMARTATPG_MODEL_V19_MEAN_SINGLE_ROUND_GAE_BATCH4_MINIBATCH512_EPOCH4"
 GAT_MODEL_FORMAT = (
-    "SMARTATPG_MODEL_V20_GAT_FANIN_SCORER_DEPTHNORM_GAE_BATCH4_MINIBATCH512_EPOCH4"
+    "SMARTATPG_MODEL_V21_GAT_FANIN_SCORER_SINGLE_ROUND_DEPTHNORM_GAE_BATCH4_MINIBATCH512_EPOCH4"
 )
 
 
@@ -266,7 +266,7 @@ def export_actor_v2_state_dict(
         or metadata["reward_scheme"] != reward_scheme_for_encoder(
             metadata["encoder_variant"]
         )
-        or int(metadata["normal_rounds"]) != (2 if has_batch_protocol else 5)
+        or int(metadata["normal_rounds"]) != (1 if has_batch_protocol else 5)
         or (variant == "level_gat_gru" and not has_batch_protocol)
         or int(metadata["training_circuit_count"]) <= 0
         or int(metadata["validation_circuit_count"]) <= 0
