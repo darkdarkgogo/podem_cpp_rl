@@ -36,7 +36,7 @@ from .validation_core import (
 )
 from .validation_tables import build_four_way_row, build_three_way_row
 from .nn_all_features import FEATURE_SCHEMA, load_nn_all_features, write_native_features
-from .nn_all_training import MODEL_FORMAT
+from .nn_all_training import MODEL_FORMAT, TRAINING_FORMAT, PAPER_TRAIN_CIRCUITS
 from .native_io import _native_circuit_path
 
 
@@ -255,8 +255,13 @@ def _evaluate_model_round(
 def _load_nn_all_model(run_dir, dataset_root, seed):
     run_dir = Path(run_dir).resolve()
     summary = _read_json(run_dir / "train_summary.json", "NN-All training summary")
-    if summary.get("format") != "NN_ALL_PODEM_TRAINING_V1":
+    if summary.get("format") != TRAINING_FORMAT:
         raise ValueError("Incompatible NN-All training summary")
+    if summary.get("epochs") != 1 or summary.get("checkpoint_policy") != "final_epoch":
+        raise ValueError("NN-All training must use one epoch and final weights")
+    if (summary.get("training_circuits") != list(PAPER_TRAIN_CIRCUITS)
+            or summary.get("fault_selection") != "all_catalog_stuck_at"):
+        raise ValueError("NN-All paper training circuit or fault scope mismatch")
     if summary.get("feature_schema") != FEATURE_SCHEMA:
         raise ValueError("NN-All feature schema mismatch")
     if Path(summary["dataset_root"]).resolve() != dataset_root:
@@ -268,9 +273,17 @@ def _load_nn_all_model(run_dir, dataset_root, seed):
     digest = hashlib.sha256(encoded).hexdigest()
     if digest != summary.get("manifest_sha256"):
         raise ValueError("NN-All training manifest hash mismatch")
-    if any(item.get("split") not in ("train", "holdout") for item in manifest):
-        raise ValueError("NN-All training manifest contains invalid split")
-    model_path = run_dir / "model_best.txt"
+    if not manifest or len(manifest) != summary.get("circuits"):
+        raise ValueError("NN-All training manifest circuit count mismatch")
+    if any("split" in item for item in manifest):
+        raise ValueError("NN-All training manifest must not contain circuit holdouts")
+    if [item.get("circuit") for item in manifest] != list(PAPER_TRAIN_CIRCUITS):
+        raise ValueError("NN-All training manifest must contain c1908 and c2670 only")
+    for item in manifest:
+        circuit = dataset_root / "nn_all_paper_train" / item["circuit"]
+        if not circuit.is_file() or hashlib.sha256(circuit.read_bytes()).hexdigest() != item.get("sha256"):
+            raise ValueError(f"NN-All training circuit identity mismatch: {circuit}")
+    model_path = run_dir / "model_final.txt"
     if not model_path.is_file():
         raise FileNotFoundError(f"Missing NN-All model: {model_path}")
     model_hash = hashlib.sha256(model_path.read_bytes()).hexdigest()
@@ -435,7 +448,8 @@ def run_fresh_validation(
                 "run_dir": str(Path(nn_all_run_dir).resolve()),
                 "manifest_sha256": nn_training["manifest_sha256"],
                 "model_sha256": nn_training["model_sha256"],
-                "best_epoch": nn_training["best_epoch"],
+                "epochs": nn_training["epochs"],
+                "checkpoint_policy": nn_training["checkpoint_policy"],
                 "feature_schema": FEATURE_SCHEMA,
             },
             "rows": four_rows,

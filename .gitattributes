@@ -1,1 +1,2 @@
 * text=auto eol=lf
+PODEM/data/nn_all_paper_train/source/*.bench -text whitespace=cr-at-eol

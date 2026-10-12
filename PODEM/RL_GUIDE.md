@@ -43,9 +43,9 @@ python3 scripts/validate_smartatpg.py
 
 ## NN-All PODEM baseline
 
-NN-All 单独训练，只读取 `data/train`，不复用 GAT-GRU 或 Mean 的权重。默认用 seed 2026，把整个电路划分为训练集和留出集；每个训练电路抽取 30 个故障。候选输入由层级、CC0、CC1、COP 概率和父门类型的 7 维 one-hot 构成；网络为 11→60→1 sigmoid，在 PODEM 回溯的每一层为合法候选打分。
+NN-All 单独训练，只读取 `data/nn_all_paper_train/c1908.bench` 和 `c2670.bench` 两份完整 ISCAS85 电路，不复用 GAT-GRU 或 Mean 的权重。默认 seed 为 2026，对两份电路遍历完整 stuck-at 故障目录。原始 BENCH 及规范化后的输入都保存在 `data/nn_all_paper_train`；来源和哈希见该目录的 README。候选输入由层级、CC0、CC1、COP 概率和父门类型的 7 维 one-hot 构成；网络为 11→60→1 sigmoid，在 PODEM 回溯的每一层为合法候选打分。
 
-为限制内存，训练集和留出集分别对每一类路径使用上限为 100000/25000 的确定性 reservoir 抽样；`train_summary.json` 同时记录收集数、保留数和层级分布。模型选择仅依据留出电路上的加权 BCE loss。
+所有收集到的正负路径样本都参与一次训练，不划分留出电路，也不截断每类样本。训练使用普通 BCE；完成 1 个 epoch 后直接保存 `model_final.txt`，没有挑选 checkpoint 的步骤。样本暂存到磁盘以控制内存；`train_summary.json` 记录路径数量、层级分布、训练损失和模型 SHA-256。
 
 采样以一次 PI 回溯链为单位：PI 被翻转或回溯到死路时，该链上的可选择决策标为负；成功检测路径上的决策标为正。只有一个未赋值输入的强制选择不进入训练。`train_summary.json` 保存模型 SHA-256，验证时会同时检查模型、manifest 与特征文件的身份。
 
@@ -58,7 +58,7 @@ python tools/plot_final_comparison.py artifacts/smartatpg_dual/validation/valida
 
 验证使用和三方比较完全相同的 validation 电路、逐故障顺序、backtrack limit 100 和 `atpg_seconds` 定义；保留原有三方文件，另写 `validation_four_way_comparison.csv/.json` 与 `detailed/nn_all_podem_records.jsonl`。四方表包含每种方法的 detected/redundant/aborted 数、backtracks、backtrace steps、ATPG runtime、fault coverage，以及相对 SCOAP 的变化。省略 `--nn-all-run-dir` 时仅生成原有三方结果。
 
-这是一份基于本项目 PODEM 引擎的 NN-All 移植，不是 Atalanta/FAN 原实现的逐位复现。所给仓库的 [NN_All/fan.cpp](https://github.com/lzzh97/NN-for-ATPG/blob/main/NN_All/fan.cpp) 实际以 `cont0/cont1` 决定回溯输入；神经网络的 11 维输入与推理代码位于 [NN_Hyb/fan.cpp](https://github.com/lzzh97/NN-for-ATPG/blob/main/NN_Hyb/fan.cpp)，并限制在特定层级。本实现依据论文对全层 NN 的定义重实现，因此实验结果应标作 `nn_all_podem`，并在报告中注明此源码差异。
+这是一份基于本项目 PODEM 引擎的 NN-All 移植，不是 Atalanta/FAN 原实现的逐位复现。论文使用 c1908、c2670 训练，并报告 30,000 个 epoch；这里按本次明确要求只训练 1 个 epoch，因此不能称为论文数值实验的严格复现。所给仓库的 [NN_All/fan.cpp](https://github.com/lzzh97/NN-for-ATPG/blob/main/NN_All/fan.cpp) 实际以 `cont0/cont1` 决定回溯输入；神经网络的 11 维输入与推理代码位于 [NN_Hyb/fan.cpp](https://github.com/lzzh97/NN-for-ATPG/blob/main/NN_Hyb/fan.cpp)，并限制在特定层级。本实现依据论文对全层 NN 的定义重实现，因此实验结果应标作 `nn_all_podem`，并在报告中注明此源码差异。
 
 正式 runtime 只使用逐 fault `atpg_seconds` 的和：模型/embedding 加载、图构建、circuit input、levelize、fault-list generation 与写盘不计时；`ATPG::test()` 内的 Actor forward 计时。
 

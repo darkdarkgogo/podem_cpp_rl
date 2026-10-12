@@ -3,20 +3,19 @@
 from pathlib import Path
 import hashlib
 import json
-import random
 import tempfile
 import unittest
 from unittest.mock import patch
 
 import torch
+import numpy as np
 
 from rl_podem.nn_all_features import (
     candidate_vector, load_nn_all_features, write_native_features,
 )
 from rl_podem.nn_all_training import (
-    NnAllClassifier, PathSampleCollector, _circuit_split, _fit,
-    export_native_model,
-    _reservoir_add,
+    NnAllClassifier, PathSampleCollector, TRAINING_FORMAT, _fit,
+    export_native_model, run_training,
 )
 from rl_podem import validation
 from rl_podem.validation import _evaluate_nn_all, _load_nn_all_model
@@ -33,6 +32,20 @@ r = NOT(q)
 OUTPUT(z)
 OUTPUT(r)
 """
+
+
+def paper_training_manifest(dataset_root):
+    directory = dataset_root / "nn_all_paper_train"
+    directory.mkdir()
+    manifest = []
+    for name in ("c1908.bench", "c2670.bench"):
+        path = directory / name
+        path.write_text(BENCH, encoding="utf-8")
+        manifest.append({
+            "circuit": name, "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+            "fault_ids": [],
+        })
+    return manifest
 
 
 class NnAllFeaturesTest(unittest.TestCase):
@@ -132,16 +145,11 @@ class NnAllFeaturesTest(unittest.TestCase):
             collector.event_callback({"event": "episode_end", "outcome": 1})
             self.assertEqual(collector.samples, [])
 
-    def test_split_is_by_whole_circuit_and_model_export(self):
-        train, holdout = _circuit_split([Path(f"c{index}.bench") for index in range(10)], 2026)
-        self.assertEqual(len(train), 8)
-        self.assertEqual(len(holdout), 2)
-        self.assertFalse(set(train) & set(holdout))
-        positive = ((1.0,) * 11, 1, "p", 1)
-        negative = ((0.0,) * 11, 1, "n", 0)
-        model, epoch, loss = _fit([positive, negative] * 4, [positive, negative], 2026, 2)
+    def test_single_epoch_fits_all_samples_and_exports_final_weights(self):
+        samples = np.array([([1.0] * 11) + [1.0],
+                            ([0.0] * 11) + [0.0]] * 4, dtype=np.float32)
+        model, loss = _fit(samples, 2026)
         self.assertIsInstance(model, NnAllClassifier)
-        self.assertIn(epoch, (1, 2))
         self.assertGreaterEqual(loss, 0.0)
         with tempfile.TemporaryDirectory() as temporary:
             artifact = Path(temporary) / "model.txt"
@@ -150,16 +158,41 @@ class NnAllFeaturesTest(unittest.TestCase):
             self.assertTrue(content.startswith("NN_ALL_PODEM_MODEL_V1\n"))
             self.assertIn("w1 660 ", content)
 
-    def test_per_class_reservoir_is_bounded_and_deterministic(self):
-        def collect():
-            reservoir = []
-            generator = random.Random(2026)
-            for seen in range(1, 101):
-                _reservoir_add(reservoir, seen, seen, 10, generator)
-            return reservoir
-        self.assertEqual(collect(), collect())
-        self.assertEqual(len(collect()), 10)
-        self.assertNotEqual(collect(), list(range(1, 11)))
+    def test_training_uses_both_paper_circuits_and_all_paths_without_holdout(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            train_dir = root / "nn_all_paper_train"
+            train_dir.mkdir()
+            circuits = [train_dir / name for name in ("c1908.bench", "c2670.bench")]
+            for circuit in circuits:
+                circuit.write_text(BENCH, encoding="utf-8")
+
+            def collect(circuit, _faults, _seed):
+                index = circuits.index(circuit)
+                result = type("Collected", (), {})()
+                result.samples = [
+                    ((float(index + label),) * 11, 1, "fault", label)
+                    for label in (0, 1)
+                ]
+                result.excluded = 0
+                result.outcomes = {1: 1}
+                return result
+
+            with (patch("rl_podem.nn_all_training._sample_fault_ids", return_value=["fault"]),
+                  patch("rl_podem.nn_all_training._collect_circuit", side_effect=collect)):
+                summary = run_training(root, root / "run")
+            manifest = json.loads((root / "run" / "train_manifest.json").read_text())
+            self.assertEqual(summary["circuits"], 2)
+            self.assertEqual(summary["training_circuits"], ["c1908.bench", "c2670.bench"])
+            self.assertEqual(summary["fault_selection"], "all_catalog_stuck_at")
+            self.assertEqual(summary["epochs"], 1)
+            self.assertEqual(summary["checkpoint_policy"], "final_epoch")
+            self.assertEqual(summary["sample_counts"]["positive"], 2)
+            self.assertEqual(summary["sample_counts"]["negative"], 2)
+            self.assertEqual(len(manifest), 2)
+            self.assertTrue(all("split" not in item for item in manifest))
+            self.assertTrue((root / "run" / "model_final.txt").is_file())
+            self.assertFalse((root / "run" / "training_samples.f32").exists())
 
     def test_native_score_and_fault_order(self):
         import cpp_podem
@@ -211,19 +244,21 @@ class NnAllFeaturesTest(unittest.TestCase):
             root = Path(temporary)
             bench = root / "small.bench"
             bench.write_text(BENCH, encoding="utf-8")
-            manifest = [{"split": "train", "circuit": "small.bench", "fault_ids": []}]
+            manifest = paper_training_manifest(root)
             (root / "train_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
             digest = hashlib.sha256(json.dumps(
                 manifest, sort_keys=True, separators=(",", ":"),
             ).encode()).hexdigest()
-            export_native_model(root / "model_best.txt", NnAllClassifier(), digest)
-            model_hash = hashlib.sha256((root / "model_best.txt").read_bytes()).hexdigest()
+            export_native_model(root / "model_final.txt", NnAllClassifier(), digest)
+            model_hash = hashlib.sha256((root / "model_final.txt").read_bytes()).hexdigest()
             (root / "train_summary.json").write_text(json.dumps({
-                "format": "NN_ALL_PODEM_TRAINING_V1",
+                "format": TRAINING_FORMAT,
                 "feature_schema": "NN_ALL_PODEM_11D_V1",
                 "dataset_root": str(root), "seed": 2026,
                 "manifest_sha256": digest, "model_sha256": model_hash,
-                "best_epoch": 1,
+                "circuits": 2, "training_circuits": ["c1908.bench", "c2670.bench"],
+                "fault_selection": "all_catalog_stuck_at",
+                "epochs": 1, "checkpoint_policy": "final_epoch",
             }), encoding="utf-8")
             model, _ = _load_nn_all_model(root, root, 2026)
             fault_ids = [
@@ -239,17 +274,20 @@ class NnAllFeaturesTest(unittest.TestCase):
                              summary["aborted_faults"], len(fault_ids))
             self.assertAlmostEqual(summary["atpg_seconds"],
                                    sum(item["atpg_seconds"] for item in records))
-            (root / "model_best.txt").write_text(
-                (root / "model_best.txt").read_text(encoding="utf-8") + " ",
+            (root / "model_final.txt").write_text(
+                (root / "model_final.txt").read_text(encoding="utf-8") + " ",
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(ValueError, "model SHA-256 mismatch"):
                 _load_nn_all_model(root, root, 2026)
             (root / "train_summary.json").write_text(json.dumps({
-                "format": "NN_ALL_PODEM_TRAINING_V1",
+                "format": TRAINING_FORMAT,
                 "feature_schema": "NN_ALL_PODEM_11D_V1", "dataset_root": str(root),
                 "seed": 2026, "manifest_sha256": "0" * 64,
-                "model_sha256": model_hash, "best_epoch": 1,
+                "model_sha256": model_hash, "circuits": 2,
+                "training_circuits": ["c1908.bench", "c2670.bench"],
+                "fault_selection": "all_catalog_stuck_at",
+                "epochs": 1, "checkpoint_policy": "final_epoch",
             }), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "manifest hash mismatch"):
                 _load_nn_all_model(root, root, 2026)
@@ -282,18 +320,20 @@ class NnAllFeaturesTest(unittest.TestCase):
             bench.write_text(BENCH, encoding="utf-8")
             nn_dir = root / "nn"
             nn_dir.mkdir()
-            manifest = [{"split": "train", "circuit": "sample.bench", "fault_ids": []}]
+            manifest = paper_training_manifest(dataset)
             (nn_dir / "train_manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
             digest = hashlib.sha256(json.dumps(
                 manifest, sort_keys=True, separators=(",", ":"),
             ).encode()).hexdigest()
-            export_native_model(nn_dir / "model_best.txt", NnAllClassifier(), digest)
-            model_hash = hashlib.sha256((nn_dir / "model_best.txt").read_bytes()).hexdigest()
+            export_native_model(nn_dir / "model_final.txt", NnAllClassifier(), digest)
+            model_hash = hashlib.sha256((nn_dir / "model_final.txt").read_bytes()).hexdigest()
             (nn_dir / "train_summary.json").write_text(json.dumps({
-                "format": "NN_ALL_PODEM_TRAINING_V1", "feature_schema": "NN_ALL_PODEM_11D_V1",
+                "format": TRAINING_FORMAT, "feature_schema": "NN_ALL_PODEM_11D_V1",
                 "dataset_root": str(dataset), "seed": 2026,
                 "manifest_sha256": digest, "model_sha256": model_hash,
-                "best_epoch": 1,
+                "circuits": 2, "training_circuits": ["c1908.bench", "c2670.bench"],
+                "fault_selection": "all_catalog_stuck_at",
+                "epochs": 1, "checkpoint_policy": "final_epoch",
             }), encoding="utf-8")
             run_dir = root / "smart"
             run_dir.mkdir()

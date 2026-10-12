@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import random
 from collections import Counter
 from pathlib import Path
 
+import numpy as np
 import torch
 
 from .nn_all_features import FEATURE_SCHEMA, candidate_vector, load_nn_all_features
@@ -16,9 +16,11 @@ from .native_io import _native_circuit_path
 
 
 MODEL_FORMAT = "NN_ALL_PODEM_MODEL_V1"
+TRAINING_FORMAT = "NN_ALL_PODEM_TRAINING_V3_PAPER_CIRCUITS_SINGLE_EPOCH"
 DEFAULT_SEED = 2026
-TRAIN_SAMPLES_PER_CLASS = 100_000
-HOLDOUT_SAMPLES_PER_CLASS = 25_000
+PAPER_TRAIN_CIRCUITS = ("c1908.bench", "c2670.bench")
+SAMPLE_WIDTH = 12
+BATCH_SIZE = 512
 
 
 class PathSampleCollector:
@@ -109,24 +111,13 @@ class NnAllClassifier(torch.nn.Module):
         ).squeeze(-1)
 
 
-def _circuit_split(paths, seed):
-    ordered = sorted((Path(path) for path in paths), key=lambda path: path.name)
-    if len(ordered) < 2:
-        raise ValueError("NN-All training requires at least two circuits")
-    random.Random(seed).shuffle(ordered)
-    holdout_count = max(1, round(len(ordered) * 0.2))
-    return ordered[holdout_count:], ordered[:holdout_count]
-
-
-def _sample_fault_ids(circuit_path, limit, seed):
+def _sample_fault_ids(circuit_path):
     import cpp_podem
 
     faults = [entry["fault_id"] for entry in cpp_podem.catalog_stuck_at(_native_circuit_path(circuit_path))["faults"]]
     if not faults:
         raise ValueError(f"No stuck-at faults in {circuit_path}")
-    indices = list(range(len(faults)))
-    random.Random(seed).shuffle(indices)
-    return [faults[index] for index in indices[:limit]]
+    return faults
 
 
 def _collect_circuit(circuit_path, fault_ids, seed):
@@ -141,67 +132,46 @@ def _collect_circuit(circuit_path, fault_ids, seed):
     return collector
 
 
-def _check_labels(samples, description):
-    counts = Counter(sample[3] for sample in samples)
+def _check_labels(counts):
     if counts[0] == 0 or counts[1] == 0:
         raise ValueError(
-            f"NN-All {description} must contain both path classes; "
+            "NN-All training data must contain both path classes; "
             f"negative={counts[0]} positive={counts[1]}"
         )
-    return counts
 
 
-def _fit(train_samples, holdout_samples, seed, epochs):
-    if epochs < 1:
-        raise ValueError("NN-All epochs must be positive")
-    _check_labels(train_samples, "train split")
-    _check_labels(holdout_samples, "holdout split")
+def _fit(samples, seed):
+    """Make one training pass over every collected path, then keep final weights."""
+    counts = Counter(int(value) for value in samples[:, 11])
+    _check_labels(counts)
     torch.manual_seed(seed)
     model = NnAllClassifier()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-    vectors = torch.tensor([sample[0] for sample in train_samples], dtype=torch.float32)
-    labels = torch.tensor([sample[3] for sample in train_samples], dtype=torch.float32)
-    holdout_vectors = torch.tensor([sample[0] for sample in holdout_samples], dtype=torch.float32)
-    holdout_labels = torch.tensor([sample[3] for sample in holdout_samples], dtype=torch.float32)
-    transformed = torch.cat((torch.log1p(vectors[:, :3]), vectors[:, 3:]), dim=-1)
+    total = np.zeros(11, dtype=np.float64)
+    total_squared = np.zeros(11, dtype=np.float64)
+    for start in range(0, len(samples), 8192):
+        vectors = np.array(samples[start:start + 8192, :11], dtype=np.float64)
+        vectors[:, :3] = np.log1p(vectors[:, :3])
+        total += vectors.sum(axis=0)
+        total_squared += np.square(vectors).sum(axis=0)
+    mean = total / len(samples)
+    scale = np.sqrt(np.maximum(total_squared / len(samples) - np.square(mean), 0.0))
     with torch.no_grad():
-        model.feature_mean.copy_(transformed.mean(dim=0))
-        model.feature_scale.copy_(transformed.std(dim=0, unbiased=False).clamp_min(1.0))
-    counts = Counter(labels.tolist())
-    weights = torch.tensor(
-        [len(labels) / (2 * counts[float(value)]) for value in labels.tolist()],
-        dtype=torch.float32,
-    )
-    best_loss = math.inf
-    best_state = None
-    best_epoch = 0
+        model.feature_mean.copy_(torch.from_numpy(mean.astype(np.float32)))
+        model.feature_scale.copy_(torch.from_numpy(np.maximum(scale, 1.0).astype(np.float32)))
     generator = torch.Generator().manual_seed(seed)
-    for epoch in range(1, epochs + 1):
-        model.train()
-        for batch in torch.randperm(len(labels), generator=generator).split(512):
-            optimizer.zero_grad(set_to_none=True)
-            predictions = model(vectors[batch])
-            loss = torch.nn.functional.binary_cross_entropy(
-                predictions, labels[batch], weight=weights[batch],
-            )
-            loss.backward()
-            optimizer.step()
-        model.eval()
-        with torch.no_grad():
-            holdout_counts = Counter(holdout_labels.tolist())
-            holdout_weights = torch.tensor(
-                [len(holdout_labels) / (2 * holdout_counts[float(label)])
-                 for label in holdout_labels.tolist()], dtype=torch.float32,
-            )
-            value = float(torch.nn.functional.binary_cross_entropy(
-                model(holdout_vectors), holdout_labels, weight=holdout_weights,
-            ))
-        if value < best_loss:
-            best_loss = value
-            best_epoch = epoch
-            best_state = {key: tensor.detach().clone() for key, tensor in model.state_dict().items()}
-    model.load_state_dict(best_state)
-    return model, best_epoch, best_loss
+    loss_sum = 0.0
+    model.train()
+    for batch in torch.randperm(len(samples), generator=generator).split(BATCH_SIZE):
+        rows = np.asarray(samples[batch.numpy()], dtype=np.float32)
+        vectors = torch.from_numpy(rows[:, :11].copy())
+        labels = torch.from_numpy(rows[:, 11].copy())
+        optimizer.zero_grad(set_to_none=True)
+        loss = torch.nn.functional.binary_cross_entropy(model(vectors), labels)
+        loss.backward()
+        optimizer.step()
+        loss_sum += float(loss.detach()) * len(batch)
+    return model, loss_sum / len(samples)
 
 
 def export_native_model(path, model, manifest_hash, seed=DEFAULT_SEED):
@@ -225,95 +195,74 @@ def export_native_model(path, model, manifest_hash, seed=DEFAULT_SEED):
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def _reservoir_add(reservoir, sample, seen, limit, generator):
-    if len(reservoir) < limit:
-        reservoir.append(sample)
-    else:
-        index = generator.randrange(seen)
-        if index < limit:
-            reservoir[index] = sample
-
-
-def run_training(
-    dataset_root, output_dir, *, seed=DEFAULT_SEED, faults_per_circuit=30,
-    epochs=20, max_circuits=None,
-):
-    from .data_split import discover_training_dataset
-
+def run_training(dataset_root, output_dir, *, seed=DEFAULT_SEED):
     dataset_root = Path(dataset_root).resolve()
     output_dir = Path(output_dir).resolve()
-    paths = list(discover_training_dataset(dataset_root))
-    if max_circuits is not None:
-        if max_circuits < 2:
-            raise ValueError("NN-All max-circuits must be at least two")
-        paths = paths[:max_circuits]
-    if faults_per_circuit < 1:
-        raise ValueError("NN-All faults-per-circuit must be positive")
-    train_paths, holdout_paths = _circuit_split(paths, seed)
+    paper_train_dir = dataset_root / "nn_all_paper_train"
+    paths = [paper_train_dir / name for name in PAPER_TRAIN_CIRCUITS]
+    missing = [str(path) for path in paths if not path.is_file()]
+    if missing:
+        raise FileNotFoundError("Missing NN-All paper training circuit(s): " + ", ".join(missing))
     manifest = []
-    samples = {"train": {0: [], 1: []}, "holdout": {0: [], 1: []}}
-    sample_seen = {"train": Counter(), "holdout": Counter()}
-    sample_random = {
-        "train": random.Random(seed ^ 0x4E4E414C),
-        "holdout": random.Random(seed ^ 0x484F4C44),
-    }
-    excluded = Counter()
-    outcomes = {"train": Counter(), "holdout": Counter()}
-    for split, circuit_paths in (("train", train_paths), ("holdout", holdout_paths)):
-        for circuit_path in circuit_paths:
-            file_seed = (
-                int.from_bytes(hashlib.sha256(circuit_path.name.encode()).digest()[:4], "big") ^ seed
-            ) % 2147483647
-            fault_ids = _sample_fault_ids(circuit_path, faults_per_circuit, file_seed)
-            collector = _collect_circuit(circuit_path, fault_ids, file_seed)
-            limit = (TRAIN_SAMPLES_PER_CLASS if split == "train"
-                     else HOLDOUT_SAMPLES_PER_CLASS)
-            for sample in collector.samples:
-                label = sample[3]
-                sample_seen[split][label] += 1
-                seen = sample_seen[split][label]
-                _reservoir_add(samples[split][label], sample, seen, limit,
-                               sample_random[split])
-            excluded[split] += collector.excluded
-            outcomes[split].update(collector.outcomes)
-            manifest.append({
-                "split": split, "circuit": circuit_path.name,
-                "sha256": hashlib.sha256(circuit_path.read_bytes()).hexdigest(),
-                "fault_ids": fault_ids,
-            })
-    manifest.sort(key=lambda item: (item["split"], item["circuit"]))
+    counts = Counter()
+    levels = Counter()
+    outcomes = Counter()
+    excluded = 0
+    output_dir.mkdir(parents=True, exist_ok=True)
+    sample_path = output_dir / "training_samples.f32"
+    try:
+        with sample_path.open("wb") as stream:
+            for circuit_path in paths:
+                file_seed = (
+                    int.from_bytes(hashlib.sha256(circuit_path.name.encode()).digest()[:4], "big") ^ seed
+                ) % 2147483647
+                fault_ids = _sample_fault_ids(circuit_path)
+                collector = _collect_circuit(circuit_path, fault_ids, file_seed)
+                rows = np.empty((len(collector.samples), SAMPLE_WIDTH), dtype="<f4")
+                for index, (vector, level, _fault_id, label) in enumerate(collector.samples):
+                    rows[index, :11] = vector
+                    rows[index, 11] = label
+                    counts[label] += 1
+                    levels[level] += 1
+                stream.write(rows.tobytes())
+                excluded += collector.excluded
+                outcomes.update(collector.outcomes)
+                manifest.append({
+                    "circuit": circuit_path.name,
+                    "sha256": hashlib.sha256(circuit_path.read_bytes()).hexdigest(),
+                    "fault_ids": fault_ids,
+                })
+        _check_labels(counts)
+        samples = np.memmap(sample_path, dtype="<f4", mode="r",
+                            shape=(sum(counts.values()), SAMPLE_WIDTH))
+        model, epoch_loss = _fit(samples, seed)
+        del samples
+    finally:
+        sample_path.unlink(missing_ok=True)
+    manifest.sort(key=lambda item: item["circuit"])
     manifest_json = json.dumps(manifest, sort_keys=True, separators=(",", ":"))
     manifest_hash = hashlib.sha256(manifest_json.encode()).hexdigest()
-    retained = {split: samples[split][0] + samples[split][1] for split in samples}
-    model, best_epoch, best_loss = _fit(retained["train"], retained["holdout"], seed, epochs)
-    output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "train_manifest.json").write_text(
         json.dumps(manifest, indent=2) + "\n", encoding="utf-8",
     )
-    model_path = output_dir / "model_best.txt"
+    model_path = output_dir / "model_final.txt"
     export_native_model(model_path, model, manifest_hash, seed)
     model_hash = hashlib.sha256(model_path.read_bytes()).hexdigest()
     summary = {
-        "format": "NN_ALL_PODEM_TRAINING_V1",
+        "format": TRAINING_FORMAT,
         "feature_schema": FEATURE_SCHEMA,
         "dataset_root": str(dataset_root), "seed": seed,
-        "circuits": len(paths), "faults_per_circuit": faults_per_circuit,
+        "circuits": len(paths), "training_circuits": list(PAPER_TRAIN_CIRCUITS),
+        "fault_selection": "all_catalog_stuck_at",
         "manifest_sha256": manifest_hash,
         "model_sha256": model_hash,
-        "best_epoch": best_epoch, "holdout_loss": best_loss,
+        "epochs": 1, "checkpoint_policy": "final_epoch",
+        "loss": "binary_cross_entropy", "epoch_loss": epoch_loss,
         "sample_counts": {
-            split: {
-                "positive": len(samples[split][1]),
-                "negative": len(samples[split][0]),
-                "collected_positive": sample_seen[split][1],
-                "collected_negative": sample_seen[split][0],
-                "per_class_cap": (TRAIN_SAMPLES_PER_CLASS if split == "train"
-                                  else HOLDOUT_SAMPLES_PER_CLASS),
-                "excluded": excluded[split],
-                "levels": dict(sorted(Counter(item[1] for item in retained[split]).items())),
-                "outcomes": dict(outcomes[split]),
-            }
-            for split in samples
+            "positive": counts[1], "negative": counts[0],
+            "excluded": excluded,
+            "levels": dict(sorted(levels.items())),
+            "outcomes": dict(outcomes),
         },
     }
     (output_dir / "train_summary.json").write_text(

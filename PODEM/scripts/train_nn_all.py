@@ -1,4 +1,4 @@
-"""Train the NN-All PODEM baseline on the train circuit split."""
+"""Train the NN-All PODEM baseline for one epoch on training circuits."""
 
 import argparse
 from pathlib import Path
@@ -18,14 +18,9 @@ def main(argv=None):
     parser.add_argument("--dataset-root", type=Path, default=ROOT / "data")
     parser.add_argument("--output-dir", type=Path, default=ROOT / "artifacts" / "nn_all_podem")
     parser.add_argument("--seed", type=int, default=2026)
-    parser.add_argument("--faults-per-circuit", type=int, default=30)
-    parser.add_argument("--epochs", type=int, default=20)
-    parser.add_argument("--max-circuits", type=int)
     args = parser.parse_args(argv)
     run_training(
         args.dataset_root, args.output_dir, seed=args.seed,
-        faults_per_circuit=args.faults_per_circuit,
-        epochs=args.epochs, max_circuits=args.max_circuits,
     )
 
 
