@@ -464,8 +464,15 @@ OUTPUT(w)
 
     def test_nn_all_cli_option_is_passed_to_validation(self):
         with patch.object(validation, "run_fresh_validation") as run:
+            validation.main([])
+        self.assertEqual(run.call_args.kwargs["nn_all_run_dir"],
+                         validation.DEFAULT_NN_ALL_RUN_DIR)
+        with patch.object(validation, "run_fresh_validation") as run:
             validation.main(["--nn-all-run-dir", "nn-run"])
         self.assertEqual(run.call_args.kwargs["nn_all_run_dir"], Path("nn-run"))
+        with patch.object(validation, "run_fresh_validation") as run:
+            validation.main(["--three-way-only"])
+        self.assertIsNone(run.call_args.kwargs["nn_all_run_dir"])
 
 
 if __name__ == "__main__":

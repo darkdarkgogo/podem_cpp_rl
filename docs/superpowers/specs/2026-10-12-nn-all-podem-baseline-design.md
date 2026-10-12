@@ -39,7 +39,7 @@ Train the 12→60→1 sigmoid classifier with ordinary binary cross-entropy and 
 
 ## Evaluation and output
 
-Add an explicit NN-All run-directory option to the existing validation command. When supplied, evaluate NN-All fresh after the existing GAT-GRU, Mean and SCOAP runs. The four methods share the validation fault catalog and per-fault metric schema. Produce `validation_four_way_comparison.csv` and `.json`, a separate `detailed/nn_all_podem_records.jsonl`, and metadata giving the NN-All model identity and feature schema. Preserve the existing three-way output contract for callers that omit NN-All.
+The validation command defaults to the NN-All run directory alongside the GAT/Mean run directory. When both trained artifacts are available, evaluate NN-All fresh after the existing GAT-GRU, Mean and SCOAP runs. The four methods share the validation fault catalog and per-fault metric schema. Produce `validation_four_way_comparison.csv` and `.json`, a separate `detailed/nn_all_podem_records.jsonl`, and metadata giving the NN-All model identity and feature schema. Keep the existing three-way outputs and provide `--three-way-only` for a three-way command-line run; programmatic callers may still omit NN-All.
 
 The four-way table includes each validation circuit and TOTAL, with detected, redundant and aborted counts, backtracks, backtrace steps, fault coverage, and ATPG runtime. `runtime_atpg_s` is the sum of per-fault `atpg_seconds`: PODEM search and NN inference or lookup are timed, whereas parsing, feature precomputation, model loading, training and result writing are not. Relative metrics use the same SCOAP row as denominator. The plotting utility accepts the four-way table without mislabeling NN-All as either GAT or Mean.
 

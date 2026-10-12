@@ -6,12 +6,7 @@
 
 ```bash
 cd PODEM
-python3 scripts/train_smartatpg.py \
-  --dataset-root data \
-  --output-dir artifacts/smartatpg_dual \
-  --gat-gpu 0 \
-  --mean-gpu 1 \
-  --seed 2026
+python scripts/train_smartatpg.py
 ```
 
 GAT-GRU 与 Mean 分别在两张 GPU 上训练。训练 manifest 仅包含 train circuits，验证目录缺失也不影响训练准备。每轮都会同时保存完整的 `inference_round_XX.pth` 与 native `model_round_XX.txt`；前者包含稍后生成 validation embedding 所需的图编码器权重。`training_state.pth` 只用于训练恢复。
@@ -25,21 +20,23 @@ GAT-GRU 与 Mean 分别在两张 GPU 上训练。训练 manifest 仅包含 train
 ## 验证
 
 ```bash
-python3 scripts/validate_smartatpg.py
+python scripts/validate_smartatpg.py
 ```
 
-默认读取项目内的 `artifacts/smartatpg_dual`，并将结果写入其 `validation` 子目录。需要验证其他训练运行时，可用 `--run-dir PATH` 覆盖默认目录；`--dataset-root`、`--output-dir` 和 `--seed` 仍可按需指定。
+默认读取项目内的 `artifacts/smartatpg_dual` 与 `artifacts/nn_all_podem`，运行 SCOAP、GAT-GRU、Mean、NN-All 四方验证，并将结果写入前者的 `validation` 子目录。因此须先完成 GAT/Mean 和新版 NN-All 训练。需要验证其他训练运行时，可用 `--run-dir PATH` 与 `--nn-all-run-dir PATH` 覆盖默认目录；`--dataset-root`、`--output-dir` 和 `--seed` 仍可按需指定。若仅需原有三方验证，使用 `--three-way-only`。
 
-验证运行时才独立发现 `data/validation` 中的全部 `.bench` 电路，并按文件名顺序评估 GAT-GRU 各轮、Mean 各轮和 fresh SCOAP baseline，分别选择两个模型的 best round，并生成：
+验证运行时才独立发现 `data/validation` 中的全部 `.bench` 电路，并按文件名顺序评估 GAT-GRU 各轮、Mean 各轮、fresh SCOAP baseline 和 NN-All，分别选择前两个模型的 best round，并生成：
 
 目录中的电路必须是 SmartATPG 支持的 normal BENCH：`AND`、`NAND`、`OR`、`NOR` 均为二输入，`NOT` 为单输入，并且不包含 `BUF`。多输入 BENCH 可先用 `tools/convert_binary_bench.py` 转换。
 
 - `validation_three_way_comparison.csv`
 - `validation_three_way_comparison.json`
+- `validation_four_way_comparison.csv`
+- `validation_four_way_comparison.json`
 - `model_selection.json`
-- `detailed/{scoap,gat,mean}_records.jsonl`
+- `detailed/{scoap,gat,mean,nn_all_podem}_records.jsonl`
 
-主表对每个验证电路并排给出三种方法的 backtracks、backtrace steps、ATPG runtime 和 fault coverage，最后一行为 TOTAL。验证不提供 resume，也不会读取旧的 SCOAP cache。
+四方主表对每个验证电路并排给出四种方法的 backtracks、backtrace steps、ATPG runtime 和 fault coverage，最后一行为 TOTAL。三方表同时保留。验证不提供 resume，也不会读取旧的 SCOAP cache。
 
 ## NN-All PODEM baseline
 
@@ -51,12 +48,12 @@ NN-All 单独训练，只读取 `data/nn_all_paper_train/c1908.bench` 和 `c2670
 
 ```bash
 cd PODEM
-python scripts/train_nn_all.py --dataset-root data --output-dir artifacts/nn_all_podem --seed 2026
-python scripts/validate_smartatpg.py --run-dir artifacts/smartatpg_dual --nn-all-run-dir artifacts/nn_all_podem --seed 2026
+python scripts/train_nn_all.py
+python scripts/validate_smartatpg.py
 python tools/plot_final_comparison.py artifacts/smartatpg_dual/validation/validation_four_way_comparison.csv --output-dir artifacts/smartatpg_dual/validation/plots
 ```
 
-验证使用和三方比较完全相同的 validation 电路、逐故障顺序、backtrack limit 100 和 `atpg_seconds` 定义；保留原有三方文件，另写 `validation_four_way_comparison.csv/.json` 与 `detailed/nn_all_podem_records.jsonl`。四方表包含每种方法的 detected/redundant/aborted 数、backtracks、backtrace steps、ATPG runtime、fault coverage，以及相对 SCOAP 的变化。省略 `--nn-all-run-dir` 时仅生成原有三方结果。
+验证使用和三方比较完全相同的 validation 电路、逐故障顺序、backtrack limit 100 和 `atpg_seconds` 定义；保留原有三方文件，另写 `validation_four_way_comparison.csv/.json` 与 `detailed/nn_all_podem_records.jsonl`。四方表包含每种方法的 detected/redundant/aborted 数、backtracks、backtrace steps、ATPG runtime、fault coverage，以及相对 SCOAP 的变化。使用 `--three-way-only` 时仅生成原有三方结果。
 
 这是一份基于本项目 PODEM 引擎的 NN-All 移植，不是 Atalanta/FAN 原实现的逐位复现。训练电路与 epoch 数依照论文；求解器、规范化后的电路和特征实现仍有差异，因此不能称为论文数值实验的严格复现。所给仓库的 [NN_All/fan.cpp](https://github.com/lzzh97/NN-for-ATPG/blob/main/NN_All/fan.cpp) 实际以 `cont0/cont1` 决定回溯输入；神经网络的 11 维输入与推理代码位于 [NN_Hyb/fan.cpp](https://github.com/lzzh97/NN-for-ATPG/blob/main/NN_Hyb/fan.cpp)，并限制在特定层级。本实现依据论文对全层 NN 的定义重实现，因此实验结果应标作 `nn_all_podem`，并在报告中注明此源码差异。
 

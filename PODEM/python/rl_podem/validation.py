@@ -1,4 +1,4 @@
-"""Run fresh SmartATPG/SCOAP validation, optionally including NN-All."""
+"""Run fresh SCOAP/GAT/Mean/NN-All validation from trained artifacts."""
 
 import argparse
 import csv
@@ -12,6 +12,7 @@ import torch
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_RUN_DIR = ROOT / "artifacts" / "smartatpg_dual"
+DEFAULT_NN_ALL_RUN_DIR = ROOT / "artifacts" / "nn_all_podem"
 
 from .artifact_io import (
     INFERENCE_CHECKPOINT_FORMAT,
@@ -468,15 +469,19 @@ def main(argv=None):
     parser.add_argument("--dataset-root", type=Path)
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--seed", type=int, default=2026)
-    parser.add_argument("--nn-all-run-dir", type=Path)
+    nn_all_options = parser.add_mutually_exclusive_group()
+    nn_all_options.add_argument(
+        "--nn-all-run-dir", type=Path, default=DEFAULT_NN_ALL_RUN_DIR,
+    )
+    nn_all_options.add_argument("--three-way-only", action="store_true")
     parser.add_argument(
         "--backtrace-lock", choices=("auto", "on", "off"), default="auto",
     )
     args = parser.parse_args(argv)
-    kwargs = {"nn_all_run_dir": args.nn_all_run_dir} if args.nn_all_run_dir else {}
+    nn_all_run_dir = None if args.three_way_only else args.nn_all_run_dir
     run_fresh_validation(
         args.run_dir, args.dataset_root, args.output_dir, args.seed,
-        args.backtrace_lock, **kwargs,
+        args.backtrace_lock, nn_all_run_dir=nn_all_run_dir,
     )
 
 
