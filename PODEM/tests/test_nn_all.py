@@ -4,6 +4,8 @@ from pathlib import Path
 import tempfile
 import unittest
 
+import torch
+
 from rl_podem.nn_all_features import (
     candidate_vector, load_nn_all_features, write_native_features,
 )
@@ -83,6 +85,39 @@ class NnAllFeaturesTest(unittest.TestCase):
             content = artifact.read_text(encoding="utf-8")
             self.assertTrue(content.startswith("NN_ALL_PODEM_MODEL_V1\n"))
             self.assertIn("w1 660 ", content)
+
+    def test_native_score_and_fault_order(self):
+        import cpp_podem
+
+        with tempfile.TemporaryDirectory() as temporary:
+            bench = Path(temporary) / "small.bench"
+            bench.write_text(BENCH, encoding="utf-8")
+            features = load_nn_all_features(bench)
+            table = Path(temporary) / "features.txt"
+            write_native_features(table, features)
+            model = NnAllClassifier()
+            artifact = Path(temporary) / "model.txt"
+            export_native_model(artifact, model, "a" * 64)
+            vector = candidate_vector(features, "x", "a")
+            with torch.no_grad():
+                expected = float(model(torch.tensor([vector], dtype=torch.float32))[0])
+            actual = cpp_podem.score_nn_all_candidate(str(artifact), vector)
+            self.assertAlmostEqual(actual, expected, places=5)
+            fault_ids = [
+                entry["fault_id"]
+                for entry in cpp_podem.catalog_stuck_at(str(bench))["faults"][:3]
+            ]
+            records = cpp_podem.run_native_nn_all_validation(
+                str(bench), str(table), str(artifact), 100, 2026,
+                fault_ids, "small",
+            )
+            self.assertEqual([item["fault_id"] for item in records], fault_ids)
+            self.assertTrue(all(item["atpg_seconds"] >= 0 for item in records))
+            with self.assertRaisesRegex(Exception, "Cannot open NN-All model"):
+                cpp_podem.run_native_nn_all_validation(
+                    str(bench), str(table), str(artifact.with_name("missing.txt")),
+                    100, 2026, fault_ids, "small",
+                )
 
 
 if __name__ == "__main__":

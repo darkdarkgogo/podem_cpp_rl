@@ -1,0 +1,198 @@
+#include "nn_all_policy.h"
+
+#include <cmath>
+#include <fstream>
+#include <limits>
+#include <memory>
+#include <stdexcept>
+#include <unordered_map>
+
+#if defined(_WIN32) && !defined(__MINGW32__)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
+namespace smartatpg {
+namespace {
+
+std::ifstream open_text(const std::string &path) {
+#if defined(_WIN32) && !defined(__MINGW32__)
+  const UINT codepage = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS,
+      path.c_str(), -1, nullptr, 0) > 0 ? CP_UTF8 : CP_ACP;
+  const int count = MultiByteToWideChar(codepage, 0, path.c_str(), -1, nullptr, 0);
+  if (count <= 0) throw std::runtime_error("Invalid NN-All artifact path");
+  std::vector<wchar_t> wide(static_cast<std::size_t>(count));
+  if (!MultiByteToWideChar(codepage, 0, path.c_str(), -1, wide.data(), count))
+    throw std::runtime_error("Cannot decode NN-All artifact path");
+  return std::ifstream(wide.data());
+#else
+  return std::ifstream(path.c_str());
+#endif
+}
+
+void expect_key(std::istream &input, const char *expected) {
+  std::string actual;
+  if (!(input >> actual) || actual != expected)
+    throw std::runtime_error(std::string("Invalid NN-All artifact field: ") + expected);
+}
+
+template <std::size_t N>
+void read_array(std::istream &input, const char *name, std::array<float, N> &values) {
+  expect_key(input, name);
+  std::size_t count = 0;
+  if (!(input >> count) || count != N)
+    throw std::runtime_error(std::string("Invalid NN-All tensor size: ") + name);
+  for (float &value : values) {
+    if (!(input >> value) || !std::isfinite(value))
+      throw std::runtime_error(std::string("Invalid NN-All tensor value: ") + name);
+  }
+}
+
+float sigmoid(float input) {
+  if (input >= 0) {
+    const float factor = std::exp(-input);
+    return 1.0f / (1.0f + factor);
+  }
+  const float factor = std::exp(input);
+  return factor / (1.0f + factor);
+}
+
+const char *const types[] = {"AND", "NAND", "OR", "NOR", "PI", "BUF", "NOT"};
+
+int type_index(const std::string &name) {
+  for (int index = 0; index < 7; ++index)
+    if (name == types[index]) return index;
+  throw std::runtime_error("Unknown NN-All gate type: " + name);
+}
+
+} // namespace
+
+NnAllModel::NnAllModel(const std::string &path) {
+  std::ifstream input = open_text(path);
+  if (!input.good()) throw std::runtime_error("Cannot open NN-All model: " + path);
+  expect_key(input, "NN_ALL_PODEM_MODEL_V1");
+  expect_key(input, "feature_schema");
+  std::string schema;
+  if (!(input >> schema) || schema != "NN_ALL_PODEM_11D_V1")
+    throw std::runtime_error("NN-All feature schema mismatch");
+  expect_key(input, "hidden_dim");
+  int hidden_dim = 0;
+  if (!(input >> hidden_dim) || hidden_dim != 60)
+    throw std::runtime_error("NN-All hidden dimension mismatch");
+  expect_key(input, "manifest_sha256");
+  if (!(input >> manifest_hash_) || manifest_hash_.size() != 64)
+    throw std::runtime_error("NN-All manifest hash is invalid");
+  read_array(input, "mean", mean_);
+  read_array(input, "scale", scale_);
+  read_array(input, "w1", w1_);
+  read_array(input, "b1", b1_);
+  read_array(input, "w2", w2_);
+  std::array<float, 1> final_bias{};
+  read_array(input, "b2", final_bias);
+  b2_ = final_bias[0];
+  for (float value : scale_)
+    if (value <= 0) throw std::runtime_error("NN-All feature scale must be positive");
+  std::string trailing;
+  if (input >> trailing) throw std::runtime_error("Trailing NN-All model data");
+}
+
+float NnAllModel::score(const std::array<float, 11> &features) const {
+  std::array<float, 11> normalized{};
+  for (std::size_t index = 0; index < 11; ++index) {
+    float value = features[index];
+    if (!std::isfinite(value) || (index < 3 && value < 0))
+      throw std::runtime_error("Invalid NN-All candidate feature");
+    if (index < 3) value = std::log1p(value);
+    normalized[index] = (value - mean_[index]) / scale_[index];
+  }
+  float output = b2_;
+  for (std::size_t hidden = 0; hidden < 60; ++hidden) {
+    float value = b1_[hidden];
+    for (std::size_t input = 0; input < 11; ++input)
+      value += normalized[input] * w1_[hidden * 11 + input];
+    output += sigmoid(value) * w2_[hidden];
+  }
+  return sigmoid(output);
+}
+
+NnAllPolicy::NnAllPolicy(
+    const std::string &model_path, const std::string &features_path,
+    const std::string &expected_circuit_hash,
+    const std::vector<std::string> &gate_names_by_id)
+    : model_(model_path), gates_(gate_names_by_id.size()) {
+  std::ifstream input = open_text(features_path);
+  if (!input.good())
+    throw std::runtime_error("Cannot open NN-All features: " + features_path);
+  expect_key(input, "NN_ALL_PODEM_FEATURES_V1");
+  expect_key(input, "circuit_hash");
+  std::string hash;
+  if (!(input >> hash) || hash != expected_circuit_hash)
+    throw std::runtime_error("NN-All feature circuit hash mismatch");
+  expect_key(input, "gate_count");
+  std::size_t count = 0;
+  if (!(input >> count) || count != gates_.size())
+    throw std::runtime_error("NN-All feature gate count mismatch");
+  std::unordered_map<std::string, std::size_t> indices;
+  for (std::size_t index = 0; index < gate_names_by_id.size(); ++index)
+    if (!indices.emplace(gate_names_by_id[index], index).second)
+      throw std::runtime_error("Duplicate NN-All gate name");
+  std::vector<bool> seen(count, false);
+  for (std::size_t row = 0; row < count; ++row) {
+    expect_key(input, "gate");
+    std::string name, kind;
+    Gate gate;
+    if (!(input >> name >> kind >> gate.depth >> gate.cc0 >> gate.cc1 >> gate.cop))
+      throw std::runtime_error("Malformed NN-All feature row");
+    const auto found = indices.find(name);
+    if (found == indices.end() || seen[found->second])
+      throw std::runtime_error("NN-All feature gate name mismatch");
+    gate.type = type_index(kind);
+    if (!std::isfinite(gate.depth) || !std::isfinite(gate.cc0) ||
+        !std::isfinite(gate.cc1) || !std::isfinite(gate.cop) ||
+        gate.depth < 0 || gate.cc0 < 0 || gate.cc1 < 0 ||
+        gate.cop < 0 || gate.cop > 1)
+      throw std::runtime_error("Invalid NN-All gate feature");
+    gates_[found->second] = gate;
+    seen[found->second] = true;
+  }
+  std::string trailing;
+  if (input >> trailing) throw std::runtime_error("Trailing NN-All feature data");
+}
+
+int NnAllPolicy::select(const DecisionRequest &request) {
+  if (request.mode != DecisionMode::BACKTRACE || request.objective_id >= gates_.size() ||
+      request.candidate_count > 2 || request.candidate_ids == nullptr)
+    throw std::runtime_error("Invalid NN-All backtrace request");
+  const Gate &parent = gates_[request.objective_id];
+  int selected = -1;
+  float best = -std::numeric_limits<float>::infinity();
+  for (std::size_t index = 0; index < request.candidate_count; ++index) {
+    if (!request.action_mask[index]) continue;
+    const std::size_t candidate_id = request.candidate_ids[index];
+    if (candidate_id >= gates_.size())
+      throw std::runtime_error("Unknown NN-All candidate gate ID");
+    const std::size_t key = request.objective_id * gates_.size() + candidate_id;
+    auto hit = score_cache_.find(key);
+    float score = 0;
+    if (hit == score_cache_.end()) {
+      const Gate &candidate = gates_[candidate_id];
+      std::array<float, 11> vector{{candidate.depth, candidate.cc0,
+          candidate.cc1, candidate.cop, 0, 0, 0, 0, 0, 0, 0}};
+      vector[4 + parent.type] = 1.0f;
+      score = model_.score(vector);
+      score_cache_.emplace(key, score);
+    } else {
+      score = hit->second;
+    }
+    if (score > best) {
+      best = score;
+      selected = static_cast<int>(index);
+    }
+  }
+  if (selected < 0) throw std::runtime_error("NN-All has no legal candidate");
+  return selected;
+}
+
+} // namespace smartatpg

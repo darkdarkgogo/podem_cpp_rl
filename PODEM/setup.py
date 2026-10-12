@@ -10,6 +10,7 @@ CORE_SOURCES = [
     "sim.cpp",
     "podem.cpp",
     "rl_policy.cpp",
+    "nn_all_policy.cpp",
     "rl_atpg.cpp",
     "init_flist.cpp",
     "faultsim.cpp",

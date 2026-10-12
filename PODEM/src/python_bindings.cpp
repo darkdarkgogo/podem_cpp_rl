@@ -3,7 +3,9 @@
 
 #include "atpg.h"
 #include "rl_policy.h"
+#include "nn_all_policy.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -541,6 +543,73 @@ py::list run_native_scoap_validation(
   return result;
 }
 
+py::list run_native_nn_all_validation(
+    const std::string &circuit_path, const std::string &feature_path,
+    const std::string &model_path, int backtrack_limit, int seed,
+    const std::vector<std::string> &fault_ids,
+    const std::string &circuit_name) {
+  if (fault_ids.empty())
+    throw std::invalid_argument("NN-All validation requires fault IDs");
+  if (backtrack_limit != 100)
+    throw std::invalid_argument("NN-All validation requires backtrack_limit=100");
+  ATPG atpg;
+  atpg.detected_num = 1;
+  atpg.set_backtrack_limit(backtrack_limit);
+  atpg.set_seed(seed);
+  atpg.set_total_attempt_num(1);
+  atpg.set_SAF_atpg(true);
+  atpg.set_SCOAP(true);
+  atpg.set_rl_mode("backtrace_rl");
+  atpg.set_backtrace_lock(false);
+  atpg.set_quiet(true);
+  std::shared_ptr<NativeValidationPolicy> policy;
+  {
+    py::gil_scoped_release release;
+    atpg.input(circuit_path);
+    atpg.enable_nn_all_inference(feature_path, model_path);
+    policy = std::make_shared<NativeValidationPolicy>(
+        atpg.get_decision_policy(), fault_ids.size(), seed,
+        "legacy_pi_exponential", -0.1, "", circuit_name,
+        "NN_ALL_VALIDATE", true);
+    atpg.set_decision_policy(policy);
+    atpg.level_circuit();
+    atpg.rearrange_gate_inputs();
+    atpg.create_dummy_gate();
+    atpg.generate_fault_list();
+    atpg.retain_faults(fault_ids);
+    atpg.set_drop_detected_faults(false);
+    policy->start_run();
+    atpg.test();
+  }
+  const auto &records = policy->records();
+  if (records.size() != fault_ids.size())
+    throw std::runtime_error("NN-All validation returned the wrong fault count");
+  py::list result;
+  for (std::size_t index = 0; index < records.size(); ++index) {
+    const auto &record = records[index];
+    if (record.fault_id != fault_ids[index])
+      throw std::runtime_error("NN-All validation returned faults out of order");
+    py::dict item;
+    item["fault_id"] = record.fault_id;
+    item["outcome"] = record.outcome;
+    item["backtracks"] = record.backtracks;
+    item["backtrace_steps"] = record.backtrace_steps;
+    item["return"] = record.reward;
+    item["atpg_seconds"] = record.seconds;
+    result.append(item);
+  }
+  return result;
+}
+
+float score_nn_all_candidate(const std::string &model_path,
+                             const std::vector<float> &features) {
+  if (features.size() != 11)
+    throw std::invalid_argument("NN-All candidate must have 11 features");
+  std::array<float, 11> values{};
+  std::copy(features.begin(), features.end(), values.begin());
+  return smartatpg::NnAllModel(model_path).score(values);
+}
+
 py::dict run_stuck_at(const std::string &circuit_path,
                       py::function decision_callback,
                       py::object event_callback, int backtrack_limit,
@@ -716,6 +785,13 @@ PYBIND11_MODULE(cpp_podem, module) {
              py::arg("seed"), py::arg("fault_ids"),
              py::arg("reward_scheme"), py::arg("backtrace_step_reward"),
              py::arg("circuit_name") = "");
+  module.def("run_native_nn_all_validation", &run_native_nn_all_validation,
+             py::arg("circuit_path"), py::arg("feature_path"),
+             py::arg("model_path"), py::arg("backtrack_limit"),
+             py::arg("seed"), py::arg("fault_ids"),
+             py::arg("circuit_name") = "");
+  module.def("score_nn_all_candidate", &score_nn_all_candidate,
+             py::arg("model_path"), py::arg("features"));
   module.def("profile_stuck_at", &profile_stuck_at,
              py::arg("circuit_path"), py::arg("backtrack_limit") = 97,
              py::arg("seed") = 14, py::arg("fault_map_path") = "",

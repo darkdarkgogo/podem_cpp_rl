@@ -1,4 +1,5 @@
 #include "atpg.h"
+#include "nn_all_policy.h"
 
 #include <stdexcept>
 #include <unordered_map>
@@ -24,6 +25,13 @@ void ATPG::enable_rl_inference(const string &embedding_path,
     throw runtime_error("Selected RL mode is not supported by this actor");
   }
   decision_policy = policy;
+}
+
+void ATPG::enable_nn_all_inference(const string &features_path,
+                                   const string &model_path) {
+  decision_policy = make_shared<smartatpg::NnAllPolicy>(
+      model_path, features_path, smartatpg::fnv1a_file_hash(filename),
+      rl_gate_names_by_id);
 }
 
 void ATPG::set_rl_mode(const string &value) {
