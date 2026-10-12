@@ -13,6 +13,7 @@ if str(TOOLS) not in sys.path:
 
 from plot_final_comparison import (
     METRICS,
+    generate_plots,
     metric_values,
     models_for_metric,
     read_comparison_csv,
@@ -89,6 +90,33 @@ def write_comparison_csv(path, *, rows=None, fieldnames=CSV_COLUMNS):
 
 
 class FinalComparisonPlotTests(unittest.TestCase):
+    def test_four_way_validation_csv_is_read_with_nn_all(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "validation_four_way_comparison.csv"
+            row = {"circuit": "c17"}
+            for method, backtracks in (("scoap", 20), ("gat", 15),
+                                       ("mean", 10), ("nn_all", 5)):
+                row.update({
+                    f"{method}_backtracks": backtracks,
+                    f"{method}_backtrace_steps": backtracks * 2,
+                    f"{method}_runtime_atpg_s": backtracks / 10,
+                    f"{method}_fault_coverage_pct": 90,
+                })
+            with path.open("w", newline="", encoding="utf-8") as stream:
+                writer = csv.DictWriter(stream, fieldnames=list(row))
+                writer.writeheader()
+                writer.writerow(row)
+            circuits, models, records = read_comparison_csv(path)
+            self.assertEqual(circuits, ["c17"])
+            self.assertIn("nn_all_podem", models)
+            metric = next(item for item in METRICS if item["column"] == "backtracks")
+            self.assertEqual(metric_values(circuits, "nn_all_podem", records, metric), [0.25])
+            self.assertEqual(models_for_metric(metric, models), tuple(models[1:]))
+            if importlib.util.find_spec("matplotlib") is not None:
+                paths = generate_plots(path, Path(temp_dir) / "plots")
+                self.assertEqual(len(paths), 4)
+                self.assertTrue(all(item.is_file() and item.stat().st_size > 0 for item in paths))
+
     def test_relative_metrics_use_scoap_as_baseline_without_a_baseline_bar(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             csv_path = Path(temp_dir) / "final_comparison.csv"

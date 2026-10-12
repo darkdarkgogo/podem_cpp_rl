@@ -110,10 +110,10 @@ assert 'torch' not in sys.modules
         ):
             self.assertNotIn(f"def {name}(", training_source)
 
-    def test_scripts_directory_has_only_two_experiment_entries(self):
+    def test_scripts_directory_has_expected_experiment_entries(self):
         self.assertEqual(
             {path.name for path in SCRIPTS.glob("*.py")},
-            {"train_smartatpg.py", "validate_smartatpg.py"},
+            {"train_smartatpg.py", "validate_smartatpg.py", "train_nn_all.py"},
         )
 
     def test_train_rejects_same_gpu_before_running_commands(self):

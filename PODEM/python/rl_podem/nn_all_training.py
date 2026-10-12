@@ -17,6 +17,8 @@ from .native_io import _native_circuit_path
 
 MODEL_FORMAT = "NN_ALL_PODEM_MODEL_V1"
 DEFAULT_SEED = 2026
+TRAIN_SAMPLES_PER_CLASS = 100_000
+HOLDOUT_SAMPLES_PER_CLASS = 25_000
 
 
 class PathSampleCollector:
@@ -26,6 +28,7 @@ class PathSampleCollector:
         self.features = features
         self.random = random.Random(seed)
         self.pending = {}
+        self.pi_paths = {}
         self.samples = []
         self.excluded = 0
         self.current_fault = ""
@@ -36,6 +39,8 @@ class PathSampleCollector:
         legal = [index for index, allowed in enumerate(mask) if allowed]
         if not legal:
             raise ValueError("NN-All collector received no legal fanin")
+        if len(legal) == 1:
+            return legal[0]
         heuristic = int(request["heuristic_action"])
         action = heuristic if heuristic in legal else legal[0]
         if len(legal) > 1 and self.random.randrange(2):
@@ -54,11 +59,27 @@ class PathSampleCollector:
         if kind == "episode_start":
             if self.pending:
                 raise RuntimeError("NN-All collector episode started with pending paths")
+            self.pi_paths.clear()
             self.current_fault = str(event["fault_id"])
-        elif kind == "backtrack":
-            item = self.pending.pop(int(event["decision_sequence"]), None)
-            if item is not None:
-                self.samples.append((*item, 0))
+        elif kind == "pi_assignment":
+            first = int(event["first_sequence"])
+            last = int(event["last_sequence"])
+            self.pi_paths[str(event["pi_name"])] = tuple(
+                sequence for sequence in range(first, last + 1)
+                if sequence in self.pending
+            )
+        elif kind == "backtrack_pi":
+            for sequence in self.pi_paths.pop(str(event["pi_name"]), ()):
+                item = self.pending.pop(sequence, None)
+                if item is not None:
+                    self.samples.append((*item, 0))
+        elif kind == "backtrace_dead_end":
+            for sequence in range(
+                int(event["first_sequence"]), int(event["last_sequence"]) + 1,
+            ):
+                item = self.pending.pop(sequence, None)
+                if item is not None:
+                    self.samples.append((*item, 0))
         elif kind == "episode_end":
             outcome = int(event["outcome"])
             self.outcomes[outcome] += 1
@@ -67,6 +88,7 @@ class PathSampleCollector:
             else:
                 self.excluded += len(self.pending)
             self.pending.clear()
+            self.pi_paths.clear()
             self.current_fault = ""
 
 
@@ -182,7 +204,7 @@ def _fit(train_samples, holdout_samples, seed, epochs):
     return model, best_epoch, best_loss
 
 
-def export_native_model(path, model, manifest_hash):
+def export_native_model(path, model, manifest_hash, seed=DEFAULT_SEED):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     first = model.network[0]
@@ -196,10 +218,20 @@ def export_native_model(path, model, manifest_hash):
         "b2": second.bias.detach().flatten().tolist(),
     }
     lines = [MODEL_FORMAT, f"feature_schema {FEATURE_SCHEMA}",
-             "hidden_dim 60", f"manifest_sha256 {manifest_hash}"]
+             "hidden_dim 60", f"manifest_sha256 {manifest_hash}",
+             f"seed {int(seed)}"]
     for name, values in arrays.items():
         lines.append(f"{name} {len(values)} " + " ".join(f"{value:.9g}" for value in values))
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _reservoir_add(reservoir, sample, seen, limit, generator):
+    if len(reservoir) < limit:
+        reservoir.append(sample)
+    else:
+        index = generator.randrange(seen)
+        if index < limit:
+            reservoir[index] = sample
 
 
 def run_training(
@@ -219,7 +251,12 @@ def run_training(
         raise ValueError("NN-All faults-per-circuit must be positive")
     train_paths, holdout_paths = _circuit_split(paths, seed)
     manifest = []
-    samples = {"train": [], "holdout": []}
+    samples = {"train": {0: [], 1: []}, "holdout": {0: [], 1: []}}
+    sample_seen = {"train": Counter(), "holdout": Counter()}
+    sample_random = {
+        "train": random.Random(seed ^ 0x4E4E414C),
+        "holdout": random.Random(seed ^ 0x484F4C44),
+    }
     excluded = Counter()
     outcomes = {"train": Counter(), "holdout": Counter()}
     for split, circuit_paths in (("train", train_paths), ("holdout", holdout_paths)):
@@ -229,7 +266,14 @@ def run_training(
             ) % 2147483647
             fault_ids = _sample_fault_ids(circuit_path, faults_per_circuit, file_seed)
             collector = _collect_circuit(circuit_path, fault_ids, file_seed)
-            samples[split].extend(collector.samples)
+            limit = (TRAIN_SAMPLES_PER_CLASS if split == "train"
+                     else HOLDOUT_SAMPLES_PER_CLASS)
+            for sample in collector.samples:
+                label = sample[3]
+                sample_seen[split][label] += 1
+                seen = sample_seen[split][label]
+                _reservoir_add(samples[split][label], sample, seen, limit,
+                               sample_random[split])
             excluded[split] += collector.excluded
             outcomes[split].update(collector.outcomes)
             manifest.append({
@@ -240,28 +284,36 @@ def run_training(
     manifest.sort(key=lambda item: (item["split"], item["circuit"]))
     manifest_json = json.dumps(manifest, sort_keys=True, separators=(",", ":"))
     manifest_hash = hashlib.sha256(manifest_json.encode()).hexdigest()
-    model, best_epoch, best_loss = _fit(samples["train"], samples["holdout"], seed, epochs)
+    retained = {split: samples[split][0] + samples[split][1] for split in samples}
+    model, best_epoch, best_loss = _fit(retained["train"], retained["holdout"], seed, epochs)
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "train_manifest.json").write_text(
         json.dumps(manifest, indent=2) + "\n", encoding="utf-8",
     )
-    export_native_model(output_dir / "model_best.txt", model, manifest_hash)
+    model_path = output_dir / "model_best.txt"
+    export_native_model(model_path, model, manifest_hash, seed)
+    model_hash = hashlib.sha256(model_path.read_bytes()).hexdigest()
     summary = {
         "format": "NN_ALL_PODEM_TRAINING_V1",
         "feature_schema": FEATURE_SCHEMA,
         "dataset_root": str(dataset_root), "seed": seed,
         "circuits": len(paths), "faults_per_circuit": faults_per_circuit,
         "manifest_sha256": manifest_hash,
+        "model_sha256": model_hash,
         "best_epoch": best_epoch, "holdout_loss": best_loss,
         "sample_counts": {
             split: {
-                "positive": sum(item[3] == 1 for item in values),
-                "negative": sum(item[3] == 0 for item in values),
+                "positive": len(samples[split][1]),
+                "negative": len(samples[split][0]),
+                "collected_positive": sample_seen[split][1],
+                "collected_negative": sample_seen[split][0],
+                "per_class_cap": (TRAIN_SAMPLES_PER_CLASS if split == "train"
+                                  else HOLDOUT_SAMPLES_PER_CLASS),
                 "excluded": excluded[split],
-                "levels": dict(sorted(Counter(item[1] for item in values).items())),
+                "levels": dict(sorted(Counter(item[1] for item in retained[split]).items())),
                 "outcomes": dict(outcomes[split]),
             }
-            for split, values in samples.items()
+            for split in samples
         },
     }
     (output_dir / "train_summary.json").write_text(

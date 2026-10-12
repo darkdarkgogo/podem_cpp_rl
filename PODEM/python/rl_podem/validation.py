@@ -1,7 +1,8 @@
-"""Run fresh SmartATPG/SCOAP validation and write a three-way comparison."""
+"""Run fresh SmartATPG/SCOAP validation, optionally including NN-All."""
 
 import argparse
 import csv
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -33,7 +34,10 @@ from .validation_core import (
     _summarize_validation,
     validation_score,
 )
-from .validation_tables import build_three_way_row
+from .validation_tables import build_four_way_row, build_three_way_row
+from .nn_all_features import FEATURE_SCHEMA, load_nn_all_features, write_native_features
+from .nn_all_training import MODEL_FORMAT
+from .native_io import _native_circuit_path
 
 
 BACKTRACK_LIMIT = 100
@@ -86,12 +90,12 @@ def _read_json(path, description):
 
 def _atomic_csv(path, rows):
     if not rows:
-        raise ValueError("Three-way comparison requires at least one row")
+        raise ValueError("Validation comparison requires at least one row")
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fieldnames = list(rows[0])
     if any(list(row) != fieldnames for row in rows):
-        raise ValueError("Three-way comparison rows have inconsistent columns")
+        raise ValueError("Validation comparison rows have inconsistent columns")
     temporary = path.with_suffix(path.suffix + ".tmp")
     with temporary.open("w", encoding="utf-8", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=fieldnames, extrasaction="raise")
@@ -248,9 +252,82 @@ def _evaluate_model_round(
     return records, summary
 
 
+def _load_nn_all_model(run_dir, dataset_root, seed):
+    run_dir = Path(run_dir).resolve()
+    summary = _read_json(run_dir / "train_summary.json", "NN-All training summary")
+    if summary.get("format") != "NN_ALL_PODEM_TRAINING_V1":
+        raise ValueError("Incompatible NN-All training summary")
+    if summary.get("feature_schema") != FEATURE_SCHEMA:
+        raise ValueError("NN-All feature schema mismatch")
+    if Path(summary["dataset_root"]).resolve() != dataset_root:
+        raise ValueError("NN-All training dataset differs from validation dataset")
+    if int(summary["seed"]) != int(seed):
+        raise ValueError("NN-All training seed differs from validation seed")
+    manifest = _read_json(run_dir / "train_manifest.json", "NN-All training manifest")
+    encoded = json.dumps(manifest, sort_keys=True, separators=(",", ":")).encode()
+    digest = hashlib.sha256(encoded).hexdigest()
+    if digest != summary.get("manifest_sha256"):
+        raise ValueError("NN-All training manifest hash mismatch")
+    if any(item.get("split") not in ("train", "holdout") for item in manifest):
+        raise ValueError("NN-All training manifest contains invalid split")
+    model_path = run_dir / "model_best.txt"
+    if not model_path.is_file():
+        raise FileNotFoundError(f"Missing NN-All model: {model_path}")
+    model_hash = hashlib.sha256(model_path.read_bytes()).hexdigest()
+    if model_hash != summary.get("model_sha256"):
+        raise ValueError("NN-All model SHA-256 mismatch")
+    with model_path.open(encoding="utf-8") as stream:
+        header = [stream.readline().strip() for _ in range(5)]
+    if header != [MODEL_FORMAT, f"feature_schema {FEATURE_SCHEMA}",
+                  "hidden_dim 60", f"manifest_sha256 {digest}",
+                  f"seed {seed}"]:
+        raise ValueError("NN-All model identity mismatch")
+    return model_path, summary
+
+
+def _evaluate_nn_all(circuits, model_path, output_dir, seed):
+    try:
+        import cpp_podem
+    except ImportError as error:
+        raise ImportError("Native NN-All validation requires cpp_podem") from error
+    if not hasattr(cpp_podem, "run_native_nn_all_validation"):
+        raise RuntimeError("cpp_podem is stale; rebuild with python -m pip install -e .")
+    records = []
+    for item in circuits:
+        features = load_nn_all_features(item["circuit"])
+        feature_path = output_dir / "features" / "nn_all" / f"{item['name']}.txt"
+        write_native_features(feature_path, features)
+        fault_ids = item["episode_fault_ids"]
+        native = cpp_podem.run_native_nn_all_validation(
+            _native_circuit_path(item["circuit"]),
+            _native_circuit_path(feature_path), _native_circuit_path(model_path),
+            BACKTRACK_LIMIT, seed, fault_ids, item["name"],
+        )
+        if len(native) != len(fault_ids):
+            raise RuntimeError("Native NN-All validation returned the wrong fault count")
+        for fault_id, raw in zip(fault_ids, native):
+            if raw["fault_id"] != fault_id:
+                raise RuntimeError("Native NN-All validation returned faults out of order")
+            outcome = int(raw["outcome"])
+            records.append({
+                "circuit": item["name"], "fault_id": fault_id,
+                "outcome": outcome, "detected": int(outcome == 1),
+                "redundant": int(outcome == 0), "aborted": int(outcome not in (0, 1)),
+                "backtracks": int(raw["backtracks"]),
+                "backtrace_steps": int(raw["backtrace_steps"]),
+                "return": float(raw["return"]),
+                "test_vectors": int(outcome == 1),
+                "atpg_seconds": float(raw["atpg_seconds"]),
+            })
+    _validate_records(records, "NN-All")
+    summary = _summarize_validation(records, circuits, 0)
+    _validate_summary(summary, circuits, 0, "NN-All")
+    return records, summary
+
+
 def run_fresh_validation(
     run_dir, dataset_root=None, output_dir=None, seed=2026,
-    backtrace_lock="auto",
+    backtrace_lock="auto", nn_all_run_dir=None,
 ):
     run_dir = Path(run_dir).resolve()
     output_dir = (
@@ -265,6 +342,11 @@ def run_fresh_validation(
         raise ValueError("Validation dataset root differs from the training run")
     if int(seed) != int(run_summary["seed"]):
         raise ValueError("Validation seed must match the training seed")
+    nn_model = nn_training = None
+    if nn_all_run_dir is not None:
+        nn_model, nn_training = _load_nn_all_model(
+            nn_all_run_dir, training_dataset_root, seed,
+        )
 
     manifests = {key: Path(value) for key, value in run_summary["manifests"].items()}
     model_dirs = {key: Path(value) for key, value in run_summary["training_dirs"].items()}
@@ -333,6 +415,34 @@ def run_fresh_validation(
     _atomic_json(output_dir / "model_selection.json", selection)
     _atomic_json(output_dir / "validation_three_way_comparison.json", result)
     _atomic_csv(output_dir / "validation_three_way_comparison.csv", rows)
+    if nn_all_run_dir is not None:
+        nn_records, nn_summary = _evaluate_nn_all(circuits, nn_model, output_dir, seed)
+        _atomic_json_lines(detailed / "nn_all_podem_records.jsonl", nn_records)
+        four_rows = [
+            build_four_way_row(
+                circuit, scoap_summary, model_results["gat"],
+                model_results["mean"], nn_summary,
+            ) for circuit in names
+        ]
+        four_result = {
+            "format": "SMARTATPG_FOUR_WAY_VALIDATION_V1",
+            "seed": seed,
+            "backtrack_limit": BACKTRACK_LIMIT,
+            "backtrace_lock": backtrace_lock,
+            "runtime_definition": "sum(per_fault.atpg_seconds)",
+            "model_selection": selection,
+            "nn_all_training": {
+                "run_dir": str(Path(nn_all_run_dir).resolve()),
+                "manifest_sha256": nn_training["manifest_sha256"],
+                "model_sha256": nn_training["model_sha256"],
+                "best_epoch": nn_training["best_epoch"],
+                "feature_schema": FEATURE_SCHEMA,
+            },
+            "rows": four_rows,
+        }
+        _atomic_json(output_dir / "validation_four_way_comparison.json", four_result)
+        _atomic_csv(output_dir / "validation_four_way_comparison.csv", four_rows)
+        return four_result
     return result
 
 
@@ -342,13 +452,15 @@ def main(argv=None):
     parser.add_argument("--dataset-root", type=Path)
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--seed", type=int, default=2026)
+    parser.add_argument("--nn-all-run-dir", type=Path)
     parser.add_argument(
         "--backtrace-lock", choices=("auto", "on", "off"), default="auto",
     )
     args = parser.parse_args(argv)
+    kwargs = {"nn_all_run_dir": args.nn_all_run_dir} if args.nn_all_run_dir else {}
     run_fresh_validation(
         args.run_dir, args.dataset_root, args.output_dir, args.seed,
-        args.backtrace_lock,
+        args.backtrace_lock, **kwargs,
     )
 
 

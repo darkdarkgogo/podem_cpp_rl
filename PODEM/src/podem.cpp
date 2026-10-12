@@ -78,14 +78,21 @@ int ATPG::podem(const fptr fault, int &current_backtracks)
 	{
 
 		/* check if test possible.   Fig. 7.1 */
+		const unsigned long backtrace_start_sequence = rl_decision_sequence + 1;
 		if (wpi = test_possible(fault))
 		{
+			if (decision_policy && decision_policy->wants_training_events())
+				decision_policy->on_pi_assignment(wpi->name,
+					backtrace_start_sequence, rl_decision_sequence);
 			wpi->set_changed();
 			/* insert a new PI into decision_tree */
 			decision_tree.push_front(wpi);
 		}
 		else
 		{ // no test possible using this assignment, backtrack.
+			if (decision_policy && decision_policy->wants_training_events())
+				decision_policy->on_backtrace_dead_end(
+					backtrace_start_sequence, rl_decision_sequence);
 
 			while (!decision_tree.empty() && (wpi == nullptr))
 			{
@@ -110,6 +117,8 @@ int ATPG::podem(const fptr fault, int &current_backtracks)
 				rl_propagation_lock = nullptr;
 					if (decision_policy && last_policy_decision_sequence != 0)
 						decision_policy->on_backtrack(last_policy_decision_sequence);
+					if (decision_policy && decision_policy->wants_training_events())
+						decision_policy->on_backtrack_pi(decision_tree.front()->name);
 					wpi = decision_tree.front();
 				}
 			} // while decision tree && ! wpi
@@ -168,6 +177,8 @@ int ATPG::podem(const fptr fault, int &current_backtracks)
 							rl_propagation_lock = nullptr;
 							if (decision_policy && last_policy_decision_sequence != 0)
 								decision_policy->on_backtrack(last_policy_decision_sequence);
+							if (decision_policy && decision_policy->wants_training_events())
+								decision_policy->on_backtrack_pi(decision_tree.front()->name);
 							wpi = decision_tree.front();
 						}
 					}

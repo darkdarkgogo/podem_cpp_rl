@@ -44,9 +44,9 @@
 - Modify: `PODEM/tests/test_nn_all.py`
 
 **Interfaces:**
-- `PathSampleCollector`: Python `run_stuck_at` callbacks storing each selected candidate by decision sequence; `on_backtrack` marks its sequence negative, and `episode_end` marks remaining decisions positive only on detection. Aborted unresolved decisions are excluded.
+- `PathSampleCollector`: Python `run_stuck_at` callbacks store each non-forced candidate by decision sequence; native PI assignment events associate every decision in one backtrace chain with its PI. On PI reversal, mark the entire chain negative. Dead-end chains are negative; remaining chains are positive only on detection. Aborted unresolved decisions are excluded.
 - `run_training(dataset_root, output_dir, *, seed=2026, faults_per_circuit=30, epochs=20) -> dict`: deterministic circuit split, fault selection, fitting, checkpoint selection and native model export.
-- Native model text begins `NN_ALL_PODEM_MODEL_V1`, then `feature_schema`, `hidden_dim 60`, `manifest_sha256`, followed by `mean`, `scale`, `w1`, `b1`, `w2`, `b2` arrays with declared sizes. Depth/CC0/CC1 receive `log1p` before standardization.
+- Native model text begins `NN_ALL_PODEM_MODEL_V1`, then `feature_schema`, `hidden_dim 60`, `manifest_sha256`, `seed`, followed by `mean`, `scale`, `w1`, `b1`, `w2`, `b2` arrays with declared sizes. Depth/CC0/CC1 receive `log1p` before standardization; summary records the model SHA-256.
 
 - [ ] **Step 1: Test that backtracked sequence yields label 0, surviving sequence on a detected fault yields 1, and aborted remaining sequences have no label. Test that a train/holdout split is by whole circuit.**
 - [ ] **Step 2: Run the collector tests and confirm failure due to absent module.**

@@ -57,6 +57,21 @@ public:
     emit_event("backtrack", "", 0, 0, decision_sequence, 0, 0);
   }
 
+  void on_pi_assignment(const std::string &pi_name,
+                        unsigned long first_sequence,
+                        unsigned long last_sequence) override {
+    emit_path_event("pi_assignment", pi_name, first_sequence, last_sequence);
+  }
+
+  void on_backtrack_pi(const std::string &pi_name) override {
+    emit_path_event("backtrack_pi", pi_name, 0, 0);
+  }
+
+  void on_backtrace_dead_end(unsigned long first_sequence,
+                             unsigned long last_sequence) override {
+    emit_path_event("backtrace_dead_end", "", first_sequence, last_sequence);
+  }
+
   void on_backtrace_step(unsigned long decision_sequence) override {
     emit_event("backtrace_step", "", 0, 0, decision_sequence, 0, 0);
   }
@@ -98,6 +113,19 @@ public:
   }
 
 private:
+  void emit_path_event(const char *event, const std::string &pi_name,
+                       unsigned long first_sequence,
+                       unsigned long last_sequence) {
+    if (!wants_training_events_) return;
+    py::gil_scoped_acquire acquire;
+    py::dict data;
+    data["event"] = event;
+    data["pi_name"] = pi_name;
+    data["first_sequence"] = first_sequence;
+    data["last_sequence"] = last_sequence;
+    event_callback_(data);
+  }
+
   void emit_event(const char *event, const std::string &fault_id, int outcome,
                   int backtracks, unsigned long sequence,
                   unsigned long backtrace_steps, unsigned long pi_visits) {

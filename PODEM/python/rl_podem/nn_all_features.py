@@ -74,17 +74,21 @@ def candidate_vector(features: NnAllFeatures, objective: str, candidate: str) ->
 def write_native_features(path: Path, features: NnAllFeatures) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    lines = [
-        NATIVE_FEATURE_FORMAT, f"circuit_hash {features.circuit_hash}",
-        f"gate_count {len(features.names)}",
-    ]
+    rows = []
     for name, kind, level, cc0, cc1, cop in zip(
         features.names, features.gate_types, features.levels,
         features.cc0, features.cc1, features.cop,
     ):
         if any(character.isspace() for character in name):
             raise ValueError(f"Invalid NN-All gate name: {name!r}")
-        lines.append(
+        rows.append(
             f"gate {name} {kind} {level} {cc0:.17g} {cc1:.17g} {cop:.17g}"
         )
+    checksum = 14695981039346656037
+    for byte in ("\n".join(rows) + "\n").encode("utf-8"):
+        checksum = ((checksum ^ byte) * 1099511628211) & 0xFFFFFFFFFFFFFFFF
+    lines = [
+        NATIVE_FEATURE_FORMAT, f"circuit_hash {features.circuit_hash}",
+        f"feature_hash {checksum:016x}", f"gate_count {len(rows)}", *rows,
+    ]
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")

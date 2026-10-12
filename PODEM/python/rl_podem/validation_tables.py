@@ -46,3 +46,34 @@ def build_three_way_row(circuit, scoap, gat, mean):
             ) * 100.0,
         })
     return result
+
+
+def build_four_way_row(circuit, scoap, gat, mean, nn_all):
+    """Extend the established three-way table with the NN-All PODEM run."""
+    result = build_three_way_row(circuit, scoap, gat, mean)
+    baseline = _method_row(scoap, circuit)
+    candidate = _method_row(nn_all, circuit)
+    for method, row in (("scoap", baseline), ("gat", _method_row(gat, circuit)),
+                        ("mean", _method_row(mean, circuit)), ("nn_all", candidate)):
+        result[f"{method}_detected_faults"] = int(row["detected_faults"])
+        result[f"{method}_redundant_faults"] = int(row["redundant_faults"])
+        result[f"{method}_aborted_faults"] = int(row["aborted_faults"])
+    result.update({
+        "nn_all_backtracks": int(candidate["backtracks_total"]),
+        "nn_all_backtrace_steps": int(candidate["backtrace_steps_total"]),
+        "nn_all_runtime_atpg_s": float(candidate["atpg_seconds"]),
+        "nn_all_fault_coverage_pct": float(candidate["fault_coverage"]) * 100.0,
+        "nn_all_backtracks_reduction_pct_vs_scoap": percentage_reduction(
+            baseline["backtracks_total"], candidate["backtracks_total"],
+        ),
+        "nn_all_backtrace_reduction_pct_vs_scoap": percentage_reduction(
+            baseline["backtrace_steps_total"], candidate["backtrace_steps_total"],
+        ),
+        "nn_all_runtime_reduction_pct_vs_scoap": percentage_reduction(
+            baseline["atpg_seconds"], candidate["atpg_seconds"],
+        ),
+        "nn_all_fault_coverage_delta_pp_vs_scoap": (
+            candidate["fault_coverage"] - baseline["fault_coverage"]
+        ) * 100.0,
+    })
+    return result

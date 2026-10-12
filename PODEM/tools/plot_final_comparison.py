@@ -19,6 +19,8 @@ RELATIVE_MODELS = (
 MODEL_COLORS = {
     "scoap_heuristic": "#6B7280",
     "smartatpg_gat_gru": "#2563EB",
+    "smartatpg_mean": "#059669",
+    "nn_all_podem": "#DC2626",
 }
 METRICS = (
     {
@@ -71,6 +73,8 @@ def read_comparison_csv(csv_path):
         reader = csv.DictReader(handle)
         if reader.fieldnames is None:
             raise ValueError(f"Input CSV is empty: {csv_path}")
+        if "model" not in reader.fieldnames:
+            return _read_four_way_csv(reader)
         missing_columns = sorted(REQUIRED_COLUMNS - set(reader.fieldnames))
         if missing_columns:
             raise ValueError(
@@ -151,6 +155,54 @@ def read_comparison_csv(csv_path):
     return circuits, model_order, records
 
 
+def _read_four_way_csv(reader):
+    mapping = (
+        ("scoap", "scoap_heuristic"),
+        ("gat", "smartatpg_gat_gru"),
+        ("mean", "smartatpg_mean"),
+        ("nn_all", "nn_all_podem"),
+    )
+    required = {"circuit"}
+    for prefix, _ in mapping:
+        required.update((
+            f"{prefix}_backtracks", f"{prefix}_backtrace_steps",
+            f"{prefix}_runtime_atpg_s", f"{prefix}_fault_coverage_pct",
+        ))
+    missing = sorted(required - set(reader.fieldnames))
+    if missing:
+        raise ValueError("Four-way CSV is missing required columns: " + ", ".join(missing))
+    circuits = []
+    records = {}
+    for line_number, row in enumerate(reader, start=2):
+        circuit = (row.get("circuit") or "").strip()
+        if not circuit:
+            raise ValueError(f"Line {line_number} has an empty circuit")
+        if circuit == "TOTAL":
+            continue
+        if circuit in circuits:
+            raise ValueError(f"Duplicate circuit on line {line_number}: {circuit}")
+        circuits.append(circuit)
+        for prefix, model in mapping:
+            values = {}
+            for metric, suffix, scale in (
+                ("backtracks", "backtracks", 1),
+                ("backtrace_steps", "backtrace_steps", 1),
+                ("atpg_seconds", "runtime_atpg_s", 1),
+                ("fault_coverage", "fault_coverage_pct", 100),
+            ):
+                try:
+                    value = float(row[f"{prefix}_{suffix}"]) / scale
+                except (TypeError, ValueError) as error:
+                    raise ValueError(f"Invalid {prefix}_{suffix} on line {line_number}") from error
+                if not math.isfinite(value) or value < 0 or (metric == "fault_coverage" and value > 1):
+                    raise ValueError(f"Invalid {prefix}_{suffix} on line {line_number}")
+                values[metric] = value
+            records[(circuit, model)] = values
+    if not circuits:
+        raise ValueError("Four-way CSV has no circuit rows")
+    return circuits, [model for _, model in mapping], records
+
+
 def _load_pyplot():
     try:
         import matplotlib
@@ -164,9 +216,11 @@ def _load_pyplot():
     return plt
 
 
-def models_for_metric(metric):
+def models_for_metric(metric, models=None):
     """Return the model bars shown for one metric."""
-    return RELATIVE_MODELS if metric["relative_to_baseline"] else REQUIRED_MODELS
+    if models is None:
+        return RELATIVE_MODELS if metric["relative_to_baseline"] else REQUIRED_MODELS
+    return tuple(model for model in models if not metric["relative_to_baseline"] or model != BASELINE_MODEL)
 
 
 def metric_values(circuits, model, records, metric):
@@ -187,11 +241,11 @@ def metric_values(circuits, model, records, metric):
     return values
 
 
-def plot_metric(plt, circuits, records, metric, output_path):
+def plot_metric(plt, circuits, records, metric, output_path, models=None):
     """Write one grouped bar chart for a configured metric."""
     figure_width = max(10.0, 0.8 * len(circuits) + 2.5)
     figure, axis = plt.subplots(figsize=(figure_width, 6.0))
-    models = models_for_metric(metric)
+    models = models_for_metric(metric, models)
     group_width = 0.72 if metric["relative_to_baseline"] else 0.82
     bar_width = group_width / len(models)
     centers = list(range(len(circuits)))
@@ -229,8 +283,11 @@ def plot_metric(plt, circuits, records, metric, output_path):
             label="SCOAP heuristic baseline (1.0)",
         )
     else:
-        axis.set_ylim(*metric["ylim"])
-        axis.set_yticks((98.0, 98.5, 99.0, 99.5, 100.0))
+        if len(models) > len(REQUIRED_MODELS):
+            axis.set_ylim(0.0, 100.0)
+        else:
+            axis.set_ylim(*metric["ylim"])
+            axis.set_yticks((98.0, 98.5, 99.0, 99.5, 100.0))
     axis.legend(loc="best", frameon=False)
     figure.tight_layout()
     figure.savefig(output_path, dpi=300, bbox_inches="tight")
@@ -254,19 +311,20 @@ def warn_for_clipped_coverage(records):
 def generate_plots(csv_path, output_dir=None):
     """Read one final comparison CSV and generate all four plot files."""
     csv_path = Path(csv_path).resolve()
-    circuits, _models, records = read_comparison_csv(csv_path)
+    circuits, models, records = read_comparison_csv(csv_path)
     output_dir = (
         Path(output_dir).resolve() if output_dir is not None else csv_path.parent
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     plt = _load_pyplot()
 
-    warn_for_clipped_coverage(records)
+    if len(models) == len(REQUIRED_MODELS):
+        warn_for_clipped_coverage(records)
 
     output_paths = []
     for metric in METRICS:
         output_path = output_dir / metric["filename"]
-        plot_metric(plt, circuits, records, metric, output_path)
+        plot_metric(plt, circuits, records, metric, output_path, models)
         output_paths.append(output_path)
     return output_paths
 

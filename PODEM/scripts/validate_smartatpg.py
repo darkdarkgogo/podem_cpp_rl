@@ -1,4 +1,4 @@
-"""Run fresh SCOAP/GAT/Mean SmartATPG validation."""
+"""Run fresh SCOAP/GAT/Mean validation, optionally adding NN-All PODEM."""
 
 from pathlib import Path
 import sys

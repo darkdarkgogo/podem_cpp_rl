@@ -64,6 +64,12 @@ public:
   }
   virtual void on_episode_start(const std::string &fault_id) {}
   virtual void on_backtrack(unsigned long decision_sequence) {}
+  virtual void on_pi_assignment(const std::string &pi_name,
+                                unsigned long first_sequence,
+                                unsigned long last_sequence) {}
+  virtual void on_backtrack_pi(const std::string &pi_name) {}
+  virtual void on_backtrace_dead_end(unsigned long first_sequence,
+                                     unsigned long last_sequence) {}
   virtual void on_backtrace_step(unsigned long decision_sequence) {}
   virtual void on_pi_not_done(unsigned long decision_sequence, int backtracks,
                               unsigned long pi_visits) {}
