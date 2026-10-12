@@ -7,8 +7,8 @@ import math
 from .smartatpg_features import circuit_hash, load_circuit_graph
 
 
-FEATURE_SCHEMA = "NN_ALL_PODEM_11D_V1"
-NATIVE_FEATURE_FORMAT = "NN_ALL_PODEM_FEATURES_V1"
+FEATURE_SCHEMA = "NN_ALL_PODEM_PAPER_12D_V2"
+NATIVE_FEATURE_FORMAT = "NN_ALL_PODEM_FEATURES_V2"
 PARENT_TYPES = ("AND", "NAND", "OR", "NOR", "PI", "BUF", "NOT")
 
 
@@ -18,6 +18,7 @@ class NnAllFeatures:
     names: tuple[str, ...]
     gate_types: tuple[str, ...]
     levels: tuple[int, ...]
+    ldpi: tuple[float, ...]
     cc0: tuple[float, ...]
     cc1: tuple[float, ...]
     cop: tuple[float, ...]
@@ -29,6 +30,24 @@ class NnAllFeatures:
 
 def load_nn_all_features(path: Path) -> NnAllFeatures:
     graph = load_circuit_graph(path)
+    # The paper groups LDPI and SCOAP values by shortest PI distance (SDPI).
+    shortest = []
+    for fanins in graph.fanins:
+        shortest.append(0 if not fanins else 1 + min(shortest[index] for index in fanins))
+    sdpi = tuple(shortest)
+    ldpi = tuple(graph.levels)
+
+    def normalize_within_sdpi(values):
+        bounds = {}
+        for level, value in zip(sdpi, values):
+            low, high = bounds.get(level, (value, value))
+            bounds[level] = min(low, value), max(high, value)
+        return tuple(
+            (value - bounds[level][0]) / (bounds[level][1] - bounds[level][0])
+            if bounds[level][1] > bounds[level][0] else 0.0
+            for level, value in zip(sdpi, values)
+        )
+
     cop = []
     for kind, fanins in zip(graph.gate_types, graph.fanins):
         inputs = [cop[index] for index in fanins]
@@ -50,10 +69,10 @@ def load_nn_all_features(path: Path) -> NnAllFeatures:
             raise ValueError(f"Invalid COP probability for {graph.names[len(cop)]}")
         cop.append(value)
     return NnAllFeatures(
-        circuit_hash(path), graph.names, graph.gate_types, graph.levels,
-        graph.cc0, graph.cc1, tuple(cop),
+        circuit_hash(path), graph.names, graph.gate_types, sdpi,
+        normalize_within_sdpi(ldpi), normalize_within_sdpi(graph.cc0),
+        normalize_within_sdpi(graph.cc1), tuple(cop),
     )
-
 
 def candidate_vector(features: NnAllFeatures, objective: str, candidate: str) -> tuple[float, ...]:
     indices = features.indices
@@ -62,11 +81,12 @@ def candidate_vector(features: NnAllFeatures, objective: str, candidate: str) ->
     if parent not in PARENT_TYPES:
         raise ValueError(f"Unsupported NN-All objective type: {parent}")
     vector = (
-        float(features.levels[index]), float(features.cc0[index]),
-        float(features.cc1[index]), float(features.cop[index]),
-        *(float(parent == kind) for kind in PARENT_TYPES),
+        float(features.ldpi[index]), float(features.levels[index]),
+        float(features.cc0[index]), float(features.cc1[index]),
+        float(features.cop[index]),
+        *(float(parent == gate_type) for gate_type in PARENT_TYPES),
     )
-    if len(vector) != 11 or not all(math.isfinite(value) for value in vector):
+    if len(vector) != 12 or not all(math.isfinite(value) for value in vector):
         raise ValueError("Invalid NN-All candidate vector")
     return vector
 
@@ -75,14 +95,14 @@ def write_native_features(path: Path, features: NnAllFeatures) -> None:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     rows = []
-    for name, kind, level, cc0, cc1, cop in zip(
-        features.names, features.gate_types, features.levels,
+    for name, kind, level, ldpi, cc0, cc1, cop in zip(
+        features.names, features.gate_types, features.levels, features.ldpi,
         features.cc0, features.cc1, features.cop,
     ):
         if any(character.isspace() for character in name):
             raise ValueError(f"Invalid NN-All gate name: {name!r}")
         rows.append(
-            f"gate {name} {kind} {level} {cc0:.17g} {cc1:.17g} {cop:.17g}"
+            f"gate {name} {kind} {ldpi:.17g} {level} {cc0:.17g} {cc1:.17g} {cop:.17g}"
         )
     checksum = 14695981039346656037
     for byte in ("\n".join(rows) + "\n").encode("utf-8"):

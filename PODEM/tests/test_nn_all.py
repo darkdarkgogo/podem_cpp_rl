@@ -64,12 +64,37 @@ class NnAllFeaturesTest(unittest.TestCase):
             self.assertEqual(features.cop[index["r"]], 0.75)
             self.assertEqual(
                 candidate_vector(features, "x", "a"),
-                (0.0, 1.0, 1.0, 0.5, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+                (0.0, 0.0, 0.0, 0.0, 0.5, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
             )
-            self.assertEqual(len(candidate_vector(features, "z", "x")), 11)
+            self.assertEqual(len(candidate_vector(features, "z", "x")), 12)
+            self.assertEqual(candidate_vector(features, "z", "x")[:5],
+                             (0.0, 1.0, 0.0, 1.0, 0.25))
+            self.assertEqual(candidate_vector(features, "z", "x")[7], 1.0)
             artifact = Path(temporary) / "features.txt"
             write_native_features(artifact, features)
-            self.assertIn("gate x AND 1", artifact.read_text(encoding="utf-8"))
+            self.assertIn("gate x AND 0 1", artifact.read_text(encoding="utf-8"))
+
+    def test_paper_normalization_is_within_sdpi_and_not_log_standardization(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            bench = Path(temporary) / "mixed_depth.bench"
+            bench.write_text("""INPUT(a)
+INPUT(b)
+INPUT(c)
+u = AND(a, b)
+v = AND(u, c)
+w = OR(a, b)
+OUTPUT(v)
+OUTPUT(w)
+""", encoding="utf-8")
+            features = load_nn_all_features(bench)
+            index = features.indices
+            self.assertEqual(features.levels[index["u"]], 1)
+            self.assertEqual(features.levels[index["v"]], 1)
+            self.assertEqual(features.ldpi[index["u"]], 0.0)
+            self.assertEqual(features.ldpi[index["v"]], 1.0)
+            self.assertEqual(features.cc1[index["v"]], 1.0)
+            self.assertEqual(features.cop[index["v"]], 0.125)
+            self.assertEqual(candidate_vector(features, "v", "u")[5], 1.0)
 
     def test_collector_labels_backtracked_and_detected_paths(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -148,8 +173,8 @@ class NnAllFeaturesTest(unittest.TestCase):
 
     def test_weighted_full_pass_fits_all_samples_and_exports_final_weights(self):
         samples = np.array(
-            [([1.0] * 11) + [1.0]] * 5
-            + [([0.0] * 11) + [0.0]] * 2,
+            [([1.0] * 12) + [1.0]] * 5
+            + [([0.0] * 12) + [0.0]] * 2,
             dtype=np.float32,
         )
         model, loss, unique = _fit(samples, 2026, epochs=1)
@@ -158,21 +183,21 @@ class NnAllFeaturesTest(unittest.TestCase):
         self.assertEqual(unique, 2)
         with torch.no_grad():
             raw_loss = torch.nn.functional.binary_cross_entropy(
-                model(torch.from_numpy(samples[:, :11].copy())),
-                torch.from_numpy(samples[:, 11].copy()),
+                model(torch.from_numpy(samples[:, :12].copy())),
+                torch.from_numpy(samples[:, 12].copy()),
             )
         self.assertAlmostEqual(loss, float(raw_loss), places=6)
         expanded = copy.deepcopy(model)
         compressed = copy.deepcopy(model)
         expanded_loss = torch.nn.functional.binary_cross_entropy(
-            expanded(torch.from_numpy(samples[:, :11].copy())),
-            torch.from_numpy(samples[:, 11].copy()),
+            expanded(torch.from_numpy(samples[:, :12].copy())),
+            torch.from_numpy(samples[:, 12].copy()),
         )
         rows, frequencies = np.unique(samples, axis=0, return_counts=True)
         compressed_loss = (
             torch.nn.functional.binary_cross_entropy(
-                compressed(torch.from_numpy(rows[:, :11].copy())),
-                torch.from_numpy(rows[:, 11].copy()), reduction="none",
+                compressed(torch.from_numpy(rows[:, :12].copy())),
+                torch.from_numpy(rows[:, 12].copy()), reduction="none",
             ) * torch.from_numpy(frequencies.astype(np.float32))
         ).sum() / len(samples)
         expanded_loss.backward()
@@ -185,8 +210,8 @@ class NnAllFeaturesTest(unittest.TestCase):
             artifact = Path(temporary) / "model.txt"
             export_native_model(artifact, model, "a" * 64)
             content = artifact.read_text(encoding="utf-8")
-            self.assertTrue(content.startswith("NN_ALL_PODEM_MODEL_V1\n"))
-            self.assertIn("w1 660 ", content)
+            self.assertTrue(content.startswith("NN_ALL_PODEM_MODEL_V2\n"))
+            self.assertIn("w1 720 ", content)
 
     def test_training_config_uses_paper_circuits_and_all_paths_without_holdout(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -201,7 +226,7 @@ class NnAllFeaturesTest(unittest.TestCase):
                 index = circuits.index(circuit)
                 result = type("Collected", (), {})()
                 result.samples = [
-                    ((float(index + label),) * 11, 1, "fault", label)
+                    ((float(index + label),) * 12, 1, "fault", label)
                     for label in (0, 1)
                 ]
                 result.excluded = 0
@@ -251,6 +276,12 @@ class NnAllFeaturesTest(unittest.TestCase):
             for vector, expected in zip(vectors, expected_scores):
                 actual = cpp_podem.score_nn_all_candidate(str(artifact), vector)
                 self.assertAlmostEqual(actual, expected, places=5)
+            old_artifact = Path(temporary) / "old_model.txt"
+            old_artifact.write_text(artifact.read_text(encoding="utf-8").replace(
+                "NN_ALL_PODEM_MODEL_V2", "NN_ALL_PODEM_MODEL_V1", 1,
+            ), encoding="utf-8")
+            with self.assertRaisesRegex(Exception, "NN_ALL_PODEM_MODEL_V2"):
+                cpp_podem.score_nn_all_candidate(str(old_artifact), vectors[0])
             fault_ids = [
                 entry["fault_id"]
                 for entry in cpp_podem.catalog_stuck_at(str(bench))["faults"][:3]
@@ -291,7 +322,7 @@ class NnAllFeaturesTest(unittest.TestCase):
             model_hash = hashlib.sha256((root / "model_final.txt").read_bytes()).hexdigest()
             (root / "train_summary.json").write_text(json.dumps({
                 "format": TRAINING_FORMAT,
-                "feature_schema": "NN_ALL_PODEM_11D_V1",
+                "feature_schema": "NN_ALL_PODEM_PAPER_12D_V2",
                 "dataset_root": str(root), "seed": 2026,
                 "manifest_sha256": digest, "model_sha256": model_hash,
                 "circuits": 2, "training_circuits": ["c1908.bench", "c2670.bench"],
@@ -327,7 +358,7 @@ class NnAllFeaturesTest(unittest.TestCase):
                 _load_nn_all_model(root, root, 2026)
             (root / "train_summary.json").write_text(json.dumps({
                 "format": TRAINING_FORMAT,
-                "feature_schema": "NN_ALL_PODEM_11D_V1", "dataset_root": str(root),
+                "feature_schema": "NN_ALL_PODEM_PAPER_12D_V2", "dataset_root": str(root),
                 "seed": 2026, "manifest_sha256": "0" * 64,
                 "model_sha256": model_hash, "circuits": 2,
                 "training_circuits": ["c1908.bench", "c2670.bench"],
@@ -373,7 +404,7 @@ class NnAllFeaturesTest(unittest.TestCase):
             export_native_model(nn_dir / "model_final.txt", NnAllClassifier(), digest)
             model_hash = hashlib.sha256((nn_dir / "model_final.txt").read_bytes()).hexdigest()
             (nn_dir / "train_summary.json").write_text(json.dumps({
-                "format": TRAINING_FORMAT, "feature_schema": "NN_ALL_PODEM_11D_V1",
+                "format": TRAINING_FORMAT, "feature_schema": "NN_ALL_PODEM_PAPER_12D_V2",
                 "dataset_root": str(dataset), "seed": 2026,
                 "manifest_sha256": digest, "model_sha256": model_hash,
                 "circuits": 2, "training_circuits": ["c1908.bench", "c2670.bench"],

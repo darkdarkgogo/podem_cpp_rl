@@ -15,12 +15,12 @@ from .nn_all_features import FEATURE_SCHEMA, candidate_vector, load_nn_all_featu
 from .native_io import _native_circuit_path
 
 
-MODEL_FORMAT = "NN_ALL_PODEM_MODEL_V1"
-TRAINING_FORMAT = "NN_ALL_PODEM_TRAINING_V4_PAPER_CIRCUITS_30000_EPOCHS"
+MODEL_FORMAT = "NN_ALL_PODEM_MODEL_V2"
+TRAINING_FORMAT = "NN_ALL_PODEM_TRAINING_V5_PAPER_12D_30000_EPOCHS"
 DEFAULT_SEED = 2026
 PAPER_TRAIN_CIRCUITS = ("c1908.bench", "c2670.bench")
 TRAINING_EPOCHS = 30_000
-SAMPLE_WIDTH = 12
+SAMPLE_WIDTH = 13
 
 
 class PathSampleCollector:
@@ -98,17 +98,12 @@ class NnAllClassifier(torch.nn.Module):
     def __init__(self):
         super().__init__()
         self.network = torch.nn.Sequential(
-            torch.nn.Linear(11, 60), torch.nn.Sigmoid(),
+            torch.nn.Linear(12, 60), torch.nn.Sigmoid(),
             torch.nn.Linear(60, 1), torch.nn.Sigmoid(),
         )
-        self.register_buffer("feature_mean", torch.zeros(11))
-        self.register_buffer("feature_scale", torch.ones(11))
 
     def forward(self, vectors):
-        transformed = torch.cat((torch.log1p(vectors[..., :3]), vectors[..., 3:]), dim=-1)
-        return self.network(
-            (transformed - self.feature_mean) / self.feature_scale
-        ).squeeze(-1)
+        return self.network(vectors).squeeze(-1)
 
 
 def _sample_fault_ids(circuit_path):
@@ -144,28 +139,16 @@ def _fit(samples, seed, epochs=TRAINING_EPOCHS):
     """Train with exact multiplicity-weighted BCE, then keep final weights."""
     if epochs < 1:
         raise ValueError("NN-All epochs must be positive")
-    counts = Counter(int(value) for value in samples[:, 11])
+    counts = Counter(int(value) for value in samples[:, 12])
     _check_labels(counts)
     torch.manual_seed(seed)
     model = NnAllClassifier()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-    total = np.zeros(11, dtype=np.float64)
-    total_squared = np.zeros(11, dtype=np.float64)
-    for start in range(0, len(samples), 8192):
-        vectors = np.array(samples[start:start + 8192, :11], dtype=np.float64)
-        vectors[:, :3] = np.log1p(vectors[:, :3])
-        total += vectors.sum(axis=0)
-        total_squared += np.square(vectors).sum(axis=0)
-    mean = total / len(samples)
-    scale = np.sqrt(np.maximum(total_squared / len(samples) - np.square(mean), 0.0))
-    with torch.no_grad():
-        model.feature_mean.copy_(torch.from_numpy(mean.astype(np.float32)))
-        model.feature_scale.copy_(torch.from_numpy(np.maximum(scale, 1.0).astype(np.float32)))
     # Repeated backtrace paths have identical static features. Their counts
     # preserve the BCE objective while making 30,000 full passes practical.
     unique_rows, multiplicities = np.unique(samples, axis=0, return_counts=True)
-    vectors = torch.from_numpy(unique_rows[:, :11].copy())
-    labels = torch.from_numpy(unique_rows[:, 11].copy())
+    vectors = torch.from_numpy(unique_rows[:, :12].copy())
+    labels = torch.from_numpy(unique_rows[:, 12].copy())
     weights = torch.from_numpy(multiplicities.astype(np.float32))
     denominator = float(len(samples))
     model.train()
@@ -197,8 +180,6 @@ def export_native_model(path, model, manifest_hash, seed=DEFAULT_SEED):
     first = model.network[0]
     second = model.network[2]
     arrays = {
-        "mean": model.feature_mean.detach().tolist(),
-        "scale": model.feature_scale.detach().tolist(),
         "w1": first.weight.detach().flatten().tolist(),
         "b1": first.bias.detach().flatten().tolist(),
         "w2": second.weight.detach().flatten().tolist(),
@@ -237,8 +218,8 @@ def run_training(dataset_root, output_dir, *, seed=DEFAULT_SEED):
                 collector = _collect_circuit(circuit_path, fault_ids, file_seed)
                 rows = np.empty((len(collector.samples), SAMPLE_WIDTH), dtype="<f4")
                 for index, (vector, level, _fault_id, label) in enumerate(collector.samples):
-                    rows[index, :11] = vector
-                    rows[index, 11] = label
+                    rows[index, :12] = vector
+                    rows[index, 12] = label
                     counts[label] += 1
                     levels[level] += 1
                 stream.write(rows.tobytes())

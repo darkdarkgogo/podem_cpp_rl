@@ -631,9 +631,9 @@ py::list run_native_nn_all_validation(
 
 float score_nn_all_candidate(const std::string &model_path,
                              const std::vector<float> &features) {
-  if (features.size() != 11)
-    throw std::invalid_argument("NN-All candidate must have 11 features");
-  std::array<float, 11> values{};
+  if (features.size() != 12)
+    throw std::invalid_argument("NN-All candidate must have 12 features");
+  std::array<float, 12> values{};
   std::copy(features.begin(), features.end(), values.begin());
   return smartatpg::NnAllModel(model_path).score(values);
 }

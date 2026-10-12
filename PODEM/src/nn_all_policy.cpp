@@ -75,10 +75,10 @@ int type_index(const std::string &name) {
 NnAllModel::NnAllModel(const std::string &path) {
   std::ifstream input = open_text(path);
   if (!input.good()) throw std::runtime_error("Cannot open NN-All model: " + path);
-  expect_key(input, "NN_ALL_PODEM_MODEL_V1");
+  expect_key(input, "NN_ALL_PODEM_MODEL_V2");
   expect_key(input, "feature_schema");
   std::string schema;
-  if (!(input >> schema) || schema != "NN_ALL_PODEM_11D_V1")
+  if (!(input >> schema) || schema != "NN_ALL_PODEM_PAPER_12D_V2")
     throw std::runtime_error("NN-All feature schema mismatch");
   expect_key(input, "hidden_dim");
   int hidden_dim = 0;
@@ -91,34 +91,27 @@ NnAllModel::NnAllModel(const std::string &path) {
   int seed = 0;
   if (!(input >> seed) || seed < 0)
     throw std::runtime_error("NN-All seed is invalid");
-  read_array(input, "mean", mean_);
-  read_array(input, "scale", scale_);
   read_array(input, "w1", w1_);
   read_array(input, "b1", b1_);
   read_array(input, "w2", w2_);
   std::array<float, 1> final_bias{};
   read_array(input, "b2", final_bias);
   b2_ = final_bias[0];
-  for (float value : scale_)
-    if (value <= 0) throw std::runtime_error("NN-All feature scale must be positive");
   std::string trailing;
   if (input >> trailing) throw std::runtime_error("Trailing NN-All model data");
 }
 
-float NnAllModel::score(const std::array<float, 11> &features) const {
-  std::array<float, 11> normalized{};
-  for (std::size_t index = 0; index < 11; ++index) {
+float NnAllModel::score(const std::array<float, 12> &features) const {
+  for (std::size_t index = 0; index < 12; ++index) {
     float value = features[index];
-    if (!std::isfinite(value) || (index < 3 && value < 0))
+    if (!std::isfinite(value) || value < 0 || (index != 1 && value > 1))
       throw std::runtime_error("Invalid NN-All candidate feature");
-    if (index < 3) value = std::log1p(value);
-    normalized[index] = (value - mean_[index]) / scale_[index];
   }
   float output = b2_;
   for (std::size_t hidden = 0; hidden < 60; ++hidden) {
     float value = b1_[hidden];
-    for (std::size_t input = 0; input < 11; ++input)
-      value += normalized[input] * w1_[hidden * 11 + input];
+    for (std::size_t input = 0; input < 12; ++input)
+      value += features[input] * w1_[hidden * 12 + input];
     output += sigmoid(value) * w2_[hidden];
   }
   return sigmoid(output);
@@ -132,7 +125,7 @@ NnAllPolicy::NnAllPolicy(
   std::ifstream input = open_text(features_path);
   if (!input.good())
     throw std::runtime_error("Cannot open NN-All features: " + features_path);
-  expect_key(input, "NN_ALL_PODEM_FEATURES_V1");
+  expect_key(input, "NN_ALL_PODEM_FEATURES_V2");
   expect_key(input, "circuit_hash");
   std::string hash;
   if (!(input >> hash) || hash != expected_circuit_hash)
@@ -167,7 +160,7 @@ NnAllPolicy::NnAllPolicy(
     expect_key(row_input, "gate");
     std::string name, kind;
     Gate gate;
-    if (!(row_input >> name >> kind >> gate.depth >> gate.cc0 >> gate.cc1 >> gate.cop))
+    if (!(row_input >> name >> kind >> gate.ldpi >> gate.sdpi >> gate.cc0 >> gate.cc1 >> gate.cop))
       throw std::runtime_error("Malformed NN-All feature row");
     std::string extra;
     if (row_input >> extra)
@@ -176,9 +169,10 @@ NnAllPolicy::NnAllPolicy(
     if (found == indices.end() || seen[found->second])
       throw std::runtime_error("NN-All feature gate name mismatch");
     gate.type = type_index(kind);
-    if (!std::isfinite(gate.depth) || !std::isfinite(gate.cc0) ||
+    if (!std::isfinite(gate.ldpi) || !std::isfinite(gate.sdpi) || !std::isfinite(gate.cc0) ||
         !std::isfinite(gate.cc1) || !std::isfinite(gate.cop) ||
-        gate.depth < 0 || gate.cc0 < 0 || gate.cc1 < 0 ||
+        gate.ldpi < 0 || gate.ldpi > 1 || gate.sdpi < 0 ||
+        gate.cc0 < 0 || gate.cc0 > 1 || gate.cc1 < 0 || gate.cc1 > 1 ||
         gate.cop < 0 || gate.cop > 1)
       throw std::runtime_error("Invalid NN-All gate feature");
     gates_[found->second] = gate;
@@ -212,9 +206,9 @@ int NnAllPolicy::select(const DecisionRequest &request) {
     float score = 0;
     if (hit == score_cache_.end()) {
       const Gate &candidate = gates_[candidate_id];
-      std::array<float, 11> vector{{candidate.depth, candidate.cc0,
-          candidate.cc1, candidate.cop, 0, 0, 0, 0, 0, 0, 0}};
-      vector[4 + parent.type] = 1.0f;
+      std::array<float, 12> vector{{candidate.ldpi, candidate.sdpi,
+          candidate.cc0, candidate.cc1, candidate.cop, 0, 0, 0, 0, 0, 0, 0}};
+      vector[5 + parent.type] = 1.0f;
       score = model_.score(vector);
       score_cache_.emplace(key, score);
     } else {

@@ -1,5 +1,7 @@
 # NN-All PODEM Baseline Implementation Plan
 
+> Feature correction (2026-10-12): the user's later instruction supersedes the historical 11D feature steps below. The current implementation follows the paper's 12D feature list (LDPI, SDPI, CC0, CC1, COP, seven gate-type bits), normalizes LDPI/CC0/CC1 within SDPI groups, and applies no additional `log1p` or dataset-wide standardization. Model and native feature formats are versioned to reject old 11D artifacts. See the updated design and `PODEM/RL_GUIDE.md` for the implemented contract.
+
 > Training protocol update (2026-10-12): the later user instruction supersedes the train/holdout, reservoir, and best-checkpoint steps below. The implemented baseline is configured to train the complete c1908 and c2670 ISCAS85 circuits, using all cataloged stuck-at faults and all collected paths for 30,000 epochs, then export final weights; see `PODEM/RL_GUIDE.md`.
 
 > **For agentic workers:** Implement the tasks below in order, checking each box after its test cycle. The current user requested inline execution in this chat; do not dispatch subagents.

@@ -13,13 +13,11 @@ namespace smartatpg {
 class NnAllModel {
 public:
   explicit NnAllModel(const std::string &path);
-  float score(const std::array<float, 11> &features) const;
+  float score(const std::array<float, 12> &features) const;
   const std::string &manifest_hash() const { return manifest_hash_; }
 
 private:
-  std::array<float, 11> mean_{};
-  std::array<float, 11> scale_{};
-  std::array<float, 660> w1_{};
+  std::array<float, 720> w1_{};
   std::array<float, 60> b1_{};
   std::array<float, 60> w2_{};
   float b2_ = 0;
@@ -41,7 +39,8 @@ public:
 private:
   struct Gate {
     int type = -1;
-    float depth = 0;
+    float ldpi = 0;
+    float sdpi = 0;
     float cc0 = 0;
     float cc1 = 0;
     float cop = 0;

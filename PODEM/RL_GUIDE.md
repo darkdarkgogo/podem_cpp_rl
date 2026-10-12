@@ -43,7 +43,7 @@ python3 scripts/validate_smartatpg.py
 
 ## NN-All PODEM baseline
 
-NN-All 单独训练，只读取 `data/nn_all_paper_train/c1908.bench` 和 `c2670.bench` 两份完整 ISCAS85 电路，不复用 GAT-GRU 或 Mean 的权重。默认 seed 为 2026，对两份电路遍历完整 stuck-at 故障目录。原始 BENCH 及规范化后的输入都保存在 `data/nn_all_paper_train`；来源和哈希见该目录的 README。候选输入由层级、CC0、CC1、COP 概率和父门类型的 7 维 one-hot 构成；网络为 11→60→1 sigmoid，在 PODEM 回溯的每一层为合法候选打分。
+NN-All 单独训练，只读取 `data/nn_all_paper_train/c1908.bench` 和 `c2670.bench` 两份完整 ISCAS85 电路，不复用 GAT-GRU 或 Mean 的权重。默认 seed 为 2026，对两份电路遍历完整 stuck-at 故障目录。原始 BENCH 及规范化后的输入都保存在 `data/nn_all_paper_train`；来源和哈希见该目录的 README。按论文 §3.2.2，候选输入为 12 维：LDPI、SDPI、SCOAP CC0、SCOAP CC1、COP 概率和当前回溯门类型的 7 维 one-hot；门类型口径与作者公开推理源码一致。LDPI 和两个 SCOAP 值在每个电路的相同 SDPI 线路内分别作 min-max 归一化；COP 保持原概率，SDPI 保持原层级，不再施加 `log1p` 或训练集全局标准化。论文只指定按 SDPI 分组归一化至 [0,1]，没有写出具体公式；这里以 min-max 落实。网络为 12→60→1 sigmoid，在 PODEM 回溯的每一层为合法候选打分。旧的 11 维模型与特征文件格式均不兼容，验证会拒绝加载。
 
 所有收集到的正负路径样本都参与训练，不划分留出电路，也不截断每类样本。训练使用论文的普通 BCE 和 30,000 个 epoch；相同特征与标签的重复样本按出现次数加权，计算出的全样本 BCE 与逐条计算相同。完成最后一轮后直接保存 `model_final.txt`，没有挑选 checkpoint 的步骤。样本暂存到磁盘以控制内存；`train_summary.json` 记录路径数量、层级分布、训练损失和模型 SHA-256。
 
