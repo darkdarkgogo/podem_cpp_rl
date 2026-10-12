@@ -1,6 +1,6 @@
 # NN-All PODEM Baseline Implementation Plan
 
-> Training protocol update (2026-10-12): the later user instruction supersedes the train/holdout, reservoir, and best-checkpoint steps below. The implemented baseline trains the complete c1908 and c2670 ISCAS85 circuits, using all cataloged stuck-at faults and all collected paths for one epoch, then exports final weights; see `PODEM/RL_GUIDE.md`.
+> Training protocol update (2026-10-12): the later user instruction supersedes the train/holdout, reservoir, and best-checkpoint steps below. The implemented baseline is configured to train the complete c1908 and c2670 ISCAS85 circuits, using all cataloged stuck-at faults and all collected paths for 30,000 epochs, then export final weights; see `PODEM/RL_GUIDE.md`.
 
 > **For agentic workers:** Implement the tasks below in order, checking each box after its test cycle. The current user requested inline execution in this chat; do not dispatch subagents.
 
@@ -47,12 +47,12 @@
 
 **Interfaces:**
 - `PathSampleCollector`: Python `run_stuck_at` callbacks store each non-forced candidate by decision sequence; native PI assignment events associate every decision in one backtrace chain with its PI. On PI reversal, mark the entire chain negative. Dead-end chains are negative; remaining chains are positive only on detection. Aborted unresolved decisions are excluded.
-- `run_training(dataset_root, output_dir, *, seed=2026) -> dict`: use complete c1908 and c2670, all cataloged faults and collected paths, one epoch of fitting, and final native model export.
+- `run_training(dataset_root, output_dir, *, seed=2026) -> dict`: use complete c1908 and c2670, all cataloged faults and collected paths, 30,000 epochs of fitting, and final native model export.
 - Native model text begins `NN_ALL_PODEM_MODEL_V1`, then `feature_schema`, `hidden_dim 60`, `manifest_sha256`, `seed`, followed by `mean`, `scale`, `w1`, `b1`, `w2`, `b2` arrays with declared sizes. Depth/CC0/CC1 receive `log1p` before standardization; summary records the model SHA-256.
 
 - [ ] **Step 1: Test that backtracked sequence yields label 0, surviving sequence on a detected fault yields 1, and aborted remaining sequences have no label. Test that both paper training circuits and all collected paths are used.**
 - [ ] **Step 2: Run the collector tests and confirm failure due to absent module.**
-- [ ] **Step 3: Implement full fault collection from `catalog_stuck_at`, event attribution, one epoch of binary cross-entropy training of `torch.nn.Sequential(Linear(11,60), Sigmoid(), Linear(60,1), Sigmoid())`, final weight export and metadata. Reject empty or single-class data.**
+- [ ] **Step 3: Implement full fault collection from `catalog_stuck_at`, event attribution, 30,000 epochs of binary cross-entropy training of `torch.nn.Sequential(Linear(11,60), Sigmoid(), Linear(60,1), Sigmoid())`, final weight export and metadata. Reject empty or single-class data.**
 - [ ] **Step 4: Run collector/model tests and a bounded fixture command with `--max-circuits` for smoke. Confirm model and summary files load. Commit the task.**
 
 ### Task 3: Native NN-All decision policy

@@ -36,7 +36,9 @@ from .validation_core import (
 )
 from .validation_tables import build_four_way_row, build_three_way_row
 from .nn_all_features import FEATURE_SCHEMA, load_nn_all_features, write_native_features
-from .nn_all_training import MODEL_FORMAT, TRAINING_FORMAT, PAPER_TRAIN_CIRCUITS
+from .nn_all_training import (
+    MODEL_FORMAT, TRAINING_FORMAT, PAPER_TRAIN_CIRCUITS, TRAINING_EPOCHS,
+)
 from .native_io import _native_circuit_path
 
 
@@ -257,8 +259,8 @@ def _load_nn_all_model(run_dir, dataset_root, seed):
     summary = _read_json(run_dir / "train_summary.json", "NN-All training summary")
     if summary.get("format") != TRAINING_FORMAT:
         raise ValueError("Incompatible NN-All training summary")
-    if summary.get("epochs") != 1 or summary.get("checkpoint_policy") != "final_epoch":
-        raise ValueError("NN-All training must use one epoch and final weights")
+    if summary.get("epochs") != TRAINING_EPOCHS or summary.get("checkpoint_policy") != "final_epoch":
+        raise ValueError("NN-All training must use 30,000 epochs and final weights")
     if (summary.get("training_circuits") != list(PAPER_TRAIN_CIRCUITS)
             or summary.get("fault_selection") != "all_catalog_stuck_at"):
         raise ValueError("NN-All paper training circuit or fault scope mismatch")

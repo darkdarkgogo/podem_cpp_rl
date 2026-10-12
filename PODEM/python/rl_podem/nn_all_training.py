@@ -16,11 +16,11 @@ from .native_io import _native_circuit_path
 
 
 MODEL_FORMAT = "NN_ALL_PODEM_MODEL_V1"
-TRAINING_FORMAT = "NN_ALL_PODEM_TRAINING_V3_PAPER_CIRCUITS_SINGLE_EPOCH"
+TRAINING_FORMAT = "NN_ALL_PODEM_TRAINING_V4_PAPER_CIRCUITS_30000_EPOCHS"
 DEFAULT_SEED = 2026
 PAPER_TRAIN_CIRCUITS = ("c1908.bench", "c2670.bench")
+TRAINING_EPOCHS = 30_000
 SAMPLE_WIDTH = 12
-BATCH_SIZE = 512
 
 
 class PathSampleCollector:
@@ -140,8 +140,10 @@ def _check_labels(counts):
         )
 
 
-def _fit(samples, seed):
-    """Make one training pass over every collected path, then keep final weights."""
+def _fit(samples, seed, epochs=TRAINING_EPOCHS):
+    """Train with exact multiplicity-weighted BCE, then keep final weights."""
+    if epochs < 1:
+        raise ValueError("NN-All epochs must be positive")
     counts = Counter(int(value) for value in samples[:, 11])
     _check_labels(counts)
     torch.manual_seed(seed)
@@ -159,19 +161,34 @@ def _fit(samples, seed):
     with torch.no_grad():
         model.feature_mean.copy_(torch.from_numpy(mean.astype(np.float32)))
         model.feature_scale.copy_(torch.from_numpy(np.maximum(scale, 1.0).astype(np.float32)))
-    generator = torch.Generator().manual_seed(seed)
-    loss_sum = 0.0
+    # Repeated backtrace paths have identical static features. Their counts
+    # preserve the BCE objective while making 30,000 full passes practical.
+    unique_rows, multiplicities = np.unique(samples, axis=0, return_counts=True)
+    vectors = torch.from_numpy(unique_rows[:, :11].copy())
+    labels = torch.from_numpy(unique_rows[:, 11].copy())
+    weights = torch.from_numpy(multiplicities.astype(np.float32))
+    denominator = float(len(samples))
     model.train()
-    for batch in torch.randperm(len(samples), generator=generator).split(BATCH_SIZE):
-        rows = np.asarray(samples[batch.numpy()], dtype=np.float32)
-        vectors = torch.from_numpy(rows[:, :11].copy())
-        labels = torch.from_numpy(rows[:, 11].copy())
+    for epoch in range(1, epochs + 1):
         optimizer.zero_grad(set_to_none=True)
-        loss = torch.nn.functional.binary_cross_entropy(model(vectors), labels)
+        loss = (
+            torch.nn.functional.binary_cross_entropy(
+                model(vectors), labels, reduction="none",
+            ) * weights
+        ).sum() / denominator
         loss.backward()
         optimizer.step()
-        loss_sum += float(loss.detach()) * len(batch)
-    return model, loss_sum / len(samples)
+        if epoch % 1000 == 0 and epoch != epochs:
+            print(f"NN_ALL_TRAIN epoch={epoch}/{epochs} bce={float(loss.detach()):.6f}", flush=True)
+    model.eval()
+    with torch.no_grad():
+        final_loss = (
+            torch.nn.functional.binary_cross_entropy(
+                model(vectors), labels, reduction="none",
+            ) * weights
+        ).sum() / denominator
+    print(f"NN_ALL_TRAIN epoch={epochs}/{epochs} bce={float(final_loss):.6f}", flush=True)
+    return model, float(final_loss), len(unique_rows)
 
 
 def export_native_model(path, model, manifest_hash, seed=DEFAULT_SEED):
@@ -235,7 +252,7 @@ def run_training(dataset_root, output_dir, *, seed=DEFAULT_SEED):
         _check_labels(counts)
         samples = np.memmap(sample_path, dtype="<f4", mode="r",
                             shape=(sum(counts.values()), SAMPLE_WIDTH))
-        model, epoch_loss = _fit(samples, seed)
+        model, epoch_loss, unique_samples = _fit(samples, seed)
         del samples
     finally:
         sample_path.unlink(missing_ok=True)
@@ -256,8 +273,9 @@ def run_training(dataset_root, output_dir, *, seed=DEFAULT_SEED):
         "fault_selection": "all_catalog_stuck_at",
         "manifest_sha256": manifest_hash,
         "model_sha256": model_hash,
-        "epochs": 1, "checkpoint_policy": "final_epoch",
+        "epochs": TRAINING_EPOCHS, "checkpoint_policy": "final_epoch",
         "loss": "binary_cross_entropy", "epoch_loss": epoch_loss,
+        "unique_feature_label_rows": unique_samples,
         "sample_counts": {
             "positive": counts[1], "negative": counts[0],
             "excluded": excluded,

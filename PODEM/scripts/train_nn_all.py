@@ -1,4 +1,4 @@
-"""Train the NN-All PODEM baseline for one epoch on training circuits."""
+"""Train the NN-All PODEM baseline for 30,000 epochs on paper circuits."""
 
 import argparse
 from pathlib import Path

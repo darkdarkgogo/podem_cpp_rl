@@ -1,6 +1,7 @@
 """Focused checks for the NN-All PODEM baseline."""
 
 from pathlib import Path
+import copy
 import hashlib
 import json
 import tempfile
@@ -14,7 +15,7 @@ from rl_podem.nn_all_features import (
     candidate_vector, load_nn_all_features, write_native_features,
 )
 from rl_podem.nn_all_training import (
-    NnAllClassifier, PathSampleCollector, TRAINING_FORMAT, _fit,
+    NnAllClassifier, PathSampleCollector, TRAINING_EPOCHS, TRAINING_FORMAT, _fit,
     export_native_model, run_training,
 )
 from rl_podem import validation
@@ -145,12 +146,41 @@ class NnAllFeaturesTest(unittest.TestCase):
             collector.event_callback({"event": "episode_end", "outcome": 1})
             self.assertEqual(collector.samples, [])
 
-    def test_single_epoch_fits_all_samples_and_exports_final_weights(self):
-        samples = np.array([([1.0] * 11) + [1.0],
-                            ([0.0] * 11) + [0.0]] * 4, dtype=np.float32)
-        model, loss = _fit(samples, 2026)
+    def test_weighted_full_pass_fits_all_samples_and_exports_final_weights(self):
+        samples = np.array(
+            [([1.0] * 11) + [1.0]] * 5
+            + [([0.0] * 11) + [0.0]] * 2,
+            dtype=np.float32,
+        )
+        model, loss, unique = _fit(samples, 2026, epochs=1)
         self.assertIsInstance(model, NnAllClassifier)
         self.assertGreaterEqual(loss, 0.0)
+        self.assertEqual(unique, 2)
+        with torch.no_grad():
+            raw_loss = torch.nn.functional.binary_cross_entropy(
+                model(torch.from_numpy(samples[:, :11].copy())),
+                torch.from_numpy(samples[:, 11].copy()),
+            )
+        self.assertAlmostEqual(loss, float(raw_loss), places=6)
+        expanded = copy.deepcopy(model)
+        compressed = copy.deepcopy(model)
+        expanded_loss = torch.nn.functional.binary_cross_entropy(
+            expanded(torch.from_numpy(samples[:, :11].copy())),
+            torch.from_numpy(samples[:, 11].copy()),
+        )
+        rows, frequencies = np.unique(samples, axis=0, return_counts=True)
+        compressed_loss = (
+            torch.nn.functional.binary_cross_entropy(
+                compressed(torch.from_numpy(rows[:, :11].copy())),
+                torch.from_numpy(rows[:, 11].copy()), reduction="none",
+            ) * torch.from_numpy(frequencies.astype(np.float32))
+        ).sum() / len(samples)
+        expanded_loss.backward()
+        compressed_loss.backward()
+        for left, right in zip(expanded.parameters(), compressed.parameters()):
+            self.assertTrue(torch.allclose(left.grad, right.grad, atol=1e-6))
+        _, second_loss, _ = _fit(samples, 2026, epochs=2)
+        self.assertLess(second_loss, loss)
         with tempfile.TemporaryDirectory() as temporary:
             artifact = Path(temporary) / "model.txt"
             export_native_model(artifact, model, "a" * 64)
@@ -158,7 +188,7 @@ class NnAllFeaturesTest(unittest.TestCase):
             self.assertTrue(content.startswith("NN_ALL_PODEM_MODEL_V1\n"))
             self.assertIn("w1 660 ", content)
 
-    def test_training_uses_both_paper_circuits_and_all_paths_without_holdout(self):
+    def test_training_config_uses_paper_circuits_and_all_paths_without_holdout(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             train_dir = root / "nn_all_paper_train"
@@ -178,14 +208,22 @@ class NnAllFeaturesTest(unittest.TestCase):
                 result.outcomes = {1: 1}
                 return result
 
+            fit_input = {}
+
+            def fit_without_training(samples, seed):
+                fit_input.update(rows=len(samples), seed=seed)
+                return NnAllClassifier(), 0.5, 4
+
             with (patch("rl_podem.nn_all_training._sample_fault_ids", return_value=["fault"]),
-                  patch("rl_podem.nn_all_training._collect_circuit", side_effect=collect)):
+                  patch("rl_podem.nn_all_training._collect_circuit", side_effect=collect),
+                  patch("rl_podem.nn_all_training._fit", new=fit_without_training)):
                 summary = run_training(root, root / "run")
+            self.assertEqual(fit_input, {"rows": 4, "seed": 2026})
             manifest = json.loads((root / "run" / "train_manifest.json").read_text())
             self.assertEqual(summary["circuits"], 2)
             self.assertEqual(summary["training_circuits"], ["c1908.bench", "c2670.bench"])
             self.assertEqual(summary["fault_selection"], "all_catalog_stuck_at")
-            self.assertEqual(summary["epochs"], 1)
+            self.assertEqual(summary["epochs"], TRAINING_EPOCHS)
             self.assertEqual(summary["checkpoint_policy"], "final_epoch")
             self.assertEqual(summary["sample_counts"]["positive"], 2)
             self.assertEqual(summary["sample_counts"]["negative"], 2)
@@ -258,7 +296,7 @@ class NnAllFeaturesTest(unittest.TestCase):
                 "manifest_sha256": digest, "model_sha256": model_hash,
                 "circuits": 2, "training_circuits": ["c1908.bench", "c2670.bench"],
                 "fault_selection": "all_catalog_stuck_at",
-                "epochs": 1, "checkpoint_policy": "final_epoch",
+                "epochs": TRAINING_EPOCHS, "checkpoint_policy": "final_epoch",
             }), encoding="utf-8")
             model, _ = _load_nn_all_model(root, root, 2026)
             fault_ids = [
@@ -274,6 +312,13 @@ class NnAllFeaturesTest(unittest.TestCase):
                              summary["aborted_faults"], len(fault_ids))
             self.assertAlmostEqual(summary["atpg_seconds"],
                                    sum(item["atpg_seconds"] for item in records))
+            summary_path = root / "train_summary.json"
+            valid_training = json.loads(summary_path.read_text(encoding="utf-8"))
+            wrong_epochs = {**valid_training, "epochs": 1}
+            summary_path.write_text(json.dumps(wrong_epochs), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "30,000 epochs"):
+                _load_nn_all_model(root, root, 2026)
+            summary_path.write_text(json.dumps(valid_training), encoding="utf-8")
             (root / "model_final.txt").write_text(
                 (root / "model_final.txt").read_text(encoding="utf-8") + " ",
                 encoding="utf-8",
@@ -287,7 +332,7 @@ class NnAllFeaturesTest(unittest.TestCase):
                 "model_sha256": model_hash, "circuits": 2,
                 "training_circuits": ["c1908.bench", "c2670.bench"],
                 "fault_selection": "all_catalog_stuck_at",
-                "epochs": 1, "checkpoint_policy": "final_epoch",
+                "epochs": TRAINING_EPOCHS, "checkpoint_policy": "final_epoch",
             }), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "manifest hash mismatch"):
                 _load_nn_all_model(root, root, 2026)
@@ -333,7 +378,7 @@ class NnAllFeaturesTest(unittest.TestCase):
                 "manifest_sha256": digest, "model_sha256": model_hash,
                 "circuits": 2, "training_circuits": ["c1908.bench", "c2670.bench"],
                 "fault_selection": "all_catalog_stuck_at",
-                "epochs": 1, "checkpoint_policy": "final_epoch",
+                "epochs": TRAINING_EPOCHS, "checkpoint_policy": "final_epoch",
             }), encoding="utf-8")
             run_dir = root / "smart"
             run_dir.mkdir()
