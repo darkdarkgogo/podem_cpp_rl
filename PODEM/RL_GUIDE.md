@@ -1,5 +1,20 @@
 # SmartATPG RL 使用入口
 
+## GAT 单因素消融（独立入口）
+
+完整 GAT-GRU、去 GRU、关 backtrace 锁、去 `object value` 动态输入使用独立脚本。四组共用一次 `level_gat_gru` 训练 manifest，分别从头训练；验证脚本使用同一有序 validation fault catalog 顺序运行四组，不调用 NN-All 或 Mean。旧的双模型脚本及其输出目录不受影响。
+
+```bash
+cd PODEM
+python -m pip install -e .
+python scripts/train_gat_ablation.py --dataset-root data --output-dir artifacts/gat_ablation --gpu 0
+python scripts/validate_gat_ablation.py --run-dir artifacts/gat_ablation
+```
+
+训练脚本依次写入 `training/{full,no_gru,no_lock,no_object_value}`、`logs/` 与 `train_summary.json`。中断后用同一命令恢复。验证输出 `validation/validation_gat_ablation.csv`、同名 JSON 和 `validation/detailed/{full,no_gru,no_lock,no_object_value}_records.jsonl`。主表有逐电路及 TOTAL 的 detected/redundant/aborted、coverage、backtracks、backtrace steps、ATPG runtime，并列出每个消融组相对完整模型的差值。应先比较覆盖率和 aborted 数，再解释回溯次数与耗时，避免将未检测到故障误读为搜索更快。
+
+去 GRU 组保留相同的逐 level 正反向单头 attention，使用 `ELU(h + m)` 更新 11 维状态。去目标值组的 Actor 输入由 23 维降为 22 维，Critic 由 12 维降为 11 维；PODEM 的目标值与逻辑约束仍照常计算。路径锁只在 `no_lock` 组的训练和验证中同时关闭。各组共用 seed 2026、backtrack limit 100、奖励、PPO 参数和电路集合。结构变体有独立的 encoder variant 与工件配置标识，验证时会核对 checkpoint 的组名与锁状态。
+
 正式实验只有训练和验证两个入口。训练不会读取 validation fault catalog、生成 validation embedding、计算 validation score 或自动开始 comparison；训练完成后必须显式运行验证命令。
 
 ## 训练

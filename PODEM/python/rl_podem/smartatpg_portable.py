@@ -27,6 +27,7 @@ EMBEDDING_FORMAT = "SMARTATPG_EMBEDDINGS_V7"
 FEATURE_SCHEMA = "SMARTATPG_FEATURES_V4_11D_CO_NO_BUF"
 GRAPH_CONFIG = "fanin_mean_1x22x11_co_nobuf"
 GAT_GRU_GRAPH_CONFIG = "level_gat_gru_fwd_rev_11d_v3_nobuf"
+NO_GRU_GRAPH_CONFIG = "level_gat_residual_elu_fwd_rev_11d_v1_nobuf"
 GATE_TYPES = ("PI", "AND", "NAND", "OR", "NOR", "NOT")
 GATE_EMBEDDING_DIM = 11
 ACTOR_INPUT_DIM = 11
@@ -57,6 +58,11 @@ GAT_GRU_ENCODER_TENSORS = tuple(
         "attention", "projection.weight", "gru.weight_ih",
         "gru.weight_hh", "gru.bias_ih", "gru.bias_hh",
     )
+)
+NO_GRU_ENCODER_TENSORS = tuple(
+    f"graph_encoder.{direction}.{name}"
+    for direction in ("forward_pass", "reverse_pass")
+    for name in ("attention", "projection.weight")
 )
 
 
@@ -163,12 +169,16 @@ def load_model(path):
     expected_config = {
         "fanin_mean": GRAPH_CONFIG,
         "level_gat_gru": GAT_GRU_GRAPH_CONFIG,
+        "level_gat_no_gru": NO_GRU_GRAPH_CONFIG,
+        "level_gat_gru_no_object_value": GAT_GRU_GRAPH_CONFIG,
     }.get(encoder_variant)
     if graph_config != expected_config:
         raise ValueError("Invalid SmartATPG encoder variant or graph configuration")
     allowed_formats = {
         "fanin_mean": (LEGACY_MODEL_FORMAT, MEAN_MODEL_FORMAT),
         "level_gat_gru": (GAT_MODEL_FORMAT,),
+        "level_gat_no_gru": (GAT_MODEL_FORMAT,),
+        "level_gat_gru_no_object_value": (GAT_MODEL_FORMAT,),
     }[encoder_variant]
     if model_format not in allowed_formats:
         raise ValueError(
@@ -177,8 +187,10 @@ def load_model(path):
     if int(_field(tokens, "gate_embedding_dim")) != gate_dim:
         raise ValueError(f"SmartATPG gate embedding dimension must be {gate_dim}")
     actor_input_dim = int(_field(tokens, "actor_input_dim"))
-    is_gat = encoder_variant == "level_gat_gru"
-    expected_actor_dim = 2 * gate_dim + 1 if is_gat else gate_dim
+    is_gat = encoder_variant.startswith("level_gat_")
+    has_gru = encoder_variant != "level_gat_no_gru"
+    has_value = encoder_variant != "level_gat_gru_no_object_value"
+    expected_actor_dim = 2 * gate_dim + int(has_value) if is_gat else gate_dim
     if actor_input_dim != expected_actor_dim:
         raise ValueError("Actor input dimension does not match encoder")
     if int(_field(tokens, "action_mask_dim")) != ACTION_MASK_DIM:
@@ -186,8 +198,8 @@ def load_model(path):
     decision_state_dim = int(_field(tokens, "decision_state_dim"))
     if decision_state_dim != actor_input_dim + ACTION_MASK_DIM:
         raise ValueError("Decision state dimension must match Actor input plus mask")
-    if is_gat and int(_field(tokens, "critic_input_dim")) != gate_dim + 1:
-        raise ValueError("GAT critic input dimension must be objective embedding plus objective value")
+    if is_gat and int(_field(tokens, "critic_input_dim")) != gate_dim + int(has_value):
+        raise ValueError("GAT critic input dimension does not match variant")
     snapshot = _field(tokens, "snapshot")
     if len(snapshot) != 64 or any(value not in "0123456789abcdef" for value in snapshot):
         raise ValueError("Invalid SmartATPG model snapshot")
@@ -224,6 +236,8 @@ def load_model(path):
         or backtrack_limit != 100
         or reward_scheme != {
             "level_gat_gru": "cubic_backtrack_depthnorm_v2",
+            "level_gat_no_gru": "cubic_backtrack_depthnorm_v2",
+            "level_gat_gru_no_object_value": "cubic_backtrack_depthnorm_v2",
             "fanin_mean": "legacy_pi_exponential",
         }[encoder_variant]
         or normal_rounds != (1 if model_format != LEGACY_MODEL_FORMAT else 5)
@@ -269,6 +283,7 @@ def load_model(path):
         raise ValueError(f"Unexpected trailing model data: {trailing}")
     encoder_tensors = (
         MEAN_ENCODER_TENSORS if encoder_variant == "fanin_mean"
+        else NO_GRU_ENCODER_TENSORS if not has_gru
         else GAT_GRU_ENCODER_TENSORS
     )
     expected_tensors = set((*encoder_tensors, *ACTOR_TENSORS))
@@ -288,9 +303,14 @@ def load_model(path):
             prefix = f"graph_encoder.{direction}."
             shapes = {
                 "attention": (1, gate_dim * 2), "projection.weight": (gate_dim, gate_dim),
-                "gru.weight_ih": (gate_dim * 3, gate_dim), "gru.weight_hh": (gate_dim * 3, gate_dim),
-                "gru.bias_ih": (1, gate_dim * 3), "gru.bias_hh": (1, gate_dim * 3),
             }
+            if has_gru:
+                shapes.update({
+                    "gru.weight_ih": (gate_dim * 3, gate_dim),
+                    "gru.weight_hh": (gate_dim * 3, gate_dim),
+                    "gru.bias_ih": (1, gate_dim * 3),
+                    "gru.bias_hh": (1, gate_dim * 3),
+                })
             for name, shape in shapes.items():
                 tensor = tensors[prefix + name]
                 if (tensor.rows, tensor.cols) != shape:
@@ -522,7 +542,14 @@ def _gat_gru_sweep(model, hidden, level_groups, adjacency, direction):
                     for weight, source in zip(weights, neighbors))
                 for column in range(model.gate_embedding_dim)
             )
-            updates[target] = _gru_cell(model, prefix, message, hidden[target])
+            updates[target] = (
+                _gru_cell(model, prefix, message, hidden[target])
+                if model.encoder_variant != "level_gat_no_gru"
+                else tuple(
+                    value if value >= 0 else math.expm1(value)
+                    for value in (a + b for a, b in zip(message, hidden[target]))
+                )
+            )
         for target, value in updates.items():
             hidden[target] = value
     return hidden
@@ -533,7 +560,7 @@ def compute_embeddings(model, graph):
     if any(len(row) < size for row in graph.features):
         raise ValueError("Circuit features do not contain the model's required inputs")
     features = tuple(row[:size] for row in graph.features)
-    if model.encoder_variant == "level_gat_gru":
+    if model.encoder_variant.startswith("level_gat_"):
         hidden = list(features)
         hidden = _gat_gru_sweep(
             model, hidden, graph.level_groups[1:], graph.fanins, "forward_pass"
@@ -584,8 +611,10 @@ def export_embeddings(model, graph, path):
             f"action_mask_dim {ACTION_MASK_DIM}\n"
             f"decision_state_dim {model.decision_state_dim}\n"
         )
-        if model.encoder_variant == "level_gat_gru":
-            output.write(f"critic_input_dim {GATE_EMBEDDING_DIM + 1}\n")
+        if model.encoder_variant.startswith("level_gat_"):
+            output.write(
+                f"critic_input_dim {GATE_EMBEDDING_DIM + int(model.encoder_variant != 'level_gat_gru_no_object_value')}\n"
+            )
         output.write(
             f"snapshot {model.snapshot}\n"
             f"circuit_hash {graph.circuit_hash}\n"

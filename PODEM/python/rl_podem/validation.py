@@ -190,7 +190,10 @@ def _evaluate_scoap_batch(item, fault_ids, seed):
     return records
 
 
-def _load_inference_checkpoint(path, encoder, manifest_path, round_number):
+def _load_inference_checkpoint(
+    path, encoder, manifest_path, round_number,
+    expected_ablation=None, expected_backtrace_lock=None, expected_seed=None,
+):
     payload = torch.load(path, map_location="cpu")
     expected = {
         "format": INFERENCE_CHECKPOINT_FORMAT,
@@ -202,6 +205,13 @@ def _load_inference_checkpoint(path, encoder, manifest_path, round_number):
     }
     if any(payload.get(key) != value for key, value in expected.items()):
         raise ValueError(f"Inference checkpoint identity mismatch: {path}")
+    if expected_ablation is not None and payload.get("ablation") != expected_ablation:
+        raise ValueError(f"Inference checkpoint ablation mismatch: {path}")
+    if (expected_backtrace_lock is not None and
+            payload.get("backtrace_lock") != expected_backtrace_lock):
+        raise ValueError(f"Inference checkpoint backtrace lock mismatch: {path}")
+    if expected_seed is not None and payload.get("seed") != expected_seed:
+        raise ValueError(f"Inference checkpoint seed mismatch: {path}")
     state = payload.get("policy_old")
     if not isinstance(state, dict) or not state:
         raise ValueError(f"Inference checkpoint has no policy state: {path}")
@@ -210,12 +220,14 @@ def _load_inference_checkpoint(path, encoder, manifest_path, round_number):
 
 def _evaluate_model_round(
     name, encoder, manifest_path, model_dir, circuits, output_dir,
-    round_number, seed, backtrace_lock,
+    round_number, seed, backtrace_lock, expected_ablation=None,
 ):
     checkpoint = Path(model_dir) / f"inference_round_{round_number:02d}.pth"
     actor_path = Path(model_dir) / f"model_round_{round_number:02d}.txt"
     payload, state = _load_inference_checkpoint(
         checkpoint, encoder, manifest_path, round_number,
+        expected_ablation, backtrace_lock if expected_ablation is not None else None,
+        seed,
     )
     if not actor_path.is_file():
         raise FileNotFoundError(f"Missing native actor for round {round_number}: {actor_path}")

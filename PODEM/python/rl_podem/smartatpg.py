@@ -124,7 +124,7 @@ class SmartATPGPPOAgent(BacktracePPOAgentV2):
         kwargs.setdefault("lr_critic", 0.01)
         kwargs.setdefault("k_epochs", 4)
         kwargs.setdefault("minibatch_size", 512)
-        super().__init__(ACTOR_INPUT_DIM, hidden_dim=hidden_dim, **kwargs)
+        super().__init__(self.actor_input_dim, hidden_dim=hidden_dim, **kwargs)
         self.gate_embedding_dim = GATE_EMBEDDING_DIM
         self.action_mask_dim = ACTION_MASK_DIM
         self.policy_state_dim = self.decision_state_dim
@@ -154,7 +154,7 @@ class SmartATPGPPOAgent(BacktracePPOAgentV2):
         mask = torch.as_tensor([True, True] if mask is None else mask, dtype=torch.bool)
         if mask.shape != (2,) or not bool(mask.any()):
             raise ValueError("SmartATPG action mask must enable at least one of two inputs")
-        if self.encoder_variant == "level_gat_gru":
+        if self.encoder_variant.startswith("level_gat_"):
             order = sorted(range(2), key=lambda index: candidates[index].outputpin)
             candidates = [candidates[index] for index in order]
             mask = mask[order]
@@ -165,7 +165,7 @@ class SmartATPGPPOAgent(BacktracePPOAgentV2):
                 graph, [gate.node_index], embeddings
             )[0]
             candidate_names = None
-            if self.encoder_variant == "level_gat_gru":
+            if self.encoder_variant.startswith("level_gat_"):
                 candidate_indices = [candidate.node_index for candidate in candidates]
                 candidate_descriptors = self.policy_old.descriptors(
                     graph, candidate_indices, embeddings
@@ -177,7 +177,7 @@ class SmartATPGPPOAgent(BacktracePPOAgentV2):
             else:
                 logits, state_value = self.policy_old.backtrace_logits(descriptor, value)
             dist = Categorical(logits=logits.masked_fill(~mask.to(device), -1e9))
-            if deterministic and self.encoder_variant == "level_gat_gru":
+            if deterministic and self.encoder_variant.startswith("level_gat_"):
                 best_logit = dist.logits.max()
                 tied = [
                     index for index, logit in enumerate(dist.logits)
@@ -225,7 +225,7 @@ class SmartATPGPPOAgent(BacktracePPOAgentV2):
                 embeddings_by_graph[graph.circuit_hash],
             )[0]
             candidate_embeddings = None
-            if self.encoder_variant == "level_gat_gru":
+            if self.encoder_variant.startswith("level_gat_"):
                 if not step.candidate_names or len(step.candidate_names) != 2:
                     raise ValueError("GAT rollout is missing its ordered fanin identities")
                 candidate_indices = [
@@ -254,7 +254,7 @@ class SmartATPGPPOAgent(BacktracePPOAgentV2):
             action_mask_dim=ACTION_MASK_DIM,
             decision_state_dim=self.decision_state_dim,
         )
-        if self.encoder_variant == "level_gat_gru":
+        if self.encoder_variant.startswith("level_gat_"):
             state["critic_input_dim"] = self.critic_input_dim
         state["policy_state_dim"] = self.policy_state_dim
         return state
@@ -268,7 +268,7 @@ class SmartATPGPPOAgent(BacktracePPOAgentV2):
                     "action_mask_dim": ACTION_MASK_DIM,
                     "decision_state_dim": self.decision_state_dim,
                     "policy_state_dim": self.policy_state_dim}
-        if self.encoder_variant == "level_gat_gru":
+        if self.encoder_variant.startswith("level_gat_"):
             expected["critic_input_dim"] = self.critic_input_dim
         if any(state.get(key) != value for key, value in expected.items()):
             raise ValueError("Incompatible SmartATPG checkpoint backend or graph schema")

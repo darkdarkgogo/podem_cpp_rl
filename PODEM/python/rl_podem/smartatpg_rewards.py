@@ -21,6 +21,8 @@ PAPER_REWARD = {
 def reward_scheme_for_encoder(encoder_variant: str) -> str:
     schemes = {
         "level_gat_gru": GAT_REWARD_SCHEME,
+        "level_gat_no_gru": GAT_REWARD_SCHEME,
+        "level_gat_gru_no_object_value": GAT_REWARD_SCHEME,
         "fanin_mean": MEAN_REWARD_SCHEME,
     }
     try:

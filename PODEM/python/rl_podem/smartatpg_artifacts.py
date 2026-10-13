@@ -18,6 +18,10 @@ def encoder_variant(state):
     if "graph_encoder.layer.weight" in state:
         return ENCODER_VARIANT
     if "graph_encoder.forward_pass.projection.weight" in state:
+        if "graph_encoder.forward_pass.gru.weight_ih" not in state:
+            return "level_gat_no_gru"
+        if state["backtrace_actor.0.weight"].shape[1] == 2 * GATE_EMBEDDING_DIM:
+            return "level_gat_gru_no_object_value"
         return "level_gat_gru"
     raise ValueError("Cannot identify the SmartATPG graph encoder")
 
@@ -35,7 +39,7 @@ def inference_metadata(state):
         "action_mask_dim": ACTION_MASK_DIM,
         "decision_state_dim": values["decision_state_dim"],
     }
-    if variant == "level_gat_gru":
+    if variant.startswith("level_gat_"):
         metadata["critic_input_dim"] = values["critic_input_dim"]
     return metadata
 
@@ -97,11 +101,17 @@ def export_actor(
 
 def policy_from_state(state):
     hidden_dim = state["backtrace_actor.0.weight"].shape[0]
-    if encoder_variant(state) == ENCODER_VARIANT:
+    variant = encoder_variant(state)
+    if variant == ENCODER_VARIANT:
         policy = SmartATPGPolicy(hidden_dim)
     else:
-        from .gat_gru import GATGRUSmartATPGPolicy
-        policy = GATGRUSmartATPGPolicy(hidden_dim)
+        from .gat_gru import GATGRUSmartATPGPolicy, GATNoGRUPolicy, GATNoValuePolicy
+        policy_type = {
+            "level_gat_gru": GATGRUSmartATPGPolicy,
+            "level_gat_no_gru": GATNoGRUPolicy,
+            "level_gat_gru_no_object_value": GATNoValuePolicy,
+        }[variant]
+        policy = policy_type(hidden_dim)
     policy.load_state_dict(state)
     return policy.eval()
 
@@ -131,7 +141,7 @@ def export_descriptors(state, graph, path, policy=None):
             f"action_mask_dim {ACTION_MASK_DIM}\n"
             f"decision_state_dim {metadata['decision_state_dim']}\n"
         )
-        if metadata["encoder_variant"] == "level_gat_gru":
+        if metadata["encoder_variant"].startswith("level_gat_"):
             out.write(f"critic_input_dim {metadata['critic_input_dim']}\n")
         out.write(f"snapshot {identity}\n")
         out.write(f"circuit_hash {graph.circuit_hash}\ndimension {GATE_EMBEDDING_DIM}\ncount {len(graph.names)}\n")

@@ -32,7 +32,9 @@ from .smartatpg_rewards import (
     PAPER_REWARD,
     reward_scheme_for_encoder,
 )
-from .gat_gru import GATGRUSmartATPGPPOAgent
+from .gat_gru import (
+    GATGRUSmartATPGPPOAgent, GATNoGRUPPOAgent, GATNoValuePPOAgent,
+)
 from .ppo import device
 from .smartatpg import SmartATPGPPOAgent
 from .smartatpg_artifacts import export_actor
@@ -44,6 +46,12 @@ BEST_CHECKPOINT_FORMAT = "SMARTATPG_DATA_SPLIT_BEST_V6_11D_CO_NO_BUF"
 AGENT_TYPES = {
     "fanin_mean": SmartATPGPPOAgent,
     "level_gat_gru": GATGRUSmartATPGPPOAgent,
+}
+ABLATION_AGENTS = {
+    "full": GATGRUSmartATPGPPOAgent,
+    "no_gru": GATNoGRUPPOAgent,
+    "no_lock": GATGRUSmartATPGPPOAgent,
+    "no_object_value": GATNoValuePPOAgent,
 }
 def _clone(value):
     if torch.is_tensor(value):
@@ -187,6 +195,8 @@ def _inference_payload(agent, config, round_number):
         "format": INFERENCE_CHECKPOINT_FORMAT,
         "manifest_hash": config["manifest_hash"],
         "encoder_variant": config["encoder_variant"],
+        "ablation": config.get("ablation"),
+        "backtrace_lock": config["backtrace_lock"],
         "reward_scheme": config["reward_scheme"],
         "backtrack_limit": config["backtrack_limit"],
         "seed": config["seed"],
@@ -251,10 +261,17 @@ def main(argv=None):
     parser.add_argument(
         "--encoder", choices=tuple(AGENT_TYPES), default="level_gat_gru"
     )
+    parser.add_argument("--ablation", choices=tuple(ABLATION_AGENTS))
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--resume", action="store_true")
     mode.add_argument("--continue-from", type=Path)
     args = parser.parse_args(argv)
+    if args.ablation is not None and args.encoder != "level_gat_gru":
+        raise ValueError("GAT ablations require --encoder level_gat_gru")
+    if args.ablation is not None:
+        required_lock = "off" if args.ablation == "no_lock" else "on"
+        if args.backtrace_lock != required_lock:
+            raise ValueError(f"{args.ablation} requires --backtrace-lock {required_lock}")
     args.manifest = args.manifest.resolve()
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
     supported_formats = (MANIFEST_FORMAT,)
@@ -323,7 +340,8 @@ def main(argv=None):
     graphs = {
         item["name"]: load_circuit_graph(item["circuit"]) for item in train_circuits
     }
-    agent = AGENT_TYPES[args.encoder](
+    agent_type = ABLATION_AGENTS[args.ablation] if args.ablation else AGENT_TYPES[args.encoder]
+    agent = agent_type(
         graphs,
         hidden_dim=32,
         lr_actor=hyperparameters["actor_lr"],
@@ -374,12 +392,14 @@ def main(argv=None):
         "paper_reward": PAPER_REWARD,
         "gat_step_penalty_budget": GAT_STEP_PENALTY_BUDGET,
         "reward_scheme": reward_scheme,
-        "encoder_variant": args.encoder,
+        "encoder_variant": agent.encoder_variant,
         "heuristic": HEURISTIC,
         "manifest_hash": manifest_digest,
     }
     if batched_training:
         config["faults_per_update"] = FAULTS_PER_UPDATE
+    if args.ablation is not None:
+        config["ablation"] = args.ablation
     state = _initial_state(manifest_digest, config)
     if args.resume:
         if not checkpoint_path.is_file():

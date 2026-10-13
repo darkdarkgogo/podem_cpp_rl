@@ -17,6 +17,9 @@ GRAPH_CONFIG = {
     "directions": "independent",
 }
 GRAPH_CONFIG_ID = "level_gat_gru_fwd_rev_11d_v3_nobuf"
+NO_GRU_VARIANT = "level_gat_no_gru"
+NO_VALUE_VARIANT = "level_gat_gru_no_object_value"
+NO_GRU_GRAPH_CONFIG_ID = "level_gat_residual_elu_fwd_rev_11d_v1_nobuf"
 ACTOR_INPUT_DIM = 2 * FEATURE_DIM + 1
 CRITIC_INPUT_DIM = FEATURE_DIM + 1
 TRAINING_FORMAT = (
@@ -25,11 +28,13 @@ TRAINING_FORMAT = (
 
 
 class DirectionalGATGRU(nn.Module):
-    def __init__(self):
+    def __init__(self, use_gru=True):
         super().__init__()
+        self.use_gru = use_gru
         self.projection = nn.Linear(FEATURE_DIM, FEATURE_DIM, bias=False)
         self.attention = nn.Parameter(torch.empty(FEATURE_DIM * 2))
-        self.gru = nn.GRUCell(FEATURE_DIM, FEATURE_DIM)
+        if use_gru:
+            self.gru = nn.GRUCell(FEATURE_DIM, FEATURE_DIM)
         nn.init.xavier_uniform_(self.projection.weight)
         nn.init.xavier_uniform_(self.attention.view(1, -1))
 
@@ -58,18 +63,20 @@ class DirectionalGATGRU(nn.Module):
         messages = torch.zeros_like(hidden)
         messages.index_add_(0, target, weights.unsqueeze(-1) * source_states)
         target_indices = torch.unique_consecutive(target)
-        updates = self.gru(
-            messages.index_select(0, target_indices),
-            hidden.index_select(0, target_indices),
+        selected_messages = messages.index_select(0, target_indices)
+        selected_hidden = hidden.index_select(0, target_indices)
+        updates = (
+            self.gru(selected_messages, selected_hidden)
+            if self.use_gru else F.elu(selected_messages + selected_hidden)
         )
         return hidden.index_copy(0, target_indices, updates)
 
 
 class LevelWiseGATGRUEncoder(nn.Module):
-    def __init__(self):
+    def __init__(self, use_gru=True):
         super().__init__()
-        self.forward_pass = DirectionalGATGRU()
-        self.reverse_pass = DirectionalGATGRU()
+        self.forward_pass = DirectionalGATGRU(use_gru)
+        self.reverse_pass = DirectionalGATGRU(use_gru)
 
     def forward(self, graph):
         device = self.forward_pass.projection.weight.device
@@ -88,12 +95,15 @@ class LevelWiseGATGRUEncoder(nn.Module):
 
 
 class GATGRUSmartATPGPolicy(SmartATPGPolicy):
+    use_gru = True
+    use_objective_value = True
+
     def __init__(self, hidden_dim=32):
         super().__init__(
             hidden_dim,
-            graph_encoder=LevelWiseGATGRUEncoder(),
-            actor_input_dim=ACTOR_INPUT_DIM,
-            critic_input_dim=CRITIC_INPUT_DIM,
+            graph_encoder=LevelWiseGATGRUEncoder(self.use_gru),
+            actor_input_dim=2 * FEATURE_DIM + int(self.use_objective_value),
+            critic_input_dim=FEATURE_DIM + int(self.use_objective_value),
             actor_output_dim=1,
         )
 
@@ -118,11 +128,11 @@ class GATGRUSmartATPGPolicy(SmartATPGPolicy):
         ):
             raise ValueError("GAT scorer requires one binary objective value per state")
         objective_pairs = objective_embeddings.unsqueeze(1).expand(-1, 2, -1)
-        value_pairs = values.to(objective_embeddings.dtype).unsqueeze(1).expand(-1, 2, -1)
-        scorer_inputs = torch.cat(
-            (objective_pairs, candidate_embeddings, value_pairs), dim=-1
-        )
-        return self.backtrace_actor(scorer_inputs.reshape(-1, ACTOR_INPUT_DIM)).reshape(-1, 2)
+        inputs = [objective_pairs, candidate_embeddings]
+        if self.use_objective_value:
+            inputs.append(values.to(objective_embeddings.dtype).unsqueeze(1).expand(-1, 2, -1))
+        scorer_inputs = torch.cat(inputs, dim=-1)
+        return self.backtrace_actor(scorer_inputs.reshape(-1, self.actor_input_dim)).reshape(-1, 2)
 
     def backtrace_logits(self, objective_embedding, candidate_embeddings, objective_value):
         model_device = self.backtrace_actor[0].weight.device
@@ -144,10 +154,12 @@ class GATGRUSmartATPGPolicy(SmartATPGPolicy):
             objective_embedding.unsqueeze(0), candidate_embeddings.unsqueeze(0),
             [objective_value],
         )[0]
-        critic_state = torch.cat((
-            objective_embedding,
-            objective_embedding.new_tensor([float(objective_value)]),
-        )).unsqueeze(0)
+        critic_state = objective_embedding
+        if self.use_objective_value:
+            critic_state = torch.cat((
+                critic_state, objective_embedding.new_tensor([float(objective_value)]),
+            ))
+        critic_state = critic_state.unsqueeze(0)
         state_value = self.critic(critic_state).squeeze(-1)[0]
         return logits, state_value
 
@@ -180,3 +192,27 @@ class GATGRUSmartATPGPPOAgent(SmartATPGPPOAgent):
         kwargs.setdefault("lr_critic", 0.001)
         kwargs.setdefault("k_epochs", 4)
         super().__init__(graphs, hidden_dim=hidden_dim, **kwargs)
+
+
+class GATNoGRUPolicy(GATGRUSmartATPGPolicy):
+    use_gru = False
+
+
+class GATNoValuePolicy(GATGRUSmartATPGPolicy):
+    use_objective_value = False
+
+
+class GATNoGRUPPOAgent(GATGRUSmartATPGPPOAgent):
+    encoder_variant = NO_GRU_VARIANT
+    graph_config = {**GRAPH_CONFIG, "update": "residual_elu"}
+    training_format = TRAINING_FORMAT + "_NO_GRU"
+    policy_class = GATNoGRUPolicy
+
+
+class GATNoValuePPOAgent(GATGRUSmartATPGPPOAgent):
+    actor_input_dim = 2 * FEATURE_DIM
+    critic_input_dim = FEATURE_DIM
+    decision_state_dim = actor_input_dim + 2
+    encoder_variant = NO_VALUE_VARIANT
+    training_format = TRAINING_FORMAT + "_NO_OBJECT_VALUE"
+    policy_class = GATNoValuePolicy

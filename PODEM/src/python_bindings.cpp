@@ -459,9 +459,9 @@ py::list run_native_validation(
     atpg.set_backtrace_lock(
         has_backtrace_lock_override
             ? backtrace_lock_override
-            : actor->encoder_variant() == "level_gat_gru");
+            : actor->encoder_variant() != "fanin_mean");
     const std::string expected_reward_scheme =
-        actor->encoder_variant() == "level_gat_gru"
+        actor->encoder_variant() != "fanin_mean"
             ? "cubic_backtrack_depthnorm_v2"
             : "legacy_pi_exponential";
     if (reward_scheme != expected_reward_scheme) {

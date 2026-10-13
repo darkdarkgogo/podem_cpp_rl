@@ -26,7 +26,10 @@ GAT_MODEL_FORMAT = (
 
 
 def resolve_backtrace_lock(mode: str, encoder_variant: str) -> bool:
-    if encoder_variant not in ("level_gat_gru", "fanin_mean"):
+    if encoder_variant not in (
+        "level_gat_gru", "level_gat_no_gru",
+        "level_gat_gru_no_object_value", "fanin_mean",
+    ):
         raise ValueError(f"Unknown encoder variant: {encoder_variant}")
     if mode == "on":
         return True
@@ -34,7 +37,7 @@ def resolve_backtrace_lock(mode: str, encoder_variant: str) -> bool:
         return False
     if mode != "auto":
         raise ValueError(f"Unknown backtrace lock mode: {mode}")
-    return encoder_variant == "level_gat_gru"
+    return encoder_variant != "fanin_mean"
 
 
 def _load_cpp_embedding_artifact(
@@ -60,25 +63,28 @@ def _load_cpp_embedding_artifact(
             "decision_state_dim",
         )
         metadata = {key: read_pair(handle, key) for key in keys}
-        if metadata.get("encoder_variant") == "level_gat_gru":
+        if metadata.get("encoder_variant", "").startswith("level_gat_"):
             metadata["critic_input_dim"] = read_pair(handle, "critic_input_dim")
         metadata["snapshot"] = read_pair(handle, "snapshot")
         gate_dim = FEATURE_DIM
-        from .gat_gru import GRAPH_CONFIG_ID as GAT_GRU_GRAPH_CONFIG_ID
+        from .gat_gru import GRAPH_CONFIG_ID as GAT_GRU_GRAPH_CONFIG_ID, NO_GRU_GRAPH_CONFIG_ID
         expected_config = {
             "fanin_mean": GRAPH_CONFIG_ID,
             "level_gat_gru": GAT_GRU_GRAPH_CONFIG_ID,
+            "level_gat_no_gru": NO_GRU_GRAPH_CONFIG_ID,
+            "level_gat_gru_no_object_value": GAT_GRU_GRAPH_CONFIG_ID,
         }.get(metadata.get("encoder_variant"))
         actor_dim = int(metadata["actor_input_dim"])
-        is_gat = metadata.get("encoder_variant") == "level_gat_gru"
-        expected_actor_dim = 2 * gate_dim + 1 if is_gat else gate_dim
+        is_gat = metadata.get("encoder_variant", "").startswith("level_gat_")
+        has_value = metadata.get("encoder_variant") != "level_gat_gru_no_object_value"
+        expected_actor_dim = 2 * gate_dim + int(has_value) if is_gat else gate_dim
         if (
             metadata["backend"] != "smartatpg"
             or metadata["feature_schema"] != FEATURE_SCHEMA
             or metadata["graph_config"] != expected_config
             or metadata["gate_embedding_dim"] != str(gate_dim)
             or actor_dim != expected_actor_dim
-            or (is_gat and metadata["critic_input_dim"] != str(gate_dim + 1))
+            or (is_gat and metadata["critic_input_dim"] != str(gate_dim + int(has_value)))
             or metadata["action_mask_dim"] != "2"
             or metadata["decision_state_dim"] != str(actor_dim + 2)
             or len(metadata["snapshot"]) != 64
@@ -168,8 +174,12 @@ def export_actor_v2_state_dict(
         "backtrace_actor.2.bias",
     ]
     variant = metadata.get("encoder_variant")
-    is_gat = variant == "level_gat_gru"
-    expected_actor_dim = 2 * FEATURE_DIM + 1 if is_gat else FEATURE_DIM
+    is_gat = variant in (
+        "level_gat_gru", "level_gat_no_gru", "level_gat_gru_no_object_value",
+    )
+    has_gru = variant != "level_gat_no_gru"
+    has_value = variant != "level_gat_gru_no_object_value"
+    expected_actor_dim = 2 * FEATURE_DIM + int(has_value) if is_gat else FEATURE_DIM
     expected_actor_outputs = 1 if is_gat else 2
     if any(key.startswith(("gate_encoder.", "objective_value_embedding.")) for key in state_dict):
         raise ValueError("Direct Actor models must not contain a pre-encoder or objective embedding table")
@@ -177,13 +187,14 @@ def export_actor_v2_state_dict(
         encoder_tensor_names = (
             "graph_encoder.layer.weight", "graph_encoder.layer.bias",
         )
-    elif variant == "level_gat_gru":
+    elif is_gat:
         encoder_tensor_names = tuple(
             f"graph_encoder.{direction}.{name}"
             for direction in ("forward_pass", "reverse_pass")
             for name in (
-                "attention", "projection.weight", "gru.weight_ih",
-                "gru.weight_hh", "gru.bias_ih", "gru.bias_hh",
+                ("attention", "projection.weight", "gru.weight_ih",
+                 "gru.weight_hh", "gru.bias_ih", "gru.bias_hh")
+                if has_gru else ("attention", "projection.weight")
             )
         )
     else:
@@ -202,16 +213,20 @@ def export_actor_v2_state_dict(
     else:
         shapes = {
             "attention": (2 * FEATURE_DIM,), "projection.weight": (FEATURE_DIM, FEATURE_DIM),
-            "gru.weight_ih": (3 * FEATURE_DIM, FEATURE_DIM),
-            "gru.weight_hh": (3 * FEATURE_DIM, FEATURE_DIM),
-            "gru.bias_ih": (3 * FEATURE_DIM,), "gru.bias_hh": (3 * FEATURE_DIM,),
         }
+        if has_gru:
+            shapes.update({
+                "gru.weight_ih": (3 * FEATURE_DIM, FEATURE_DIM),
+                "gru.weight_hh": (3 * FEATURE_DIM, FEATURE_DIM),
+                "gru.bias_ih": (3 * FEATURE_DIM,), "gru.bias_hh": (3 * FEATURE_DIM,),
+            })
         graph_shapes = {
             f"graph_encoder.{direction}.{name}": shape
             for direction in ("forward_pass", "reverse_pass")
             for name, shape in shapes.items()
         }
-        from .gat_gru import GRAPH_CONFIG_ID as graph_config
+        from .gat_gru import GRAPH_CONFIG_ID, NO_GRU_GRAPH_CONFIG_ID
+        graph_config = GRAPH_CONFIG_ID if has_gru else NO_GRU_GRAPH_CONFIG_ID
     for name, shape in graph_shapes.items():
         if tuple(state_dict[name].shape) != shape:
             raise ValueError(f"Invalid graph tensor shape for {name}: expected {shape}")
@@ -237,7 +252,7 @@ def export_actor_v2_state_dict(
         or int(metadata.get("actor_input_dim", -1)) != expected_actor_dim
         or (
             is_gat
-            and int(metadata.get("critic_input_dim", -1)) != FEATURE_DIM + 1
+            and int(metadata.get("critic_input_dim", -1)) != FEATURE_DIM + int(has_value)
         )
         or int(metadata.get("action_mask_dim", -1)) != 2
         or int(metadata.get("decision_state_dim", -1)) != expected_actor_dim + 2
@@ -267,7 +282,7 @@ def export_actor_v2_state_dict(
             metadata["encoder_variant"]
         )
         or int(metadata["normal_rounds"]) != (1 if has_batch_protocol else 5)
-        or (variant == "level_gat_gru" and not has_batch_protocol)
+        or (is_gat and not has_batch_protocol)
         or int(metadata["training_circuit_count"]) <= 0
         or int(metadata["validation_circuit_count"]) <= 0
         or (
@@ -283,7 +298,7 @@ def export_actor_v2_state_dict(
     with temporary.open("w", encoding="utf-8", newline="\n") as output:
         model_format = (
             GAT_MODEL_FORMAT
-            if variant == "level_gat_gru"
+            if is_gat
             else MEAN_MODEL_FORMAT if has_batch_protocol
             else "SMARTATPG_MODEL_V12"
         )
@@ -330,7 +345,7 @@ class _CppPodemTrainerBase:
         agent: BacktracePPOAgentV2,
     ):
         from .smartatpg_features import CircuitGraph
-        from .smartatpg import ACTOR_INPUT_DIM, GraphGate
+        from .smartatpg import GraphGate
         if not isinstance(graph, CircuitGraph):
             raise TypeError("SmartATPG training requires a CircuitGraph")
         if getattr(agent, "embedding_backend", None) != "smartatpg":
@@ -340,11 +355,7 @@ class _CppPodemTrainerBase:
             raise ValueError("Circuit graph is not registered with this agent")
         self.gates = {name: GraphGate(name, self.circuit_hash, index)
                       for index, name in enumerate(graph.names)}
-        embedding_dim = (
-            2 * agent.gate_embedding_dim + 1
-            if agent.encoder_variant == "level_gat_gru"
-            else ACTOR_INPUT_DIM
-        )
+        embedding_dim = agent.actor_input_dim
         self.agent = agent
         agent_input_dim = getattr(
             self.agent, "actor_input_dim", self.agent.gate_embedding_dim
