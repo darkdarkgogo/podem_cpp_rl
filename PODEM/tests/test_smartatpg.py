@@ -409,6 +409,39 @@ class SmartATPGTests(unittest.TestCase):
         self.assertEqual(trainer._episode_extrinsic_reward, 0.0)
         self.assertEqual(trainer._legacy_pi_reward_sum, 0.0)
 
+    def test_smartatpg_ignores_nn_all_path_events(self):
+        for agent_class in (SmartATPGPPOAgent, GATGRUSmartATPGPPOAgent):
+            with self.subTest(agent=agent_class.__name__):
+                agent = agent_class(
+                    {"test": self.graph}, rnd_beta=0, k_epochs=1,
+                )
+                trainer = CppPodemBacktraceV2Trainer(
+                    self.graph, agent=agent, auto_update=False,
+                )
+                trainer.event_callback({"event": "episode_start"})
+                for event in ("pi_assignment", "backtrack_pi", "backtrace_dead_end"):
+                    trainer.event_callback({"event": event})
+                self.assertEqual(trainer._episode_extrinsic_reward, 0.0)
+                self.assertEqual(trainer._episode_backtrack_count, 0)
+                with self.assertRaisesRegex(ValueError, "Unknown C\\+\\+ PODEM event"):
+                    trainer.event_callback({"event": "unexpected"})
+
+    def test_smartatpg_training_accepts_native_path_events(self):
+        fault_ids = [item["fault_id"] for item in catalog_cpp_podem(self.path)["faults"]]
+        for agent_class in (SmartATPGPPOAgent, GATGRUSmartATPGPPOAgent):
+            with self.subTest(agent=agent_class.__name__):
+                agent = agent_class(
+                    {"test": self.graph}, rnd_beta=0, k_epochs=1,
+                )
+                trainer = CppPodemBacktraceV2Trainer(
+                    self.graph, agent=agent, auto_update=False,
+                )
+                summary = trainer.run(
+                    self.path, fault_ids=fault_ids, backtrack_limit=20,
+                )
+                self.assertEqual(summary["episodes"], len(fault_ids))
+                self.assertEqual(len(trainer.episode_metrics), len(fault_ids))
+
     def test_encoder_specific_reward_events(self):
         cases = (
             (

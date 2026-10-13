@@ -508,6 +508,8 @@ class CppPodemBacktraceV2Trainer(_CppPodemTrainerBase):
             self._episode_extrinsic_reward += reward
             self._legacy_pi_reward_sum += reward
             return
+        if event_type in ("pi_assignment", "backtrack_pi", "backtrace_dead_end"):
+            return
         if event_type != "episode_end":
             raise ValueError(f"Unknown C++ PODEM event: {event_type}")
 
