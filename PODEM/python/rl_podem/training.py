@@ -47,6 +47,7 @@ AGENT_TYPES = {
 }
 ABLATION_AGENTS = {
     "full": GATGRUSmartATPGPPOAgent,
+    "no_cache": GATGRUSmartATPGPPOAgent,
     "no_lock": GATGRUSmartATPGPPOAgent,
     "no_object_value": GATNoValuePPOAgent,
 }

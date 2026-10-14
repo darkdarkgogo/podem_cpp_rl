@@ -2,26 +2,16 @@
 
 ## 拼接 fanin 之前的 GAT 消融（独立 worktree）
 
-本 worktree 基于 `7d92ab8`：GAT Actor 接收 11 维 object gate embedding 和 1 维 objective value，输出两个 fanin 位置的 logits；没有拼接候选 fanin embedding。`no_object_value` 的 Actor/Critic 输入均为 11 维，PODEM 仍使用 objective value。`no_lock` 在训练和验证中关闭 backtrace 路径锁。`no_cache` 在原生验证时关闭 Actor logits 缓存，复用 `full` 同一 checkpoint 和 Actor，不单独训练。
+本 worktree 基于 `7d92ab8`：GAT Actor 接收 11 维 object gate embedding 和 1 维 objective value，输出两个 fanin 位置的 logits；没有拼接候选 fanin embedding。`no_object_value` 的 Actor/Critic 输入均为 11 维，PODEM 仍使用 objective value。`no_lock` 在训练和验证中关闭 backtrace 路径锁。`no_cache` 独立训练、保存自己的 checkpoint，并在原生验证时关闭 Actor logits 缓存。训练期间使用 Python Actor 回调，因此 logits cache 只影响原生验证，不改变训练计算。
 
 ```powershell
 cd PODEM
 python -m pip install -e .
-python scripts/train_pre_fanin_ablation.py --full-run-dir 'PATH_TO_OLD_FULL_RUN' --gpu 0
+python scripts/train_pre_fanin_ablation.py --dataset-root data --no-cache-gpu 0 --no-lock-gpu 1 --no-object-value-gpu 2
 python scripts/validate_pre_fanin_ablation.py
 ```
 
-`--full-run-dir` 指向已有旧版完整训练与验证结果，需包含 `train_summary.json`、`training/gat`、`validation/detailed/gat_records.jsonl` 和原三方验证报告。不会重新训练或验证 `full`。训练和验证必须分别启动。训练复用完整组的 manifest、seed、奖励和两轮协议，只训练 `no_lock`、`no_object_value`，按顺序使用一张 CUDA GPU。输出位于 `artifacts/pre_fanin_ablation`，日志保存在 `logs`，中断后重复训练命令可恢复。验证在同一有序 fault catalog 上读取已有 `full` 结果并运行其余三组，写入逐故障 JSONL、逐电路与 TOTAL 的 CSV/JSON 对照表。当前开发机的 PyTorch 是 CPU 版，需要在有 CUDA 版 PyTorch 的训练环境执行正式实验。
-
-如果只想先验证 `no_cache`，无需运行消融训练：
-
-```bash
-cd PODEM
-python3 -m pip install -e .
-python3 scripts/validate_pre_fanin_no_cache.py --full-run-dir artifacts/smartatpg_dual
-```
-
-此命令复用旧版 `full` 的最佳轮 checkpoint 和原验证结果，输出 `artifacts/pre_fanin_ablation/no_cache_validation/validation_no_cache.csv`。如果只有旧训练产物、没有原验证报告和 GAT 逐故障记录，需指定 `--round 1` 或 `--round 2`；此时只生成 `no_cache` 指标，不计算相对 `full` 的差值。旧训练产物须包括 `train_summary.json`、GAT manifest、所选轮的 `inference_round_XX.pth` 与 `model_round_XX.txt`，以及 validation 电路数据。
+训练脚本在 `artifacts/pre_fanin_ablation/preparation/gat` 准备一份 GAT manifest，然后让三个组共享它、使用同一随机种子和两轮训练协议，并行占用三张不同的 CUDA GPU。已有 manifest 可通过 `--manifest PATH` 直接复用；训练脚本不读取或训练 `full`。输出在 `artifacts/pre_fanin_ablation`，各组训练日志在 `logs`，中断后重复训练命令可恢复。验证在同一有序 fault catalog 上对三组各自选择最佳轮，生成逐故障 JSONL 和逐电路及 TOTAL 的 `validation/validation_pre_fanin_ablation.csv`、JSON 报告。该对照表只有三组结果，不读取 `full` 数据。当前开发机的 PyTorch 是 CPU 版，正式训练需在三张 CUDA GPU 的服务器执行。
 
 正式实验只有训练和验证两个入口。训练不会读取 validation fault catalog、生成 validation embedding、计算 validation score 或自动开始 comparison；训练完成后必须显式运行验证命令。
 
