@@ -1,6 +1,7 @@
 """Focused contract checks for the two-output pre-fanin GAT variants."""
 
 from pathlib import Path
+import json
 import tempfile
 import unittest
 
@@ -9,7 +10,9 @@ import torch
 from rl_podem.artifact_io import INFERENCE_CHECKPOINT_FORMAT, manifest_hash
 from rl_podem.gat_gru import GATGRUSmartATPGPolicy, GATNoValuePolicy, GATNoValuePPOAgent
 from rl_podem.cpp_bridge import CppPodemBacktraceV2Trainer, catalog_cpp_podem
-from rl_podem.pre_fanin_ablation import _check_group, _validate_record_order, comparison_row
+from rl_podem.pre_fanin_ablation import (
+    _check_group, _validate_record_order, comparison_row, run_no_cache_validation,
+)
 from rl_podem.smartatpg_artifacts import export_actor, export_descriptors, policy_from_state
 from rl_podem.smartatpg_features import load_circuit_graph
 from rl_podem.smartatpg_portable import load_model
@@ -184,6 +187,59 @@ class PreFaninAblationTests(unittest.TestCase):
         _validate_record_order(records, circuits)
         with self.assertRaisesRegex(ValueError, "fault catalog"):
             _validate_record_order(list(reversed(records)), circuits)
+
+    def test_no_cache_standalone_uses_only_old_training_artifacts(self):
+        try:
+            import cpp_podem
+        except ImportError:
+            self.skipTest("Native extension is unavailable")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            data = root / "data" / "validation"
+            data.mkdir(parents=True)
+            (data / "small.bench").write_text(
+                "INPUT(a)\nINPUT(b)\ny = AND(a, b)\nOUTPUT(y)\n", encoding="utf-8",
+            )
+            full = root / "old_full"
+            model_dir = full / "training" / "gat"
+            model_dir.mkdir(parents=True)
+            manifest = full / "manifest.json"
+            manifest.write_text(json.dumps({
+                "encoder_variant": "level_gat_gru", "normal_rounds": 2,
+            }), encoding="utf-8")
+            state = GATGRUSmartATPGPolicy().state_dict()
+            torch.save({
+                "format": INFERENCE_CHECKPOINT_FORMAT,
+                "manifest_hash": manifest_hash(manifest),
+                "encoder_variant": "level_gat_gru",
+                "reward_scheme": GAT_REWARD_SCHEME,
+                "backtrack_limit": 100, "seed": 2026, "round": 1,
+                "policy_old": state,
+            }, model_dir / "inference_round_01.pth")
+            export_actor(
+                state, model_dir / "model_round_01.txt",
+                training_protocol=self.PROTOCOL,
+            )
+            (full / "train_summary.json").write_text(json.dumps({
+                "format": "SMARTATPG_DUAL_TRAINING_V3_SEPARATED_VALIDATION",
+                "seed": 2026, "rounds": 2, "backtrack_limit": 100,
+                "backtrace_lock": "auto", "dataset_root": str(root / "data"),
+                "manifests": {"gat": str(manifest)},
+                "training_dirs": {"gat": str(model_dir)},
+            }), encoding="utf-8")
+            output = root / "output"
+            with self.assertRaisesRegex(ValueError, "Pass --round"):
+                run_no_cache_validation(full, output)
+            report = run_no_cache_validation(full, output, round_number=1)
+            self.assertFalse(report["existing_full_validation_reused"])
+            self.assertEqual(report["round"], 1)
+            self.assertEqual(
+                [row["circuit"] for row in report["rows"]], ["small", "TOTAL"],
+            )
+            self.assertIn("no_cache_detected_faults", report["rows"][-1])
+            self.assertNotIn("full_detected_faults", report["rows"][-1])
+            self.assertTrue((output / "detailed" / "no_cache_records.jsonl").is_file())
+            self.assertTrue((output / "validation_no_cache.csv").is_file())
 
 
 if __name__ == "__main__":

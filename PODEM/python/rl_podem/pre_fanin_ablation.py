@@ -41,15 +41,15 @@ def _row(summary, circuit):
     )
 
 
-def comparison_row(circuit, results):
+def comparison_row(circuit, results, groups=GROUPS):
     row = {"circuit": circuit}
-    full = _row(results["full"], circuit)
-    for group in GROUPS:
+    full = _row(results["full"], circuit) if "full" in results else None
+    for group in groups:
         entry = _row(results[group], circuit)
         for label, source in METRICS:
             row[f"{group}_{label}"] = entry[source]
         row[f"{group}_fault_coverage_pct"] = 100.0 * entry["fault_coverage"]
-        if group != "full":
+        if group != "full" and full is not None:
             for label, source in METRICS:
                 if label != "runtime_atpg_s":
                     row[f"{group}_{label}_delta_vs_full"] = entry[source] - full[source]
@@ -163,6 +163,106 @@ def _existing_full_result(full_run_dir, circuits, seed, manifest):
         ):
             raise ValueError(f"Existing full GAT records disagree with report: {name}")
     return records, result, selection, snapshot_id(full_state)
+
+
+def run_no_cache_validation(full_run_dir, output_dir=None, seed=None, round_number=None):
+    """Validate only the cache switch using the existing full checkpoint."""
+    full_run_dir = Path(full_run_dir).resolve()
+    full_summary = _read_json(full_run_dir / "train_summary.json", "existing full GAT summary")
+    if (full_summary.get("format") != "SMARTATPG_DUAL_TRAINING_V3_SEPARATED_VALIDATION" or
+            full_summary.get("rounds") != 2 or
+            full_summary.get("backtrack_limit") != 100 or
+            full_summary.get("backtrace_lock") not in ("auto", "on")):
+        raise ValueError("Existing full GAT training protocol differs from pre-fanin ablation")
+    if seed is None:
+        seed = full_summary["seed"]
+    if seed != full_summary["seed"]:
+        raise ValueError("Validation seed must match existing full GAT training")
+    output_dir = (
+        ROOT / "artifacts/pre_fanin_ablation/no_cache_validation"
+        if output_dir is None else Path(output_dir).resolve()
+    )
+    if output_dir == full_run_dir or full_run_dir in output_dir.parents:
+        raise ValueError("No-cache output must not overwrite the existing full run")
+    manifest = Path(full_summary["manifests"]["gat"]).resolve()
+    manifest_data = _read_json(manifest, "existing full GAT manifest")
+    if (manifest_data.get("encoder_variant") != "level_gat_gru" or
+            manifest_data.get("normal_rounds") != 2):
+        raise ValueError("Existing full GAT must use a two-round pre-fanin manifest")
+    validation_paths = discover_validation_dataset(Path(full_summary["dataset_root"]))
+    circuits = _load_validation_catalogs(
+        {"format": "fresh-validation"},
+        [{"name": path.stem, "circuit": str(path)} for path in validation_paths],
+    )
+    validation_dir = full_run_dir / "validation"
+    report_exists = (validation_dir / "validation_three_way_comparison.json").is_file()
+    records_exist = (validation_dir / "detailed" / "gat_records.jsonl").is_file()
+    if report_exists != records_exist:
+        raise ValueError("Existing full validation report and GAT records must both be present")
+    full_records = full_result = full_snapshot = None
+    if report_exists:
+        full_records, full_result, full_selection, full_snapshot = _existing_full_result(
+            full_run_dir, circuits, seed, manifest,
+        )
+        selected_round = full_selection["best_round"]
+        if round_number is not None and round_number != selected_round:
+            raise ValueError("Requested round differs from the existing full best round")
+        round_number = selected_round
+    elif round_number not in (1, 2):
+        raise ValueError("Pass --round 1 or --round 2 when existing full validation is absent")
+    model_dir = Path(full_summary["training_dirs"]["gat"]).resolve()
+    checkpoint = model_dir / f"inference_round_{round_number:02d}.pth"
+    payload, state = _load_inference_checkpoint(
+        checkpoint, "level_gat_gru", manifest, round_number,
+        expected_seed=seed,
+    )
+    if payload.get("backtrace_lock", True) is not True:
+        raise ValueError("Existing full GAT checkpoint disables backtrace lock")
+    checkpoint_snapshot = snapshot_id(state)
+    if full_snapshot is not None and checkpoint_snapshot != full_snapshot:
+        raise ValueError("Existing full GAT checkpoint snapshot changed")
+    no_cache_records, no_cache_result = _evaluate_model_round(
+        "no_cache", "level_gat_gru", manifest, model_dir, circuits,
+        output_dir, round_number, seed, True, logits_cache=False,
+    )
+    atomic_json_lines(output_dir / "detailed" / "no_cache_records.jsonl", no_cache_records)
+    results = {"no_cache": no_cache_result}
+    groups = ("no_cache",)
+    if full_result is not None:
+        atomic_json_lines(output_dir / "detailed" / "full_records.jsonl", full_records)
+        results["full"] = full_result
+        groups = ("full", "no_cache")
+    rows = [
+        comparison_row(name, results, groups=groups)
+        for name in [item["name"] for item in circuits] + ["TOTAL"]
+    ]
+    report = {
+        "format": "SMARTATPG_PRE_FANIN_NO_CACHE_VALIDATION_V1",
+        "seed": seed,
+        "backtrack_limit": 100,
+        "manifest": str(manifest),
+        "full_run_dir": str(full_run_dir),
+        "round": round_number,
+        "existing_full_validation_reused": full_result is not None,
+        "full_actor_checkpoint_snapshot": checkpoint_snapshot,
+        "historical_full_actor_hash_available": False,
+        "runtime_definition": "sum(per_fault.atpg_seconds)",
+        "rows": rows,
+    }
+    atomic_json(output_dir / "validation_no_cache.json", report)
+    _atomic_csv(output_dir / "validation_no_cache.csv", rows)
+    return report
+
+
+def no_cache_main(argv=None):
+    parser = argparse.ArgumentParser(description="Validate only no_cache using an existing full GAT run")
+    parser.add_argument("--full-run-dir", type=Path, default=ROOT / "artifacts/smartatpg_dual")
+    parser.add_argument("--output-dir", type=Path)
+    parser.add_argument("--seed", type=int)
+    parser.add_argument("--round", type=int, choices=(1, 2), dest="round_number",
+                        help="Required if the old full validation report is unavailable")
+    args = parser.parse_args(argv)
+    run_no_cache_validation(args.full_run_dir, args.output_dir, args.seed, args.round_number)
 
 
 def run_validation(run_dir, output_dir=None, seed=None):

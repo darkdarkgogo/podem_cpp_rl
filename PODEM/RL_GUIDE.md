@@ -13,6 +13,16 @@ python scripts/validate_pre_fanin_ablation.py
 
 `--full-run-dir` 指向已有旧版完整训练与验证结果，需包含 `train_summary.json`、`training/gat`、`validation/detailed/gat_records.jsonl` 和原三方验证报告。不会重新训练或验证 `full`。训练和验证必须分别启动。训练复用完整组的 manifest、seed、奖励和两轮协议，只训练 `no_lock`、`no_object_value`，按顺序使用一张 CUDA GPU。输出位于 `artifacts/pre_fanin_ablation`，日志保存在 `logs`，中断后重复训练命令可恢复。验证在同一有序 fault catalog 上读取已有 `full` 结果并运行其余三组，写入逐故障 JSONL、逐电路与 TOTAL 的 CSV/JSON 对照表。当前开发机的 PyTorch 是 CPU 版，需要在有 CUDA 版 PyTorch 的训练环境执行正式实验。
 
+如果只想先验证 `no_cache`，无需运行消融训练：
+
+```bash
+cd PODEM
+python3 -m pip install -e .
+python3 scripts/validate_pre_fanin_no_cache.py --full-run-dir artifacts/smartatpg_dual
+```
+
+此命令复用旧版 `full` 的最佳轮 checkpoint 和原验证结果，输出 `artifacts/pre_fanin_ablation/no_cache_validation/validation_no_cache.csv`。如果只有旧训练产物、没有原验证报告和 GAT 逐故障记录，需指定 `--round 1` 或 `--round 2`；此时只生成 `no_cache` 指标，不计算相对 `full` 的差值。旧训练产物须包括 `train_summary.json`、GAT manifest、所选轮的 `inference_round_XX.pth` 与 `model_round_XX.txt`，以及 validation 电路数据。
+
 正式实验只有训练和验证两个入口。训练不会读取 validation fault catalog、生成 validation embedding、计算 validation score 或自动开始 comparison；训练完成后必须显式运行验证命令。
 
 ## 训练
