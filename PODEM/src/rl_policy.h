@@ -177,6 +177,7 @@ public:
   const std::string &encoder_variant() const {
     return actor_.encoder_variant();
   }
+  void set_logits_cache_enabled(bool enabled) { use_logits_cache_ = enabled; }
 
 private:
   ActorModel actor_;

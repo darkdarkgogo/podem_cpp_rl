@@ -221,6 +221,7 @@ def _load_inference_checkpoint(
 def _evaluate_model_round(
     name, encoder, manifest_path, model_dir, circuits, output_dir,
     round_number, seed, backtrace_lock, expected_ablation=None,
+    logits_cache=None,
 ):
     checkpoint = Path(model_dir) / f"inference_round_{round_number:02d}.pth"
     actor_path = Path(model_dir) / f"model_round_{round_number:02d}.txt"
@@ -259,7 +260,7 @@ def _evaluate_model_round(
             item, item["episode_fault_ids"], embeddings[item["name"]], actor_path,
             journal, seed, payload["reward_scheme"],
             backtrace_step_rewards[item["name"]],
-            backtrace_lock,
+            backtrace_lock, logits_cache,
         ))
     _validate_records(records, name)
     summary = _summarize_validation(records, circuits, round_number)

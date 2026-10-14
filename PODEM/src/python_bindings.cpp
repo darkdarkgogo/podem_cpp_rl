@@ -426,7 +426,7 @@ py::list run_native_validation(
     const std::string &reward_scheme,
     double backtrace_step_reward,
     const std::string &journal_path, const std::string &circuit_name,
-    py::object backtrace_lock) {
+    py::object backtrace_lock, py::object logits_cache) {
   if (fault_ids.empty()) {
     throw std::invalid_argument("Native validation requires fault IDs");
   }
@@ -437,6 +437,9 @@ py::list run_native_validation(
   const bool has_backtrace_lock_override = !backtrace_lock.is_none();
   const bool backtrace_lock_override =
       has_backtrace_lock_override ? backtrace_lock.cast<bool>() : false;
+  const bool has_logits_cache_override = !logits_cache.is_none();
+  const bool logits_cache_override =
+      has_logits_cache_override ? logits_cache.cast<bool>() : false;
   ATPG atpg;
   atpg.detected_num = 1;
   atpg.set_backtrack_limit(backtrack_limit);
@@ -455,6 +458,9 @@ py::list run_native_validation(
         atpg.get_decision_policy());
     if (!actor) {
       throw std::runtime_error("Native validation actor type is unavailable");
+    }
+    if (has_logits_cache_override) {
+      actor->set_logits_cache_enabled(logits_cache_override);
     }
     atpg.set_backtrace_lock(
         has_backtrace_lock_override
@@ -807,7 +813,8 @@ PYBIND11_MODULE(cpp_podem, module) {
              py::arg("reward_scheme"),
              py::arg("backtrace_step_reward"),
              py::arg("journal_path") = "", py::arg("circuit_name") = "",
-             py::arg("backtrace_lock") = py::none());
+             py::arg("backtrace_lock") = py::none(),
+             py::arg("logits_cache") = py::none());
   module.def("run_native_scoap_validation", &run_native_scoap_validation,
              py::arg("circuit_path"), py::arg("backtrack_limit"),
              py::arg("seed"), py::arg("fault_ids"),

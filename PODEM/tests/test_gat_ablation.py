@@ -1,4 +1,4 @@
-"""Structural and artifact checks for the four GAT ablation groups."""
+"""Structural and artifact checks for the three trained GAT ablations."""
 
 import sys
 import tempfile
@@ -14,14 +14,15 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from rl_podem.gat_ablation import GROUPS, comparison_row
-from rl_podem.gat_gru import GATNoGRUPolicy, GATNoValuePolicy
+from rl_podem.gat_gru import (
+    GATGRUSmartATPGPolicy, GATGRUSmartATPGPPOAgent, GATNoValuePolicy,
+)
+from rl_podem.training import ABLATION_AGENTS
 from rl_podem.smartatpg_artifacts import (
     encoder_variant, export_actor, export_descriptors, policy_from_state,
 )
 from rl_podem.smartatpg_features import load_circuit_graph
-from rl_podem.smartatpg_portable import (
-    compute_embeddings, load_graph, load_model,
-)
+from rl_podem.smartatpg_portable import load_model
 from rl_podem.validation import _load_inference_checkpoint
 from rl_podem.artifact_io import INFERENCE_CHECKPOINT_FORMAT, manifest_hash
 
@@ -41,22 +42,24 @@ PROTOCOL = {
 
 
 class GATAblationTests(unittest.TestCase):
-    def test_no_gru_has_no_gru_tensors_and_portable_embeddings_match(self):
+    def test_no_cache_keeps_gru_and_python_embedding_cache(self):
         torch.manual_seed(11)
-        policy = GATNoGRUPolicy()
+        self.assertIs(ABLATION_AGENTS["no_cache"], GATGRUSmartATPGPPOAgent)
+        self.assertIs(GATGRUSmartATPGPPOAgent.policy_class, GATGRUSmartATPGPolicy)
+        policy = GATGRUSmartATPGPolicy()
         state = policy.state_dict()
-        self.assertFalse(any(".gru." in name for name in state))
-        self.assertEqual(encoder_variant(state), "level_gat_no_gru")
+        self.assertTrue(any(".gru." in name for name in state))
+        self.assertEqual(encoder_variant(state), "level_gat_gru")
         with tempfile.TemporaryDirectory() as directory:
             circuit = Path(directory) / "tiny.bench"
-            actor = Path(directory) / "actor.txt"
             circuit.write_text(BENCH, encoding="utf-8")
-            export_actor(state, actor, training_protocol=PROTOCOL)
-            portable = load_model(actor)
-            expected = policy_from_state(state).graph_embeddings(load_circuit_graph(circuit))
-            actual = compute_embeddings(portable, load_graph(circuit))
-            self.assertEqual(portable.encoder_variant, "level_gat_no_gru")
-            self.assertTrue(torch.allclose(expected, torch.tensor(actual), atol=1e-5, rtol=1e-5))
+            graph = load_circuit_graph(circuit)
+            with patch.object(policy.graph_encoder, "forward", wraps=policy.graph_encoder.forward) as forward:
+                with torch.no_grad():
+                    first = policy.graph_embeddings(graph, cached=True)
+                    second = policy.graph_embeddings(graph, cached=True)
+                self.assertEqual(forward.call_count, 1)
+                self.assertTrue(torch.equal(first, second))
 
     def test_no_object_value_removes_actor_and_critic_signal(self):
         torch.manual_seed(12)
@@ -86,7 +89,7 @@ class GATAblationTests(unittest.TestCase):
             circuit = Path(directory) / "tiny.bench"
             circuit.write_text(BENCH, encoding="utf-8")
             graph = load_circuit_graph(circuit)
-            for policy_type in (GATNoGRUPolicy, GATNoValuePolicy):
+            for policy_type in (GATGRUSmartATPGPolicy, GATNoValuePolicy):
                 with self.subTest(policy=policy_type.__name__):
                     policy = policy_type()
                     state = policy.state_dict()
@@ -124,8 +127,8 @@ class GATAblationTests(unittest.TestCase):
             }
             results[group] = {"circuits": [{"circuit": "tiny", **values}], **values}
         row = comparison_row("tiny", results)
-        self.assertAlmostEqual(row["no_gru_coverage_delta_pp_vs_full"], -10.0)
-        self.assertEqual(row["no_gru_backtracks_delta_vs_full"], 1)
+        self.assertAlmostEqual(row["no_cache_coverage_delta_pp_vs_full"], -10.0)
+        self.assertEqual(row["no_cache_backtracks_delta_vs_full"], 1)
         self.assertEqual(row["no_lock_aborted_faults"], 2)
         self.assertEqual(row["no_lock_aborted_faults_delta_vs_full"], 2)
 

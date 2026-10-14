@@ -24,7 +24,7 @@ from .smartatpg_rewards import (
 
 def _native_validation_batch(
     item, fault_ids, embedding_path, actor_path, records_path, seed,
-    reward_scheme, backtrace_step_reward, backtrace_lock=None,
+    reward_scheme, backtrace_step_reward, backtrace_lock=None, logits_cache=None,
 ):
     try:
         import cpp_podem
@@ -43,7 +43,7 @@ def _native_validation_batch(
         BACKTRACK_LIMIT, seed, fault_ids, reward_scheme,
         backtrace_step_reward,
         _native_circuit_path(records_path), item["name"],
-        backtrace_lock,
+        backtrace_lock, logits_cache,
     )
     if len(native_records) != len(fault_ids):
         raise RuntimeError("Native validation returned the wrong fault count")

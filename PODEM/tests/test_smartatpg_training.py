@@ -482,7 +482,16 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
                 GAT_REWARD_SCHEME, -0.1, False,
             )
         self.assertEqual(records[0]["fault_id"], "f0")
-        self.assertIs(calls[0][-1], False)
+        self.assertIs(calls[0][-2], False)
+        self.assertIsNone(calls[0][-1])
+        with patch.dict(sys.modules, {"cpp_podem": FakeCppPodem}):
+            _native_validation_batch(
+                {"name": "c", "circuit": "c.bench"}, ["f0"],
+                "c.emb", "actor.txt", "records.jsonl", 2026,
+                GAT_REWARD_SCHEME, -0.1, True, False,
+            )
+        self.assertIs(calls[1][-2], True)
+        self.assertIs(calls[1][-1], False)
 
     def test_trainer_exposes_both_encoder_agents(self):
         self.assertEqual(set(AGENT_TYPES), {"fanin_mean", "level_gat_gru"})

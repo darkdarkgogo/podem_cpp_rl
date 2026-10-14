@@ -2,18 +2,18 @@
 
 ## GAT 单因素消融（独立入口）
 
-完整 GAT-GRU、去 GRU、关 backtrace 锁、去 `object value` 动态输入使用独立脚本。四组共用一次 `level_gat_gru` 训练 manifest，分别从头训练；验证脚本使用同一有序 validation fault catalog 顺序运行四组，不调用 NN-All 或 Mean。旧的双模型脚本及其输出目录不受影响。
+以已完成的 GAT-GRU 训练与验证结果为基线，只从头训练三组：关闭缓存、关闭 backtrace 锁、去 `object value` 动态输入。三组直接复用完整模型的 GAT 训练 manifest，同时启动并分别使用 GPU 0、1、2。验证脚本读取完整模型已有的逐故障记录，在同一有序 validation fault catalog 上验证三个消融组，不调用 NN-All 或 Mean。
 
 ```bash
 cd PODEM
 python -m pip install -e .
-python scripts/train_gat_ablation.py --dataset-root data --output-dir artifacts/gat_ablation --gpu 0
-python scripts/validate_gat_ablation.py --run-dir artifacts/gat_ablation
+python scripts/train_gat_ablation.py
+python scripts/validate_gat_ablation.py
 ```
 
-训练脚本依次写入 `training/{full,no_gru,no_lock,no_object_value}`、`logs/` 与 `train_summary.json`。中断后用同一命令恢复。验证输出 `validation/validation_gat_ablation.csv`、同名 JSON 和 `validation/detailed/{full,no_gru,no_lock,no_object_value}_records.jsonl`。主表有逐电路及 TOTAL 的 detected/redundant/aborted、coverage、backtracks、backtrace steps、ATPG runtime，并列出每个消融组相对完整模型的差值。应先比较覆盖率和 aborted 数，再解释回溯次数与耗时，避免将未检测到故障误读为搜索更快。
+默认完整模型目录为 `artifacts/smartatpg_dual`，其中需有 `train_summary.json`、GAT checkpoint 与 `validation/detailed/gat_records.jsonl`；若目录不同，用 `--full-run-dir` 指定。完整模型不会重新训练。训练输出 `artifacts/gat_ablation/training/{no_cache,no_lock,no_object_value}`、各组日志及 `train_summary.json`，中断后用同一命令恢复。可用 `--no-cache-gpu`、`--no-lock-gpu`、`--no-object-value-gpu` 修改三张 GPU 的分配。验证输出 `validation/validation_gat_ablation.csv`、同名 JSON 和四组逐故障 JSONL。主表有逐电路及 TOTAL 的 detected/redundant/aborted、coverage、backtracks、backtrace steps、ATPG runtime，并列出各消融组相对完整模型的差值。
 
-去 GRU 组保留相同的逐 level 正反向单头 attention，使用 `ELU(h + m)` 更新 11 维状态。去目标值组的 Actor 输入由 23 维降为 22 维，Critic 由 12 维降为 11 维；PODEM 的目标值与逻辑约束仍照常计算。路径锁只在 `no_lock` 组的训练和验证中同时关闭。各组共用 seed 2026、backtrack limit 100、奖励、PPO 参数和电路集合。结构变体有独立的 encoder variant 与工件配置标识，验证时会核对 checkpoint 的组名与锁状态。
+无缓存组保留 GAT-GRU 和 Python 图 embedding 缓存，仅在原生验证时关闭 C++ Actor logits 缓存。该缓存属于推理阶段的重复计算优化，因此这一组训练仍与完整模型采用相同网络和训练路径，主要比较原生推理耗时。验证会先要求无缓存组与完整组的 Actor 快照完全相同；若重新训练产生了不同权重，脚本会报错，避免将模型差异误记为缓存效果。去目标值组的 Actor 输入由 23 维降为 22 维，Critic 由 12 维降为 11 维；PODEM 的目标值与逻辑约束仍照常计算。路径锁只在 `no_lock` 组的训练和验证中关闭。各组共享完整模型的 seed、backtrack limit 100、奖励、PPO 参数和训练电路。验证核对 checkpoint 的组名、锁状态、seed 和 manifest。
 
 正式实验只有训练和验证两个入口。训练不会读取 validation fault catalog、生成 validation embedding、计算 validation score 或自动开始 comparison；训练完成后必须显式运行验证命令。
 

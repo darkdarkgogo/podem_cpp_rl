@@ -33,7 +33,7 @@ from .smartatpg_rewards import (
     reward_scheme_for_encoder,
 )
 from .gat_gru import (
-    GATGRUSmartATPGPPOAgent, GATNoGRUPPOAgent, GATNoValuePPOAgent,
+    GATGRUSmartATPGPPOAgent, GATNoValuePPOAgent,
 )
 from .ppo import device
 from .smartatpg import SmartATPGPPOAgent
@@ -48,8 +48,7 @@ AGENT_TYPES = {
     "level_gat_gru": GATGRUSmartATPGPPOAgent,
 }
 ABLATION_AGENTS = {
-    "full": GATGRUSmartATPGPPOAgent,
-    "no_gru": GATNoGRUPPOAgent,
+    "no_cache": GATGRUSmartATPGPPOAgent,
     "no_lock": GATGRUSmartATPGPPOAgent,
     "no_object_value": GATNoValuePPOAgent,
 }
@@ -262,10 +261,13 @@ def main(argv=None):
         "--encoder", choices=tuple(AGENT_TYPES), default="level_gat_gru"
     )
     parser.add_argument("--ablation", choices=tuple(ABLATION_AGENTS))
+    parser.add_argument("--require-cuda", action="store_true")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--resume", action="store_true")
     mode.add_argument("--continue-from", type=Path)
     args = parser.parse_args(argv)
+    if args.require_cuda and (device.type != "cuda" or torch.cuda.device_count() != 1):
+        raise RuntimeError("This training job requires exactly one visible CUDA GPU")
     if args.ablation is not None and args.encoder != "level_gat_gru":
         raise ValueError("GAT ablations require --encoder level_gat_gru")
     if args.ablation is not None:

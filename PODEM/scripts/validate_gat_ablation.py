@@ -1,4 +1,4 @@
-"""Validate the four GAT ablation groups on one ordered fault catalog."""
+"""Validate three GAT ablations against an existing full GAT result."""
 
 from pathlib import Path
 import sys
