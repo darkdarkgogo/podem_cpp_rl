@@ -19,7 +19,7 @@ def resolve_backend(metadata, requested=None):
     state_dim = actor_dim + ACTION_MASK_DIM
     if variant == ENCODER_VARIANT:
         expected_graph_config = GRAPH_CONFIG
-    elif variant == "level_gat_gru":
+    elif variant in ("level_gat_gru", "level_gat_gru_no_object_value"):
         from .gat_gru import GRAPH_CONFIG as expected_graph_config
     else:
         raise ValueError(f"Unsupported SmartATPG encoder variant: {variant}")
@@ -47,7 +47,7 @@ def smartatpg_metadata(encoder_variant=ENCODER_VARIANT):
     actor_dim = ACTOR_INPUT_DIM + int(encoder_variant == "level_gat_gru")
     if encoder_variant == ENCODER_VARIANT:
         graph_config, graph_config_id = GRAPH_CONFIG, GRAPH_CONFIG_ID
-    elif encoder_variant == "level_gat_gru":
+    elif encoder_variant in ("level_gat_gru", "level_gat_gru_no_object_value"):
         from .gat_gru import GRAPH_CONFIG as graph_config, GRAPH_CONFIG_ID as graph_config_id
     else:
         raise ValueError(f"Unsupported SmartATPG encoder variant: {encoder_variant}")

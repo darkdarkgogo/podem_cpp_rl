@@ -151,12 +151,14 @@ def load_model(path):
     expected_config = {
         "fanin_mean": GRAPH_CONFIG,
         "level_gat_gru": GAT_GRU_GRAPH_CONFIG,
+        "level_gat_gru_no_object_value": GAT_GRU_GRAPH_CONFIG,
     }.get(encoder_variant)
     if graph_config != expected_config:
         raise ValueError("Invalid SmartATPG encoder variant or graph configuration")
     allowed_formats = {
         "fanin_mean": (LEGACY_MODEL_FORMAT, MEAN_MODEL_FORMAT),
         "level_gat_gru": (GAT_MODEL_FORMAT,),
+        "level_gat_gru_no_object_value": (GAT_MODEL_FORMAT,),
     }[encoder_variant]
     if model_format not in allowed_formats:
         raise ValueError(
@@ -209,6 +211,7 @@ def load_model(path):
         or backtrack_limit != 100
         or reward_scheme != {
             "level_gat_gru": "cubic_backtrack_depthnorm_v2",
+            "level_gat_gru_no_object_value": "cubic_backtrack_depthnorm_v2",
             "fanin_mean": "legacy_pi_exponential",
         }[encoder_variant]
         or normal_rounds != (2 if model_format != LEGACY_MODEL_FORMAT else 5)
@@ -517,7 +520,7 @@ def compute_embeddings(model, graph):
     if any(len(row) < size for row in graph.features):
         raise ValueError("Circuit features do not contain the model's required inputs")
     features = tuple(row[:size] for row in graph.features)
-    if model.encoder_variant == "level_gat_gru":
+    if model.encoder_variant in ("level_gat_gru", "level_gat_gru_no_object_value"):
         hidden = list(features)
         hidden = _gat_gru_sweep(
             model, hidden, graph.level_groups[1:], graph.fanins, "forward_pass"

@@ -18,7 +18,12 @@ def encoder_variant(state):
     if "graph_encoder.layer.weight" in state:
         return ENCODER_VARIANT
     if "graph_encoder.forward_pass.projection.weight" in state:
-        return "level_gat_gru"
+        actor_dim = state["backtrace_actor.0.weight"].shape[1]
+        if actor_dim == GATE_EMBEDDING_DIM + 1:
+            return "level_gat_gru"
+        if actor_dim == GATE_EMBEDDING_DIM:
+            return "level_gat_gru_no_object_value"
+        raise ValueError("Unknown GAT Actor input dimension")
     raise ValueError("Cannot identify the SmartATPG graph encoder")
 
 
@@ -97,8 +102,12 @@ def policy_from_state(state):
     if encoder_variant(state) == ENCODER_VARIANT:
         policy = SmartATPGPolicy(hidden_dim)
     else:
-        from .gat_gru import GATGRUSmartATPGPolicy
-        policy = GATGRUSmartATPGPolicy(hidden_dim)
+        from .gat_gru import GATGRUSmartATPGPolicy, GATNoValuePolicy
+        policy = (
+            GATNoValuePolicy(hidden_dim)
+            if encoder_variant(state) == "level_gat_gru_no_object_value"
+            else GATGRUSmartATPGPolicy(hidden_dim)
+        )
     policy.load_state_dict(state)
     return policy.eval()
 

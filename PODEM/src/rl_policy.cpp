@@ -21,6 +21,11 @@
 namespace smartatpg {
 namespace {
 
+bool is_gat_variant(const std::string &variant) {
+  return variant == "level_gat_gru" ||
+         variant == "level_gat_gru_no_object_value";
+}
+
 template <std::size_t InputDim>
 void fixed_direct_actor_32x2(
     const float *input,
@@ -85,7 +90,7 @@ std::vector<std::string> required_tensor_names(
   if (encoder_variant == "fanin_mean") {
     names.insert(names.begin(), "graph_encoder.layer.bias");
     names.insert(names.begin(), "graph_encoder.layer.weight");
-  } else if (encoder_variant == "level_gat_gru") {
+  } else if (is_gat_variant(encoder_variant)) {
     const char *directions[] = {"forward_pass", "reverse_pass"};
     const char *suffixes[] = {"attention", "projection.weight",
                               "gru.weight_ih", "gru.weight_hh",
@@ -116,7 +121,7 @@ void read_smartatpg_metadata(
   require(static_cast<bool>(input >> key >> encoder_variant) &&
               key == "encoder_variant" &&
               (encoder_variant == "fanin_mean" ||
-               encoder_variant == "level_gat_gru"),
+               is_gat_variant(encoder_variant)),
           "Invalid SmartATPG encoder variant");
   require(static_cast<bool>(input >> key >> graph_config) &&
               key == "graph_config",
@@ -258,7 +263,7 @@ void ActorModel::load(const std::string &path) {
       decision_state_dim_, snapshot_);
   require((encoder_variant_ == "fanin_mean" &&
            (header == "SMARTATPG_MODEL_V12" || mean_batched_protocol)) ||
-              (encoder_variant_ == "level_gat_gru" &&
+              (is_gat_variant(encoder_variant_) &&
                gat_batched_protocol),
           "SmartATPG actor format does not match encoder protocol in: " + path);
   int best_round = 0;
@@ -288,7 +293,7 @@ void ActorModel::load(const std::string &path) {
           "Invalid SmartATPG backtrack-limit metadata in: " + path);
   require(static_cast<bool>(input >> key >> reward_scheme) &&
               key == "reward_scheme" &&
-              reward_scheme == (encoder_variant_ == "level_gat_gru"
+              reward_scheme == (is_gat_variant(encoder_variant_)
                                     ? "cubic_backtrack_depthnorm_v2"
                                     : "legacy_pi_exponential"),
           "Invalid SmartATPG reward-scheme metadata in: " + path);
@@ -360,7 +365,7 @@ void ActorModel::load(const std::string &path) {
     require(tensor("graph_encoder.layer.bias").values.size() == gate_embedding_dim_,
             "GraphSAGE bias dimensions do not match gate embedding dimension");
   }
-  if (encoder_variant_ == "level_gat_gru") {
+  if (is_gat_variant(encoder_variant_)) {
     const char *directions[] = {"forward_pass", "reverse_pass"};
     for (const char *direction : directions) {
       const std::string prefix = std::string("graph_encoder.") + direction + ".";

@@ -26,7 +26,7 @@ GAT_MODEL_FORMAT = (
 
 
 def resolve_backtrace_lock(mode: str, encoder_variant: str) -> bool:
-    if encoder_variant not in ("level_gat_gru", "fanin_mean"):
+    if encoder_variant not in ("level_gat_gru", "level_gat_gru_no_object_value", "fanin_mean"):
         raise ValueError(f"Unknown encoder variant: {encoder_variant}")
     if mode == "on":
         return True
@@ -34,7 +34,7 @@ def resolve_backtrace_lock(mode: str, encoder_variant: str) -> bool:
         return False
     if mode != "auto":
         raise ValueError(f"Unknown backtrace lock mode: {mode}")
-    return encoder_variant == "level_gat_gru"
+    return encoder_variant != "fanin_mean"
 
 
 def _load_cpp_embedding_artifact(
@@ -65,6 +65,7 @@ def _load_cpp_embedding_artifact(
         expected_config = {
             "fanin_mean": GRAPH_CONFIG_ID,
             "level_gat_gru": GAT_GRU_GRAPH_CONFIG_ID,
+            "level_gat_gru_no_object_value": GAT_GRU_GRAPH_CONFIG_ID,
         }.get(metadata.get("encoder_variant"))
         actor_dim = int(metadata["actor_input_dim"])
         expected_actor_dim = gate_dim + int(metadata.get("encoder_variant") == "level_gat_gru")
@@ -170,7 +171,7 @@ def export_actor_v2_state_dict(
         encoder_tensor_names = (
             "graph_encoder.layer.weight", "graph_encoder.layer.bias",
         )
-    elif variant == "level_gat_gru":
+    elif variant in ("level_gat_gru", "level_gat_gru_no_object_value"):
         encoder_tensor_names = tuple(
             f"graph_encoder.{direction}.{name}"
             for direction in ("forward_pass", "reverse_pass")
@@ -256,7 +257,7 @@ def export_actor_v2_state_dict(
             metadata["encoder_variant"]
         )
         or int(metadata["normal_rounds"]) != (2 if has_batch_protocol else 5)
-        or (variant == "level_gat_gru" and not has_batch_protocol)
+        or (variant in ("level_gat_gru", "level_gat_gru_no_object_value") and not has_batch_protocol)
         or int(metadata["training_circuit_count"]) <= 0
         or int(metadata["validation_circuit_count"]) <= 0
         or (
@@ -272,7 +273,7 @@ def export_actor_v2_state_dict(
     with temporary.open("w", encoding="utf-8", newline="\n") as output:
         model_format = (
             GAT_MODEL_FORMAT
-            if variant == "level_gat_gru"
+            if variant in ("level_gat_gru", "level_gat_gru_no_object_value")
             else MEAN_MODEL_FORMAT if has_batch_protocol
             else "SMARTATPG_MODEL_V12"
         )
@@ -326,7 +327,7 @@ class _CppPodemTrainerBase:
             raise ValueError("Circuit graph is not registered with this agent")
         self.gates = {name: GraphGate(name, self.circuit_hash, index)
                       for index, name in enumerate(graph.names)}
-        embedding_dim = ACTOR_INPUT_DIM + int(agent.encoder_variant == "level_gat_gru")
+        embedding_dim = agent.actor_input_dim
         self.agent = agent
         agent_input_dim = getattr(
             self.agent, "actor_input_dim", self.agent.gate_embedding_dim

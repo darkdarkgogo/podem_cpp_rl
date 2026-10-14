@@ -32,7 +32,7 @@ from .smartatpg_rewards import (
     PAPER_REWARD,
     reward_scheme_for_encoder,
 )
-from .gat_gru import GATGRUSmartATPGPPOAgent
+from .gat_gru import GATGRUSmartATPGPPOAgent, GATNoValuePPOAgent
 from .ppo import device
 from .smartatpg import SmartATPGPPOAgent
 from .smartatpg_artifacts import export_actor
@@ -44,6 +44,11 @@ BEST_CHECKPOINT_FORMAT = "SMARTATPG_DATA_SPLIT_BEST_V6_11D_CO_NO_BUF"
 AGENT_TYPES = {
     "fanin_mean": SmartATPGPPOAgent,
     "level_gat_gru": GATGRUSmartATPGPPOAgent,
+}
+ABLATION_AGENTS = {
+    "full": GATGRUSmartATPGPPOAgent,
+    "no_lock": GATGRUSmartATPGPPOAgent,
+    "no_object_value": GATNoValuePPOAgent,
 }
 def _clone(value):
     if torch.is_tensor(value):
@@ -190,6 +195,8 @@ def _inference_payload(agent, config, round_number):
         "reward_scheme": config["reward_scheme"],
         "backtrack_limit": config["backtrack_limit"],
         "seed": config["seed"],
+        "backtrace_lock": config["backtrace_lock"],
+        "ablation": config.get("ablation"),
         "round": int(round_number),
         "policy_old": _clone(agent.policy_old.state_dict()),
     }
@@ -245,6 +252,7 @@ def main(argv=None):
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--rnd-beta", type=float, default=0.05)
     parser.add_argument("--k-epochs", type=int)
+    parser.add_argument("--ablation", choices=tuple(ABLATION_AGENTS))
     parser.add_argument(
         "--backtrace-lock", choices=("auto", "on", "off"), default="auto",
     )
@@ -255,6 +263,12 @@ def main(argv=None):
     mode.add_argument("--resume", action="store_true")
     mode.add_argument("--continue-from", type=Path)
     args = parser.parse_args(argv)
+    if args.ablation is not None and args.encoder != "level_gat_gru":
+        raise ValueError("GAT ablations require --encoder level_gat_gru")
+    if args.ablation is not None:
+        expected_lock = "off" if args.ablation == "no_lock" else "on"
+        if args.backtrace_lock != expected_lock:
+            raise ValueError(f"{args.ablation} requires --backtrace-lock {expected_lock}")
     args.manifest = args.manifest.resolve()
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
     supported_formats = (MANIFEST_FORMAT,)
@@ -323,7 +337,8 @@ def main(argv=None):
     graphs = {
         item["name"]: load_circuit_graph(item["circuit"]) for item in train_circuits
     }
-    agent = AGENT_TYPES[args.encoder](
+    agent_type = ABLATION_AGENTS[args.ablation] if args.ablation else AGENT_TYPES[args.encoder]
+    agent = agent_type(
         graphs,
         hidden_dim=32,
         lr_actor=hyperparameters["actor_lr"],
@@ -374,10 +389,12 @@ def main(argv=None):
         "paper_reward": PAPER_REWARD,
         "gat_step_penalty_budget": GAT_STEP_PENALTY_BUDGET,
         "reward_scheme": reward_scheme,
-        "encoder_variant": args.encoder,
+        "encoder_variant": agent.encoder_variant,
         "heuristic": HEURISTIC,
         "manifest_hash": manifest_digest,
     }
+    if args.ablation is not None:
+        config["ablation"] = args.ablation
     if batched_training:
         config["faults_per_update"] = FAULTS_PER_UPDATE
     state = _initial_state(manifest_digest, config)

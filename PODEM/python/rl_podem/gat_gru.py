@@ -87,8 +87,13 @@ class LevelWiseGATGRUEncoder(nn.Module):
 
 
 class GATGRUSmartATPGPolicy(SmartATPGPolicy):
+    use_objective_value = True
+
     def __init__(self, hidden_dim=32):
-        super().__init__(hidden_dim, graph_encoder=LevelWiseGATGRUEncoder(), actor_input_dim=ACTOR_INPUT_DIM)
+        super().__init__(
+            hidden_dim, graph_encoder=LevelWiseGATGRUEncoder(),
+            actor_input_dim=FEATURE_DIM + int(self.use_objective_value),
+        )
 
     def batch_logits(self, descriptors, values):
         model_device = self.backtrace_actor[0].weight.device
@@ -101,7 +106,10 @@ class GATGRUSmartATPGPolicy(SmartATPGPolicy):
         values = torch.as_tensor(values, device=model_device).reshape(-1, 1)
         if values.shape[0] != descriptors.shape[0] or not bool(((values == 0) | (values == 1)).all()):
             raise ValueError("agentATPG requires one binary objective value per embedding")
-        state = torch.cat((descriptors, values.to(descriptors.dtype)), dim=-1)
+        state = (
+            torch.cat((descriptors, values.to(descriptors.dtype)), dim=-1)
+            if self.use_objective_value else descriptors
+        )
         return self.backtrace_actor(state), self.critic(state).squeeze(-1)
 
     def backtrace_logits(self, objective_embedding, objective_value):
@@ -122,3 +130,15 @@ class GATGRUSmartATPGPPOAgent(SmartATPGPPOAgent):
         kwargs.setdefault("lr_critic", 0.001)
         kwargs.setdefault("k_epochs", 4)
         super().__init__(graphs, hidden_dim=hidden_dim, **kwargs)
+
+
+class GATNoValuePolicy(GATGRUSmartATPGPolicy):
+    use_objective_value = False
+
+
+class GATNoValuePPOAgent(GATGRUSmartATPGPPOAgent):
+    actor_input_dim = FEATURE_DIM
+    decision_state_dim = FEATURE_DIM + 2
+    encoder_variant = "level_gat_gru_no_object_value"
+    training_format = TRAINING_FORMAT + "_NO_OBJECT_VALUE"
+    policy_class = GATNoValuePolicy
