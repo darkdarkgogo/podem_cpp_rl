@@ -1,6 +1,8 @@
 """Identity-checked validation of the original two-output GAT Actor."""
 
 import argparse
+import json
+import math
 from pathlib import Path
 
 from .artifact_io import atomic_json, atomic_json_lines
@@ -8,9 +10,11 @@ from .data_split import discover_validation_dataset
 from .smartatpg_artifacts import snapshot_id
 from .validation import (
     _atomic_csv, _evaluate_model_round, _load_inference_checkpoint,
-    _read_json, _validate_summary,
+    _read_json, _validate_records, _validate_summary,
 )
-from .validation_core import _load_validation_catalogs, validation_score
+from .validation_core import (
+    _load_validation_catalogs, _summarize_validation, validation_score,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -59,6 +63,16 @@ def comparison_row(circuit, results):
     return row
 
 
+def _validate_record_order(records, circuits):
+    expected = [
+        (item["name"], fault_id)
+        for item in circuits for fault_id in item["episode_fault_ids"]
+    ]
+    actual = [(record["circuit"], record["fault_id"]) for record in records]
+    if actual != expected:
+        raise ValueError("Existing full GAT fault catalog differs from ablations")
+
+
 def _check_group(summary, group, manifest, seed):
     info = summary["groups"][group]
     expected_lock = group != "no_lock"
@@ -70,7 +84,9 @@ def _check_group(summary, group, manifest, seed):
         full_dir = Path(summary["groups"]["full"]["model_dir"]).resolve()
         if model_dir != full_dir or info.get("source_group") != "full":
             raise ValueError("no_cache must reuse the full model directory")
-        checkpoint_group = "full"
+        checkpoint_group = None
+    elif group == "full":
+        checkpoint_group = None
     else:
         checkpoint_group = group
     snapshots = []
@@ -79,11 +95,74 @@ def _check_group(summary, group, manifest, seed):
         _, state = _load_inference_checkpoint(
             checkpoint, VARIANTS[group], manifest, number,
             expected_ablation=checkpoint_group,
-            expected_backtrace_lock=expected_lock,
+            expected_backtrace_lock=expected_lock if checkpoint_group else None,
             expected_seed=seed,
         )
         snapshots.append(snapshot_id(state))
     return model_dir, snapshots
+
+
+def _existing_full_result(full_run_dir, circuits, seed, manifest):
+    summary = _read_json(full_run_dir / "train_summary.json", "existing full GAT summary")
+    if (summary.get("format") != "SMARTATPG_DUAL_TRAINING_V3_SEPARATED_VALIDATION" or
+            summary.get("seed") != seed or summary.get("rounds") != 2 or
+            summary.get("backtrack_limit") != 100 or
+            summary.get("backtrace_lock") not in ("auto", "on")):
+        raise ValueError("Existing full GAT training protocol differs from ablations")
+    if Path(summary["manifests"]["gat"]).resolve() != manifest:
+        raise ValueError("Existing full GAT manifest differs from ablation manifest")
+    validation_dir = full_run_dir / "validation"
+    report = _read_json(
+        validation_dir / "validation_three_way_comparison.json",
+        "existing full GAT validation report",
+    )
+    if (report.get("format") != "SMARTATPG_THREE_WAY_VALIDATION_V1" or
+            report.get("seed") != seed or report.get("backtrack_limit") != 100 or
+            report.get("backtrace_lock") not in ("auto", "on")):
+        raise ValueError("Existing full GAT validation protocol differs from ablations")
+    selection = report.get("model_selection", {}).get("gat")
+    if not isinstance(selection, dict):
+        raise ValueError("Existing full GAT validation lacks model selection")
+    round_number = int(selection["best_round"])
+    if round_number not in (1, 2):
+        raise ValueError("Existing full GAT selected round is invalid")
+    checkpoint = Path(summary["training_dirs"]["gat"]) / f"inference_round_{round_number:02d}.pth"
+    full_payload, full_state = _load_inference_checkpoint(
+        checkpoint, "level_gat_gru", manifest, round_number,
+        expected_seed=seed,
+    )
+    if full_payload.get("backtrace_lock", True) is not True:
+        raise ValueError("Existing full GAT checkpoint disables backtrace lock")
+    records_path = validation_dir / "detailed" / "gat_records.jsonl"
+    if not records_path.is_file():
+        raise FileNotFoundError(f"Existing full GAT records are missing: {records_path}")
+    records = [json.loads(line) for line in records_path.read_text(encoding="utf-8").splitlines()]
+    _validate_records(records, "full")
+    _validate_record_order(records, circuits)
+    result = _summarize_validation(records, circuits, round_number)
+    _validate_summary(result, circuits, round_number, "full")
+    if list(validation_score(result, round_number)) != selection.get("score"):
+        raise ValueError("Existing full GAT records disagree with model selection")
+    names = [item["name"] for item in circuits] + ["TOTAL"]
+    report_rows = report.get("rows", [])
+    if [row.get("circuit") for row in report_rows] != names:
+        raise ValueError("Existing full GAT report has a different circuit order")
+    for name, report_row in zip(names, report_rows):
+        expected = _row(result, name)
+        fields = {
+            "gat_backtracks": expected["backtracks_total"],
+            "gat_backtrace_steps": expected["backtrace_steps_total"],
+            "gat_runtime_atpg_s": expected["atpg_seconds"],
+            "gat_fault_coverage_pct": 100.0 * expected["fault_coverage"],
+        }
+        if any(
+            key not in report_row or not math.isclose(
+                float(report_row[key]), float(value), rel_tol=1e-9, abs_tol=1e-6,
+            )
+            for key, value in fields.items()
+        ):
+            raise ValueError(f"Existing full GAT records disagree with report: {name}")
+    return records, result, selection, snapshot_id(full_state)
 
 
 def run_validation(run_dir, output_dir=None, seed=None):
@@ -120,9 +199,16 @@ def run_validation(run_dir, output_dir=None, seed=None):
     if snapshots["full"] != snapshots["no_cache"]:
         raise ValueError("full and no_cache Actor snapshots differ")
 
-    results = {}
-    selection = {}
-    for group in ("full", "no_lock", "no_object_value"):
+    full_run_dir = Path(summary["full_run_dir"]).resolve()
+    full_records, full_result, full_selection, full_snapshot = _existing_full_result(
+        full_run_dir, circuits, seed, manifest,
+    )
+    if snapshots["full"][full_selection["best_round"] - 1] != full_snapshot:
+        raise ValueError("Existing full GAT checkpoint snapshot changed")
+    results = {"full": full_result}
+    selection = {"full": full_selection}
+    atomic_json_lines(output_dir / "detailed" / "full_records.jsonl", full_records)
+    for group in ("no_lock", "no_object_value"):
         round_results = [
             _evaluate_model_round(
                 group, VARIANTS[group], manifest, group_dirs[group], circuits,
@@ -147,7 +233,7 @@ def run_validation(run_dir, output_dir=None, seed=None):
     records, no_cache = _evaluate_model_round(
         "no_cache", VARIANTS["no_cache"], manifest, group_dirs["no_cache"],
         circuits, output_dir, full_round, seed, True,
-        expected_ablation="full", logits_cache=False,
+        logits_cache=False,
     )
     _validate_summary(no_cache, circuits, full_round, "no_cache")
     atomic_json_lines(output_dir / "detailed" / "no_cache_records.jsonl", records)
@@ -167,8 +253,10 @@ def run_validation(run_dir, output_dir=None, seed=None):
         "backtrack_limit": 100,
         "runtime_definition": "sum(per_fault.atpg_seconds)",
         "manifest": str(manifest),
+        "full_run_dir": str(full_run_dir),
         "logits_cache": {group: group != "no_cache" for group in GROUPS},
-        "no_cache_actor_matches_full": True,
+        "no_cache_actor_matches_full_checkpoint": True,
+        "historical_full_actor_hash_available": False,
         "model_selection": selection,
         "rows": rows,
     }

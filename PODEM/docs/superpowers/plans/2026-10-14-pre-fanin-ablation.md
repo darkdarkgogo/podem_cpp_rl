@@ -1,8 +1,8 @@
 # Pre-fanin GAT Ablation Implementation Plan
 
-**Goal:** Run the three existing ablation variables on the original two-output GAT-GRU Actor.
+**Goal:** Run the three existing ablation variables on the original two-output GAT-GRU Actor using existing full results.
 
-**Architecture:** Keep commit `7d92ab8` as the base. Add a no-objective-value model variant, a native cache switch, and separate training and validation entry points. Reuse the full checkpoint for no-cache validation.
+**Architecture:** Keep commit `7d92ab8` as the base. Add a no-objective-value model variant, a native cache switch, and separate training and validation entry points. Read the existing full records and checkpoint; reuse that checkpoint for no-cache validation.
 
 **Tech Stack:** Python, PyTorch, pybind11, C++.
 
@@ -19,17 +19,17 @@
 
 ### Task 1: No-objective-value variant
 
-- [ ] Add the 11-input GAT policy and agent variant with two Actor outputs.
-- [ ] Admit its variant and dimensions in checkpoint metadata, export, portable inference, and native inference.
-- [ ] Verify policy and artifact round trips with focused tests.
+- [x] Add the 11-input GAT policy and agent variant with two Actor outputs.
+- [x] Admit its variant and dimensions in checkpoint metadata, export, portable inference, and native inference.
+- [x] Verify policy and artifact round trips with focused tests.
 
 ### Task 2: Native cache control
 
-- [ ] Add an optional logits-cache flag to native validation, preserving the current default.
-- [ ] Thread it through Python validation and verify the full/no-cache Actor identity.
+- [x] Add an optional logits-cache flag to native validation, preserving the current default.
+- [x] Thread it through Python validation and verify the full/no-cache Actor identity.
 
 ### Task 3: Experiment orchestration
 
-- [ ] Add a training command for full, no-lock, and no-objective-value groups using one manifest.
-- [ ] Add a validation command for all four groups and an identity-checked comparison report.
-- [ ] Document commands and run focused syntax, unit, and native build checks.
+- [x] Add a training command for no-lock and no-objective-value groups using the existing full manifest.
+- [x] Add a validation command for all four groups and an identity-checked comparison report.
+- [x] Document commands and run focused syntax, unit, and native build checks.

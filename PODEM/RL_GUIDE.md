@@ -1,5 +1,18 @@
 # SmartATPG RL 使用入口
 
+## 拼接 fanin 之前的 GAT 消融（独立 worktree）
+
+本 worktree 基于 `7d92ab8`：GAT Actor 接收 11 维 object gate embedding 和 1 维 objective value，输出两个 fanin 位置的 logits；没有拼接候选 fanin embedding。`no_object_value` 的 Actor/Critic 输入均为 11 维，PODEM 仍使用 objective value。`no_lock` 在训练和验证中关闭 backtrace 路径锁。`no_cache` 在原生验证时关闭 Actor logits 缓存，复用 `full` 同一 checkpoint 和 Actor，不单独训练。
+
+```powershell
+cd PODEM
+python -m pip install -e .
+python scripts/train_pre_fanin_ablation.py --full-run-dir 'PATH_TO_OLD_FULL_RUN' --gpu 0
+python scripts/validate_pre_fanin_ablation.py
+```
+
+`--full-run-dir` 指向已有旧版完整训练与验证结果，需包含 `train_summary.json`、`training/gat`、`validation/detailed/gat_records.jsonl` 和原三方验证报告。不会重新训练或验证 `full`。训练和验证必须分别启动。训练复用完整组的 manifest、seed、奖励和两轮协议，只训练 `no_lock`、`no_object_value`，按顺序使用一张 CUDA GPU。输出位于 `artifacts/pre_fanin_ablation`，日志保存在 `logs`，中断后重复训练命令可恢复。验证在同一有序 fault catalog 上读取已有 `full` 结果并运行其余三组，写入逐故障 JSONL、逐电路与 TOTAL 的 CSV/JSON 对照表。当前开发机的 PyTorch 是 CPU 版，需要在有 CUDA 版 PyTorch 的训练环境执行正式实验。
+
 正式实验只有训练和验证两个入口。训练不会读取 validation fault catalog、生成 validation embedding、计算 validation score 或自动开始 comparison；训练完成后必须显式运行验证命令。
 
 ## 训练

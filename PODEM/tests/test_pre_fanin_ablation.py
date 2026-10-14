@@ -6,9 +6,10 @@ import unittest
 
 import torch
 
+from rl_podem.artifact_io import INFERENCE_CHECKPOINT_FORMAT, manifest_hash
 from rl_podem.gat_gru import GATGRUSmartATPGPolicy, GATNoValuePolicy, GATNoValuePPOAgent
 from rl_podem.cpp_bridge import CppPodemBacktraceV2Trainer, catalog_cpp_podem
-from rl_podem.pre_fanin_ablation import comparison_row
+from rl_podem.pre_fanin_ablation import _check_group, _validate_record_order, comparison_row
 from rl_podem.smartatpg_artifacts import export_actor, export_descriptors, policy_from_state
 from rl_podem.smartatpg_features import load_circuit_graph
 from rl_podem.smartatpg_portable import load_model
@@ -131,6 +132,58 @@ class PreFaninAblationTests(unittest.TestCase):
         self.assertEqual(row["no_cache_detected_faults_delta_vs_full"], 0)
         self.assertEqual(row["no_cache_runtime_delta_pct_vs_full"], 50)
         self.assertAlmostEqual(row["no_object_value_coverage_delta_pp_vs_full"], -20)
+
+    def test_existing_full_checkpoint_needs_no_ablation_tag(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = root / "manifest.json"
+            manifest.write_text("{}", encoding="utf-8")
+            model_dir = root / "full"
+            model_dir.mkdir()
+            state = GATGRUSmartATPGPolicy().state_dict()
+            for number in (1, 2):
+                torch.save({
+                    "format": INFERENCE_CHECKPOINT_FORMAT,
+                    "manifest_hash": manifest_hash(manifest),
+                    "encoder_variant": "level_gat_gru",
+                    "reward_scheme": GAT_REWARD_SCHEME,
+                    "backtrack_limit": 100,
+                    "seed": 2026,
+                    "round": number,
+                    "policy_old": state,
+                }, model_dir / f"inference_round_{number:02d}.pth")
+            summary = {
+                "rounds": 2,
+                "groups": {
+                    "full": {
+                        "encoder_variant": "level_gat_gru",
+                        "backtrace_lock": True,
+                        "model_dir": str(model_dir),
+                    },
+                    "no_cache": {
+                        "encoder_variant": "level_gat_gru",
+                        "backtrace_lock": True,
+                        "model_dir": str(model_dir),
+                        "source_group": "full",
+                    },
+                },
+            }
+            full_dir, full_snapshots = _check_group(summary, "full", manifest, 2026)
+            no_cache_dir, no_cache_snapshots = _check_group(
+                summary, "no_cache", manifest, 2026,
+            )
+            self.assertEqual(full_dir, no_cache_dir)
+            self.assertEqual(full_snapshots, no_cache_snapshots)
+
+    def test_existing_full_fault_order_must_match_catalog(self):
+        circuits = [{"name": "c1", "episode_fault_ids": ["f1", "f2"]}]
+        records = [
+            {"circuit": "c1", "fault_id": "f1"},
+            {"circuit": "c1", "fault_id": "f2"},
+        ]
+        _validate_record_order(records, circuits)
+        with self.assertRaisesRegex(ValueError, "fault catalog"):
+            _validate_record_order(list(reversed(records)), circuits)
 
 
 if __name__ == "__main__":
