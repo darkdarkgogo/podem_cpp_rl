@@ -11,7 +11,7 @@ python scripts/train_pre_fanin_ablation.py --dataset-root data --no-cache-gpu 0 
 python scripts/validate_pre_fanin_ablation.py
 ```
 
-训练脚本在 `artifacts/pre_fanin_ablation_1round/preparation/gat` 准备一份 GAT manifest，然后让三个组共享它、使用同一随机种子和一轮训练协议，并行占用三张不同的 CUDA GPU。已有一轮 manifest 可通过 `--manifest PATH` 直接复用；两轮 manifest 会被拒绝。训练脚本不读取或训练 `full`。输出在 `artifacts/pre_fanin_ablation_1round`，与先前两轮产物隔离；各组训练日志在 `logs`，中断后重复训练命令可恢复。验证在同一有序 fault catalog 上分别评估三组，生成逐故障 JSONL 和逐电路及 TOTAL 的 `validation/validation_pre_fanin_ablation.csv`、JSON 报告。该对照表只有三组结果，不读取 `full` 数据。当前开发机的 PyTorch 是 CPU 版，正式训练需在三张 CUDA GPU 的服务器执行。
+训练脚本在 `artifacts/pre_fanin_ablation_1round/preparation/gat` 准备一份 GAT manifest，然后让三个组共享它、使用同一随机种子和一轮训练协议，并行占用三张不同的 CUDA GPU。已有一轮 manifest 可通过 `--manifest PATH` 直接复用；两轮 manifest 会被拒绝。训练脚本不读取或训练 `full`。输出在 `artifacts/pre_fanin_ablation_1round`，与先前两轮产物隔离；控制台训练输出分别带 `[no_cache]`、`[no_lock]`、`[no_object_value]` 前缀，各组日志保存在 `logs`，中断后重复训练命令可恢复。验证在同一有序 fault catalog 上分别评估三组，生成逐故障 JSONL 和逐电路及 TOTAL 的 `validation/validation_pre_fanin_ablation.csv`、JSON 报告。该对照表只有三组结果，不读取 `full` 数据。当前开发机的 PyTorch 是 CPU 版，正式训练需在三张 CUDA GPU 的服务器执行。
 
 正式实验只有训练和验证两个入口。训练不会读取 validation fault catalog、生成 validation embedding、计算 validation score 或自动开始 comparison；训练完成后必须显式运行验证命令。
 

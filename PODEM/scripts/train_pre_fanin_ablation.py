@@ -19,7 +19,7 @@ VARIANTS = {
 }
 
 
-def _run(command, environment, log_path):
+def _run(command, environment, log_path, prefix=""):
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("w", encoding="utf-8", newline="\n") as log:
         process = subprocess.Popen(
@@ -30,7 +30,7 @@ def _run(command, environment, log_path):
         for line in process.stdout:
             log.write(line)
             log.flush()
-            print(line, end="", flush=True)
+            print(prefix + line, end="", flush=True)
         if process.wait():
             raise RuntimeError(f"Command failed; see {log_path}")
 
@@ -50,7 +50,7 @@ def _environment(gpu):
 def _run_parallel(jobs):
     with ThreadPoolExecutor(max_workers=len(jobs)) as executor:
         futures = {
-            executor.submit(_run, command, environment, log_path): group
+            executor.submit(_run, command, environment, log_path, f"[{group}] "): group
             for group, command, environment, log_path in jobs
         }
         failures = []
