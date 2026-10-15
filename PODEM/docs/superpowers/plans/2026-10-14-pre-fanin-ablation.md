@@ -12,7 +12,7 @@
 
 - Work only in the `experiment/pre-fanin-ablation` worktree.
 - Preserve the 11-dimensional objective embedding and two-output Actor; never add a candidate fanin embedding.
-- Use the same prepared GAT manifest, seed, reward, backtrack limit, and two-round protocol for all three groups.
+- Use the same prepared GAT manifest, seed, reward, backtrack limit, and one-round protocol for all three groups.
 - Do not start full training or validation during implementation.
 
 ---

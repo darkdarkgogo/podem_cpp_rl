@@ -29,7 +29,7 @@ FAULT_FILTER = "train_top30_hard_detected_validation_full_catalog"
 MEAN_FAULT_FILTER = "train_top100_hard_detected_validation_full_catalog"
 BACKTRACK_LIMIT = 100
 LEGACY_TRAINING_ROUNDS = 5
-NORMAL_TRAINING_ROUNDS = 2
+NORMAL_TRAINING_ROUNDS = 1
 FAULTS_PER_UPDATE = 4
 ADVANTAGE_HYPERPARAMETERS = {
     "gamma": 0.99,

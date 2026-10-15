@@ -299,7 +299,7 @@ void ActorModel::load(const std::string &path) {
           "Invalid SmartATPG reward-scheme metadata in: " + path);
   require(static_cast<bool>(input >> key >> normal_rounds) &&
               key == "normal_rounds" &&
-              normal_rounds == (batched_protocol ? 2 : 5),
+              normal_rounds == (batched_protocol ? 1 : 5),
           "Invalid SmartATPG normal-round metadata in: " + path);
   if (batched_protocol) {
     require(static_cast<bool>(input >> key >> faults_per_update) &&

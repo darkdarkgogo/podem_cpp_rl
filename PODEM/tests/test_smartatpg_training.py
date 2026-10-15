@@ -124,7 +124,7 @@ class SmartATPGPreparationTests(unittest.TestCase):
 
     def test_fixed_training_contract(self):
         self.assertEqual(BACKTRACK_LIMIT, 100)
-        self.assertEqual(NORMAL_TRAINING_ROUNDS, 2)
+        self.assertEqual(NORMAL_TRAINING_ROUNDS, 1)
         self.assertEqual(FAULTS_PER_UPDATE, 4)
         self.assertEqual(TRAIN_FAULTS_PER_CIRCUIT, 30)
         self.assertEqual(MEAN_TRAIN_FAULTS_PER_CIRCUIT, 100)
@@ -419,7 +419,7 @@ class SmartATPGPreparationTests(unittest.TestCase):
                 )
                 self.assertEqual(profiled_splits, ["train"])
                 self.assertNotIn("validation_circuits", manifest)
-                self.assertEqual(manifest["normal_rounds"], 2)
+                self.assertEqual(manifest["normal_rounds"], 1)
                 self.assertEqual(manifest["faults_per_update"], 4)
                 self.assertEqual(manifest["k_epochs"], 4)
                 self.assertEqual(manifest["minibatch_size"], 512)
@@ -482,7 +482,8 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
                 GAT_REWARD_SCHEME, -0.1, False,
             )
         self.assertEqual(records[0]["fault_id"], "f0")
-        self.assertIs(calls[0][-1], False)
+        self.assertIs(calls[0][-2], False)
+        self.assertIs(calls[0][-1], True)
 
     def test_trainer_exposes_both_encoder_agents(self):
         self.assertEqual(set(AGENT_TYPES), {"fanin_mean", "level_gat_gru"})
@@ -503,6 +504,7 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
             "encoder_variant": "level_gat_gru",
             "reward_scheme": GAT_REWARD_SCHEME,
             "backtrack_limit": 100,
+            "backtrace_lock": True,
             "seed": 2026,
         }
         payload = _inference_payload(Agent(), config, 2)
@@ -775,14 +777,14 @@ class SmartATPGTrainingStateTests(unittest.TestCase):
             "validation_circuit_count": 6,
         })
         batched = {
-            **config, "rounds": 2, "faults_per_update": 4,
+            **config, "rounds": 1, "faults_per_update": 4,
             "minibatch_size": 512, "k_epochs": 4,
         }
         self.assertEqual(_training_protocol(batched), {
             "manifest_hash": "a" * 64,
             "backtrack_limit": 100,
             "reward_scheme": MEAN_REWARD_SCHEME,
-            "normal_rounds": 2,
+            "normal_rounds": 1,
             "training_circuit_count": 1024,
             "validation_circuit_count": 6,
             "faults_per_update": 4,

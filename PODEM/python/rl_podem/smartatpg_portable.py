@@ -214,7 +214,7 @@ def load_model(path):
             "level_gat_gru_no_object_value": "cubic_backtrack_depthnorm_v2",
             "fanin_mean": "legacy_pi_exponential",
         }[encoder_variant]
-        or normal_rounds != (2 if model_format != LEGACY_MODEL_FORMAT else 5)
+        or normal_rounds != (1 if model_format != LEGACY_MODEL_FORMAT else 5)
         or (
             model_format != LEGACY_MODEL_FORMAT
             and (

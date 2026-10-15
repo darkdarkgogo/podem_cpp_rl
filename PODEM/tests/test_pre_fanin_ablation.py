@@ -34,7 +34,7 @@ class PreFaninAblationTests(unittest.TestCase):
         "manifest_hash": "0" * 64,
         "backtrack_limit": 100,
         "reward_scheme": "cubic_backtrack_depthnorm_v2",
-        "normal_rounds": 2,
+        "normal_rounds": 1,
         "faults_per_update": 4,
         "minibatch_size": 512,
         "k_epochs": 4,
@@ -154,7 +154,7 @@ class PreFaninAblationTests(unittest.TestCase):
             for group, lock in (("no_cache", True), ("no_lock", False)):
                 model_dir = root / group
                 model_dir.mkdir()
-                for number in (1, 2):
+                for number in (1,):
                     torch.save({
                         "format": INFERENCE_CHECKPOINT_FORMAT,
                         "manifest_hash": manifest_hash(manifest),
@@ -169,7 +169,7 @@ class PreFaninAblationTests(unittest.TestCase):
                     "backtrace_lock": lock,
                     "model_dir": str(model_dir),
                 }
-            summary = {"rounds": 2, "groups": groups}
+            summary = {"rounds": 1, "groups": groups}
             no_cache_dir, _ = _check_group(summary, "no_cache", manifest, 2026)
             self.assertEqual(no_cache_dir, root / "no_cache")
             summary["groups"]["no_lock"]["model_dir"] = str(no_cache_dir)
@@ -182,7 +182,7 @@ class PreFaninAblationTests(unittest.TestCase):
             output = root / "ablation"
             manifest = root / "manifest.json"
             manifest.write_text(json.dumps({
-                "encoder_variant": "level_gat_gru", "normal_rounds": 2,
+                "encoder_variant": "level_gat_gru", "normal_rounds": 1,
                 "backtrack_limit": 100, "dataset_root": str(root / "data"),
                 "profile_seed": 14,
             }), encoding="utf-8")
@@ -194,8 +194,8 @@ class PreFaninAblationTests(unittest.TestCase):
                     model_dir = output / "training" / group
                     model_dir.mkdir(parents=True)
                     for filename in (
-                        "training_state.pth", "inference_round_02.pth",
-                        "model_round_02.txt",
+                        "training_state.pth", "inference_round_01.pth",
+                        "model_round_01.txt",
                     ):
                         (model_dir / filename).touch()
 
@@ -216,11 +216,21 @@ class PreFaninAblationTests(unittest.TestCase):
             self.assertEqual([
                 job[1][job[1].index("--ablation") + 1] for job in captured
             ], ["no_cache", "no_lock", "no_object_value"])
+            self.assertEqual([
+                job[1][job[1].index("--rounds") + 1] for job in captured
+            ], ["1", "1", "1"])
             summary = json.loads((output / "train_summary.json").read_text(encoding="utf-8"))
             self.assertEqual(summary["format"], "SMARTATPG_PRE_FANIN_ABLATION_TRAINING_V3_THREE_GROUPS")
+            self.assertEqual(summary["rounds"], 1)
             self.assertEqual(set(summary["groups"]), {
                 "no_cache", "no_lock", "no_object_value",
             })
+            manifest.write_text(json.dumps({
+                "encoder_variant": "level_gat_gru", "normal_rounds": 2,
+                "backtrack_limit": 100, "dataset_root": str(root / "data"),
+            }), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "one-round"):
+                train_pre_fanin_ablation._manifest_dataset_root(manifest)
 
     def test_validation_compares_only_independent_ablations(self):
         try:
@@ -236,7 +246,7 @@ class PreFaninAblationTests(unittest.TestCase):
             )
             manifest = root / "manifest.json"
             manifest.write_text(json.dumps({
-                "encoder_variant": "level_gat_gru", "normal_rounds": 2,
+                "encoder_variant": "level_gat_gru", "normal_rounds": 1,
             }), encoding="utf-8")
             groups = {}
             for group in ("no_cache", "no_lock", "no_object_value"):
@@ -250,7 +260,7 @@ class PreFaninAblationTests(unittest.TestCase):
                     GATNoValuePolicy() if group == "no_object_value"
                     else GATGRUSmartATPGPolicy()
                 ).state_dict()
-                for number in (1, 2):
+                for number in (1,):
                     torch.save({
                         "format": INFERENCE_CHECKPOINT_FORMAT,
                         "manifest_hash": manifest_hash(manifest),
@@ -272,12 +282,15 @@ class PreFaninAblationTests(unittest.TestCase):
                 }
             (root / "train_summary.json").write_text(json.dumps({
                 "format": "SMARTATPG_PRE_FANIN_ABLATION_TRAINING_V3_THREE_GROUPS",
-                "rounds": 2, "backtrack_limit": 100, "seed": 2026,
+                "rounds": 1, "backtrack_limit": 100, "seed": 2026,
                 "manifest": str(manifest), "dataset_root": str(root / "data"),
                 "groups": groups,
             }), encoding="utf-8")
             report = run_validation(root)
             self.assertEqual(set(report["model_selection"]), set(groups))
+            self.assertEqual({
+                item["best_round"] for item in report["model_selection"].values()
+            }, {1})
             self.assertEqual(set(report["logits_cache"]), set(groups))
             self.assertFalse(report["logits_cache"]["no_cache"])
             self.assertTrue(report["logits_cache"]["no_lock"])

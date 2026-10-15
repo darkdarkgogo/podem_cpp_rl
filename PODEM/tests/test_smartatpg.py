@@ -74,7 +74,7 @@ TRAINING_PROTOCOL = {
 }
 MEAN_BATCHED_TRAINING_PROTOCOL = {
     **TRAINING_PROTOCOL,
-    "normal_rounds": 2,
+    "normal_rounds": 1,
     "faults_per_update": 4,
     "minibatch_size": 512,
     "k_epochs": 4,
@@ -1147,7 +1147,7 @@ class SmartATPGTests(unittest.TestCase):
             model.model_format,
             "SMARTATPG_MODEL_V18_MEAN_GAE_BATCH4_MINIBATCH512_EPOCH4",
         )
-        self.assertEqual(model.normal_rounds, 2)
+        self.assertEqual(model.normal_rounds, 1)
         self.assertEqual(model.faults_per_update, 4)
         self.assertEqual(model.minibatch_size, 512)
         self.assertEqual(model.k_epochs, 4)

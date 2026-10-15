@@ -256,7 +256,7 @@ def export_actor_v2_state_dict(
         or metadata["reward_scheme"] != reward_scheme_for_encoder(
             metadata["encoder_variant"]
         )
-        or int(metadata["normal_rounds"]) != (2 if has_batch_protocol else 5)
+        or int(metadata["normal_rounds"]) != (1 if has_batch_protocol else 5)
         or (variant in ("level_gat_gru", "level_gat_gru_no_object_value") and not has_batch_protocol)
         or int(metadata["training_circuit_count"]) <= 0
         or int(metadata["validation_circuit_count"]) <= 0

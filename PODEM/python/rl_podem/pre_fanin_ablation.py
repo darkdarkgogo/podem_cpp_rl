@@ -80,7 +80,7 @@ def run_validation(run_dir, output_dir=None, seed=None):
         raise ValueError("Incompatible pre-fanin training summary")
     if set(summary.get("groups", {})) != set(GROUPS):
         raise ValueError("Expected exactly three ablation groups")
-    if summary.get("rounds") != 2 or summary.get("backtrack_limit") != 100:
+    if summary.get("rounds") != 1 or summary.get("backtrack_limit") != 100:
         raise ValueError("Pre-fanin training protocol changed")
     if seed is None:
         seed = summary["seed"]
@@ -91,8 +91,8 @@ def run_validation(run_dir, output_dir=None, seed=None):
     manifest = Path(summary["manifest"]).resolve()
     manifest_data = _read_json(manifest, "pre-fanin training manifest")
     if (manifest_data.get("encoder_variant") != "level_gat_gru" or
-            manifest_data.get("normal_rounds") != 2):
-        raise ValueError("A two-round GAT training manifest is required")
+            manifest_data.get("normal_rounds") != 1):
+        raise ValueError("A one-round GAT training manifest is required")
     validation_paths = discover_validation_dataset(Path(summary["dataset_root"]))
     circuits = _load_validation_catalogs(
         {"format": "fresh-validation"},
@@ -149,7 +149,7 @@ def run_validation(run_dir, output_dir=None, seed=None):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--run-dir", type=Path, default=ROOT / "artifacts/pre_fanin_ablation")
+    parser.add_argument("--run-dir", type=Path, default=ROOT / "artifacts/pre_fanin_ablation_1round")
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--seed", type=int)
     args = parser.parse_args(argv)

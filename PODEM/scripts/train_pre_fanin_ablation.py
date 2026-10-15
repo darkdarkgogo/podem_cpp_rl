@@ -10,6 +10,7 @@ import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
+ROUNDS = 1
 TRAINED_GROUPS = ("no_cache", "no_lock", "no_object_value")
 VARIANTS = {
     "no_cache": "level_gat_gru",
@@ -65,9 +66,9 @@ def _run_parallel(jobs):
 def _manifest_dataset_root(manifest):
     data = json.loads(manifest.read_text(encoding="utf-8"))
     if (data.get("encoder_variant") != "level_gat_gru" or
-            data.get("normal_rounds") != 2 or
+            data.get("normal_rounds") != ROUNDS or
             data.get("backtrack_limit") != 100):
-        raise ValueError("The training manifest must use the two-round pre-fanin GAT protocol")
+        raise ValueError("The training manifest must use the one-round pre-fanin GAT protocol")
     root = Path(data["dataset_root"])
     return (root if root.is_absolute() else manifest.parent / root).resolve(), data
 
@@ -77,7 +78,7 @@ def main(argv=None):
     parser.add_argument("--dataset-root", type=Path, default=ROOT / "data")
     parser.add_argument("--manifest", type=Path,
                         help="Use an existing GAT training manifest instead of preparing one")
-    parser.add_argument("--output-dir", type=Path, default=ROOT / "artifacts/pre_fanin_ablation")
+    parser.add_argument("--output-dir", type=Path, default=ROOT / "artifacts/pre_fanin_ablation_1round")
     parser.add_argument("--seed", type=int, default=2026)
     parser.add_argument("--profile-seed", type=int, default=14)
     parser.add_argument("--no-cache-gpu", type=int, default=0)
@@ -109,7 +110,7 @@ def main(argv=None):
         _run([
             sys.executable, "-m", "rl_podem.data_split", str(dataset_root),
             str(manifest.parent), "--encoder", "level_gat_gru",
-            "--seed", str(args.profile_seed), "--normal-rounds", "2",
+            "--seed", str(args.profile_seed), "--normal-rounds", str(ROUNDS),
             "--backtrack-limit", "100", "--resume",
         ], _environment(None), output_dir / "logs" / "prepare_gat.log")
     if not manifest.is_file():
@@ -128,7 +129,7 @@ def main(argv=None):
         command = [
             sys.executable, "-m", "rl_podem.training", str(manifest),
             str(model_dir), "--encoder", "level_gat_gru", "--ablation", group,
-            "--rounds", "2", "--seed", str(args.seed),
+            "--rounds", str(ROUNDS), "--seed", str(args.seed),
             "--backtrace-lock", lock, "--resume",
         ]
         jobs.append((
@@ -145,7 +146,7 @@ def main(argv=None):
     _run_parallel(jobs)
     for group in TRAINED_GROUPS:
         model_dir = output_dir / "training" / group
-        for filename in ("training_state.pth", "inference_round_02.pth", "model_round_02.txt"):
+        for filename in ("training_state.pth", "inference_round_01.pth", "model_round_01.txt"):
             if not (model_dir / filename).is_file():
                 raise RuntimeError(f"Missing {group} artifact: {filename}")
     summary = {
@@ -155,7 +156,7 @@ def main(argv=None):
         "manifest": str(manifest),
         "seed": args.seed,
         "profile_seed": manifest_data["profile_seed"],
-        "rounds": 2,
+        "rounds": ROUNDS,
         "backtrack_limit": 100,
         "groups": groups,
     }
