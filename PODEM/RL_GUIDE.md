@@ -2,22 +2,20 @@
 
 ## GAT 单因素消融（独立入口）
 
-拼接版 GAT 消融只训练和验证三组：`no_cache`、`no_lock`、`no_object_value`。每组训练一轮，分别使用 GPU 0、1、2；控制台训练输出带组名前缀。验证只读取这三组的训练摘要和模型文件，不读取旧 GAT full 的 checkpoint、验证记录或报告。
+以已完成的 GAT-GRU 训练与验证结果为基线，只从头训练三组：关闭缓存、关闭 backtrace 锁、去 `object value` 动态输入。三组直接复用完整模型的 GAT 训练 manifest，同时启动并分别使用 GPU 0、1、2。验证脚本读取完整模型已有的逐故障记录，在同一有序 validation fault catalog 上验证三个消融组，不调用 NN-All 或 Mean。
 
 ```bash
 cd PODEM
-python3 -m pip install -e .
-python3 scripts/train_gat_ablation.py
-python3 scripts/validate_gat_ablation.py
+python -m pip install -e .
+python scripts/train_gat_ablation.py
+python scripts/validate_gat_ablation.py
 ```
 
-如果三组已经训练完成，只需更新代码并直接运行最后一条验证命令；旧版 `artifacts/gat_ablation/train_summary.json` 仍可使用，无需重新训练。新训练会在 `artifacts/gat_ablation/preparation/gat` 准备一份共享 GAT manifest；也可用 `--manifest PATH` 指向现有的一轮 GAT manifest。已有三组训练摘要时，重复训练命令会复用其中的 manifest 和 seed 以恢复训练，不读取 full。可用 `--no-cache-gpu`、`--no-lock-gpu`、`--no-object-value-gpu` 指定三张 GPU。
+默认完整模型目录为 `artifacts/smartatpg_dual`，其中需有 `train_summary.json`、GAT checkpoint 与 `validation/detailed/gat_records.jsonl`；若目录不同，用 `--full-run-dir` 指定。完整模型不会重新训练。训练输出 `artifacts/gat_ablation/training/{no_cache,no_lock,no_object_value}`、各组日志及 `train_summary.json`，中断后用同一命令恢复。可用 `--no-cache-gpu`、`--no-lock-gpu`、`--no-object-value-gpu` 修改三张 GPU 的分配。验证输出 `validation/validation_gat_ablation.csv`、同名 JSON 和四组逐故障 JSONL。主表有逐电路及 TOTAL 的 detected/redundant/aborted、coverage、backtracks、backtrace steps、ATPG runtime，并列出各消融组相对完整模型的差值。
 
-验证结果保存在 `artifacts/gat_ablation/validation/validation_gat_ablation.csv` 和同名 JSON，并分别保存三组逐故障 JSONL。表格只含三组逐电路和 TOTAL 的 detected、redundant、aborted、coverage、backtracks、backtrace steps 和 ATPG runtime。此表没有 full 基线及相对 full 的差值。
+无缓存组保留 GAT-GRU 和 Python 图 embedding 缓存，仅在原生验证时关闭 C++ Actor logits 缓存。该缓存属于推理阶段的重复计算优化，因此这一组训练仍与完整模型采用相同网络和训练路径，主要比较原生推理耗时。验证会先要求无缓存组与完整组的 Actor 快照完全相同；若重新训练产生了不同权重，脚本会报错，避免将模型差异误记为缓存效果。去目标值组的 Actor 输入由 23 维降为 22 维，Critic 由 12 维降为 11 维；PODEM 的目标值与逻辑约束仍照常计算。路径锁只在 `no_lock` 组的训练和验证中关闭。各组共享完整模型的 seed、backtrack limit 100、奖励、PPO 参数和训练电路。验证核对 checkpoint 的组名、锁状态、seed 和 manifest。
 
-`no_cache` 在原生验证时关闭 C++ Actor logits 缓存；训练使用 Python Actor 回调，不受该开关影响。三个组各自使用自己的 checkpoint。路径锁只在 `no_lock` 组关闭；`no_object_value` 的 Actor 输入为 22 维，Critic 输入为 11 维。验证仍核对各组 checkpoint 的组名、锁状态、seed 和 manifest。
-
-训练不会读取 validation fault catalog 或自动启动验证；训练结束后需显式运行验证命令。
+正式实验只有训练和验证两个入口。训练不会读取 validation fault catalog、生成 validation embedding、计算 validation score 或自动开始 comparison；训练完成后必须显式运行验证命令。
 
 ## 训练
 
