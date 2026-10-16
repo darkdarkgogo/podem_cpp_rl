@@ -1,4 +1,4 @@
-"""Train three GAT ablations concurrently using an existing full GAT run."""
+"""Train three GAT ablations concurrently without a full GAT run."""
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -34,31 +34,25 @@ def _run(command, environment, log_path, prefix):
         return process.wait()
 
 
-def _read_full_run(path):
-    summary_path = path / "train_summary.json"
-    if not summary_path.is_file():
-        raise FileNotFoundError(f"Existing full GAT run is missing: {summary_path}")
-    summary = json.loads(summary_path.read_text(encoding="utf-8"))
-    if summary.get("format") != "SMARTATPG_DUAL_TRAINING_V3_SEPARATED_VALIDATION":
-        raise ValueError("Existing full GAT training summary has an incompatible format")
-    if summary.get("rounds") != 1 or summary.get("backtrack_limit") != 100:
-        raise ValueError("Existing full GAT run must use one round and backtrack limit 100")
-    if summary.get("backtrace_lock") not in ("auto", "on"):
-        raise ValueError("Existing full GAT run must have the backtrace lock enabled")
-    manifest = Path(summary["manifests"]["gat"]).resolve()
-    model_dir = Path(summary["training_dirs"]["gat"]).resolve()
-    if not manifest.is_file():
-        raise FileNotFoundError(f"Existing full GAT manifest is missing: {manifest}")
-    for name in ("inference_round_01.pth", "model_round_01.txt"):
-        if not (model_dir / name).is_file():
-            raise FileNotFoundError(f"Existing full GAT artifact is missing: {model_dir / name}")
-    return summary, manifest, model_dir
+def _read_manifest(path):
+    if not path.is_file():
+        raise FileNotFoundError(f"GAT training manifest is missing: {path}")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if (data.get("encoder_variant") != "level_gat_gru" or
+            data.get("normal_rounds") != 1 or
+            data.get("backtrack_limit") != 100):
+        raise ValueError("A one-round GAT training manifest is required")
+    root = Path(data["dataset_root"])
+    return (root if root.is_absolute() else path.parent / root).resolve(), data
 
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--full-run-dir", type=Path, default=ROOT / "artifacts/smartatpg_dual")
+    parser.add_argument("--dataset-root", type=Path, default=ROOT / "data")
+    parser.add_argument("--manifest", type=Path)
     parser.add_argument("--output-dir", type=Path, default=ROOT / "artifacts/gat_ablation")
+    parser.add_argument("--seed", type=int)
+    parser.add_argument("--profile-seed", type=int, default=14)
     parser.add_argument("--no-cache-gpu", type=int, default=0)
     parser.add_argument("--no-lock-gpu", type=int, default=1)
     parser.add_argument("--no-object-value-gpu", type=int, default=2)
@@ -70,12 +64,46 @@ def main(argv=None):
     }
     if min(gpu_ids.values()) < 0 or len(set(gpu_ids.values())) != 3:
         raise ValueError("The three ablations require distinct non-negative GPU IDs")
-    full_run_dir = args.full_run_dir.resolve()
-    full_summary, manifest, full_model_dir = _read_full_run(full_run_dir)
     output_dir = args.output_dir.resolve()
-    if (output_dir == full_run_dir or output_dir in full_run_dir.parents or
-            full_run_dir in output_dir.parents):
-        raise ValueError("Ablation output must be separate from the existing full run")
+    old_summary_path = output_dir / "train_summary.json"
+    old_summary = (
+        json.loads(old_summary_path.read_text(encoding="utf-8"))
+        if old_summary_path.is_file() else None
+    )
+    if old_summary is not None and old_summary.get("format") not in (
+        "SMARTATPG_GAT_ABLATION_TRAINING_V2", "SMARTATPG_GAT_ABLATION_TRAINING_V3_THREE_GROUPS",
+    ):
+        raise ValueError("Existing GAT ablation training summary is incompatible")
+    manifest = (
+        args.manifest.resolve() if args.manifest is not None else
+        Path(old_summary["manifest"]).resolve() if old_summary is not None else
+        output_dir / "preparation" / "gat" / "training_manifest.json"
+    )
+    if old_summary is None and args.manifest is None:
+        environment = os.environ.copy()
+        environment["PYTHONPATH"] = os.pathsep.join((
+            str(ROOT / "python"), environment.get("PYTHONPATH", ""),
+        ))
+        preparation = [
+            sys.executable, "-m", "rl_podem.data_split", str(args.dataset_root.resolve()),
+            str(manifest.parent), "--encoder", "level_gat_gru",
+            "--seed", str(args.profile_seed), "--normal-rounds", "1",
+            "--backtrack-limit", "100", "--resume",
+        ]
+        if _run(preparation, environment, output_dir / "logs" / "prepare_gat.log", "[prepare] "):
+            raise RuntimeError("GAT training data preparation failed")
+    dataset_root, manifest_data = _read_manifest(manifest)
+    if output_dir == dataset_root or dataset_root in output_dir.parents:
+        raise ValueError("Ablation output must be separate from the dataset")
+    if old_summary is not None:
+        if (Path(old_summary["manifest"]).resolve() != manifest or
+                Path(old_summary["dataset_root"]).resolve() != dataset_root):
+            raise ValueError("Existing GAT ablation manifest or dataset differs")
+    seed = old_summary["seed"] if old_summary is not None else (
+        2026 if args.seed is None else args.seed
+    )
+    if args.seed is not None and args.seed != seed:
+        raise ValueError("Training seed differs from existing GAT ablations")
     output_dir.mkdir(parents=True, exist_ok=True)
     training = {}
     jobs = {}
@@ -93,7 +121,7 @@ def main(argv=None):
             command = [
                 sys.executable, "-m", "rl_podem.training", str(manifest),
                 str(model_dir), "--encoder", "level_gat_gru", "--ablation", group,
-                "--rounds", "1", "--seed", str(full_summary["seed"]),
+                "--rounds", "1", "--seed", str(seed),
                 "--backtrace-lock", lock, "--require-cuda", "--resume",
             ]
             future = executor.submit(
@@ -125,13 +153,11 @@ def main(argv=None):
             if not (model_dir / filename).is_file():
                 raise RuntimeError(f"Missing {group} artifact: {filename}")
     summary = {
-        "format": "SMARTATPG_GAT_ABLATION_TRAINING_V2",
-        "full_run_dir": str(full_run_dir),
-        "full_model_dir": str(full_model_dir),
-        "dataset_root": str(Path(full_summary["dataset_root"]).resolve()),
+        "format": "SMARTATPG_GAT_ABLATION_TRAINING_V3_THREE_GROUPS",
+        "dataset_root": str(dataset_root),
         "manifest": str(manifest),
-        "seed": full_summary["seed"],
-        "profile_seed": full_summary["profile_seed"],
+        "seed": seed,
+        "profile_seed": manifest_data["profile_seed"],
         "rounds": 1,
         "backtrack_limit": 100,
         "groups": training,

@@ -1,6 +1,7 @@
 """Structural and artifact checks for the three trained GAT ablations."""
 
 import sys
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,7 +14,7 @@ SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
-from rl_podem.gat_ablation import GROUPS, comparison_row
+from rl_podem.gat_ablation import GROUPS, comparison_row, run_validation
 from rl_podem.gat_gru import (
     GATGRUSmartATPGPolicy, GATGRUSmartATPGPPOAgent, GATNoValuePolicy,
 )
@@ -25,6 +26,7 @@ from rl_podem.smartatpg_features import load_circuit_graph
 from rl_podem.smartatpg_portable import load_model
 from rl_podem.validation import _load_inference_checkpoint
 from rl_podem.artifact_io import INFERENCE_CHECKPOINT_FORMAT, manifest_hash
+import train_gat_ablation
 
 
 BENCH = "INPUT(a)\nINPUT(b)\ny = AND(a, b)\nOUTPUT(y)\n"
@@ -113,7 +115,7 @@ class GATAblationTests(unittest.TestCase):
                     )
                     self.assertAlmostEqual(float(expected), actual, places=4)
 
-    def test_comparison_reports_coverage_before_search_cost(self):
+    def test_comparison_contains_only_the_three_ablations(self):
         results = {}
         for index, group in enumerate(GROUPS):
             values = {
@@ -127,10 +129,102 @@ class GATAblationTests(unittest.TestCase):
             }
             results[group] = {"circuits": [{"circuit": "tiny", **values}], **values}
         row = comparison_row("tiny", results)
-        self.assertAlmostEqual(row["no_cache_coverage_delta_pp_vs_full"], -10.0)
-        self.assertEqual(row["no_cache_backtracks_delta_vs_full"], 1)
-        self.assertEqual(row["no_lock_aborted_faults"], 2)
-        self.assertEqual(row["no_lock_aborted_faults_delta_vs_full"], 2)
+        self.assertEqual(row["no_cache_detected_faults"], 10)
+        self.assertEqual(row["no_cache_fault_coverage_pct"], 100)
+        self.assertEqual(row["no_lock_aborted_faults"], 1)
+        self.assertFalse(any("full" in key for key in row))
+
+    def test_validation_does_not_read_old_full_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = root / "manifest.json"
+            manifest.write_text(json.dumps({
+                "encoder_variant": "level_gat_gru", "normal_rounds": 1,
+            }), encoding="utf-8")
+            dataset = root / "dataset" / "validation"
+            dataset.mkdir(parents=True)
+            (dataset / "tiny.bench").write_text(BENCH, encoding="utf-8")
+            groups = {
+                group: {
+                    "encoder_variant": "level_gat_gru_no_object_value"
+                    if group == "no_object_value" else "level_gat_gru",
+                    "backtrace_lock": group != "no_lock",
+                    "model_dir": str(root / group),
+                }
+                for group in GROUPS
+            }
+            (root / "train_summary.json").write_text(json.dumps({
+                "format": "SMARTATPG_GAT_ABLATION_TRAINING_V2",
+                "groups": groups, "rounds": 1, "backtrack_limit": 100,
+                "seed": 2026, "manifest": str(manifest),
+                "dataset_root": str(root / "dataset"),
+                "full_run_dir": str(root / "missing_full"),
+            }), encoding="utf-8")
+            circuits = [{"name": "tiny", "circuit": str(dataset / "tiny.bench"),
+                         "episode_fault_ids": ["f0"]}]
+            calls = []
+
+            def evaluate(group, _variant, _manifest, _model_dir, _circuits,
+                         _output_dir, number, _seed, lock, ablation, *, logits_cache):
+                calls.append((group, number, lock, ablation, logits_cache))
+                record = {
+                    "circuit": "tiny", "fault_id": "f0", "outcome": 1,
+                    "detected": 1, "redundant": 0, "aborted": 0,
+                    "backtracks": 0, "backtrace_steps": 1,
+                    "return": 1.0, "test_vectors": 1, "atpg_seconds": 0.1,
+                }
+                metrics = {
+                    "detected_faults": 1, "redundant_faults": 0,
+                    "aborted_faults": 0, "backtracks_total": 0,
+                    "backtrace_steps_total": 1, "atpg_seconds": 0.1,
+                    "fault_coverage": 1.0, "return_total": 1.0,
+                }
+                return [record], {"round": 1, "circuits": [
+                    {"circuit": "tiny", **metrics}], **metrics}
+
+            with patch("rl_podem.gat_ablation._load_validation_catalogs", return_value=circuits), \
+                    patch("rl_podem.gat_ablation._evaluate_model_round", side_effect=evaluate), \
+                    patch("rl_podem.gat_ablation._validate_summary"):
+                report = run_validation(root)
+            self.assertEqual([call[0] for call in calls], list(GROUPS))
+            self.assertEqual([call[-1] for call in calls], [False, True, True])
+            self.assertEqual(set(report["model_selection"]), set(GROUPS))
+            self.assertFalse(any("full" in key for key in report["rows"][0]))
+
+    def test_training_resume_uses_old_ablation_summary_without_full(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = root / "manifest.json"
+            dataset = root / "dataset"
+            manifest.write_text(json.dumps({
+                "encoder_variant": "level_gat_gru", "normal_rounds": 1,
+                "backtrack_limit": 100, "dataset_root": str(dataset),
+                "profile_seed": 14,
+            }), encoding="utf-8")
+            output = root / "ablation"
+            output.mkdir()
+            (output / "train_summary.json").write_text(json.dumps({
+                "format": "SMARTATPG_GAT_ABLATION_TRAINING_V2",
+                "manifest": str(manifest), "dataset_root": str(dataset),
+                "seed": 2026, "full_run_dir": str(root / "missing_full"),
+            }), encoding="utf-8")
+            calls = []
+
+            def fake_run(command, _environment, _log_path, _prefix):
+                calls.append(command)
+                model_dir = Path(command[command.index("rl_podem.training") + 2])
+                model_dir.mkdir(parents=True, exist_ok=True)
+                for name in ("training_state.pth", "inference_round_01.pth",
+                             "model_round_01.txt"):
+                    (model_dir / name).touch()
+                return 0
+
+            with patch.object(train_gat_ablation, "_run", side_effect=fake_run):
+                train_gat_ablation.main(["--output-dir", str(output)])
+            self.assertEqual(len(calls), 3)
+            summary = json.loads((output / "train_summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(set(summary["groups"]), set(GROUPS))
+            self.assertNotIn("full_run_dir", summary)
 
     def test_validation_rejects_different_training_seed(self):
         with tempfile.TemporaryDirectory() as directory:
